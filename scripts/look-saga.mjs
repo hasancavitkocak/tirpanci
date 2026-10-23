@@ -1,0 +1,60 @@
+// Dev: the job map (Bahçe Seç, a village tab): jobs done with stars, the next with the pin, the locked greyed.
+import puppeteer from 'puppeteer-core';
+import { findChrome } from './chrome.mjs';
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const browser = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const page = await browser.newPage();
+await page.setViewport({ width: 400, height: 760 });
+page.on('pageerror', (e) => console.log('pageerror', e.message));
+await page.goto('http://localhost:5173/?quality=low', { timeout: 120000 });
+await page.waitForFunction('window.__ready === true', { timeout: 120000 });
+await page.screenshot({ path: 'test-output/saga-daily.png' });
+await page.evaluate(() => {
+  document.getElementById('daily')?.classList.remove('show');
+  const g = window.__game;
+  g.save.unlocked = 4;
+  g.save.best = { 1: { stars: 3, coverage: 1, pay: 300, time: 90 }, 2: { stars: 2, coverage: 0.95, pay: 550, time: 200 }, 3: { stars: 1, coverage: 0.9, pay: 900, time: 400 } };
+  g.save.mownAt = { 3: Date.now() };
+  g.levelTab = 1;
+  g.openLevels();
+});
+await sleep(2500);
+await page.screenshot({ path: 'test-output/saga.png' });
+await page.evaluate(() => (document.getElementById('level-list').scrollTop = 0));
+await sleep(200);
+await page.screenshot({ path: 'test-output/saga-top.png' });
+await page.evaluate(() => {
+  const g = window.__game;
+  g.save.unlocked = 11;
+  for (const id of [4, 5, 6, 7, 8, 9]) g.save.best[id] = { stars: 1 + (id % 3), coverage: 1, pay: 1, time: 100 };
+  g.levelTab = 2;
+  g.openLevels();
+});
+await sleep(2500);
+await page.screenshot({ path: 'test-output/saga-2.png' });
+await page.evaluate(() => (document.getElementById('level-list').scrollTop = 99999));
+await sleep(400);
+await page.screenshot({ path: 'test-output/saga-2-foot.png' });
+await page.evaluate(() => {
+  const g = window.__game;
+  g.audio.ring = () => {};
+  g.openCall(g.regrowFor);
+});
+await sleep(1500);
+await page.screenshot({ path: 'test-output/saga-call.png' });
+await page.evaluate(() => { window.__game.showMenu(); document.getElementById('daily')?.classList.remove('show'); });
+await sleep(1500);
+await page.screenshot({ path: 'test-output/saga-menu.png' });
+await page.evaluate(() => {
+  document.getElementById('daily')?.classList.remove('show');
+  window.__game.show('result');
+  document.getElementById('result-title').textContent = 'Bahçe biçildi!';
+  document.getElementById('result-stars').innerHTML = [0, 1, 2].map((i) => `<span><img src="./harita/${i < 2 ? 'yildiz' : 'yildiz-bos'}.webp" alt=""></span>`).join('');
+  document.getElementById('result-table').innerHTML = '<tr><td>Biçilen</td><td>%96</td></tr><tr><td>Ücret</td><td>300 TL</td></tr>';
+});
+await sleep(800);
+await page.screenshot({ path: 'test-output/saga-result.png' });
+await page.evaluate(() => { void window.__game.ask('Yol Kenarı', 'Bu tarlayı <b>9.500 TL</b> karşılığında hemen açmak istiyor musun?', 'Hemen Aç'); });
+await sleep(600);
+await page.screenshot({ path: 'test-output/saga-confirm.png' });
+await browser.close();

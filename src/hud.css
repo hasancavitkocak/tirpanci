@@ -1,0 +1,283 @@
+/* In-game HUD and controls: dark glass panels, orange accents, line icons. */
+:root {
+  --glass: rgba(18, 22, 16, 0.62);
+  --glass-hi: rgba(255, 255, 255, 0.14);
+  --edge: rgba(255, 255, 255, 0.22);
+  --accent: #ff8a1c;
+  --accent-d: #c75a06;
+  --danger: #e5402f;
+}
+.ic { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
+.btn .ic { width: 18px; height: 18px; vertical-align: -3px; }
+
+/* Top bar */
+.gauges { display: flex; gap: 5px; }
+.gauge { flex: 1; display: flex; align-items: center; gap: 4px; background: var(--glass); border: 1px solid var(--edge); border-radius: 10px; padding: 3px 6px; color: #fff; font-size: 12px; backdrop-filter: blur(6px); min-width: 0; }
+.gauge .ic { width: 15px; height: 15px; opacity: 0.9; }
+.gauge .bar { flex: 1; height: 6px; border-radius: 3px; background: rgba(255,255,255,0.2); overflow: hidden; min-width: 18px; }
+.gauge .bar div { height: 100%; width: 100%; background: #ffcf3a; transition: width 0.2s, background 0.3s; }
+.gauge .bar div.low { background: var(--danger); animation: blink 0.6s infinite alternate; }
+.gauge.line .bar div { background: var(--accent); }
+.gauge.temp .bar div { background: linear-gradient(90deg, #4fb3ff, #8fd14f 35%, #ffcf3a 70%, var(--danger)); background-size: 300px 100%; }
+.gauge.temp.hot { border-color: var(--danger); }
+.gauge.temp.hot .ic { color: var(--danger); animation: blink 0.5s infinite alternate; }
+.gauge small { font-size: 10px; opacity: 0.85; white-space: nowrap; }
+.hud-btns { display: flex; flex-direction: column; gap: 8px; }
+.icon-btn { width: 44px; height: 44px; border-radius: 14px; border: 1px solid var(--edge); background: var(--glass); color: #fff; display: flex; align-items: center; justify-content: center; backdrop-filter: blur(6px); }
+.icon-btn:active { background: rgba(0,0,0,0.8); }
+#minimap { width: 96px; height: 96px; border-radius: 14px; background: var(--glass); border: 1px solid var(--edge); image-rendering: pixelated; flex: 0 0 auto; }
+
+/* Throttle pad and buttons */
+.controls { position: absolute; right: 12px; bottom: calc(14px + var(--safe-b)); display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+.ctl-row { display: flex; gap: 10px; }
+.ctl-btn { font: inherit; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; width: 66px; height: 58px; border-radius: 16px; border: 1px solid var(--edge); background: var(--glass); color: #fff; font-size: 10px; font-weight: 800; letter-spacing: 0.6px; touch-action: none; backdrop-filter: blur(6px); }
+.ctl-btn .ic { width: 22px; height: 22px; }
+.ctl-btn:active { transform: translateY(2px); background: rgba(0,0,0,0.8); }
+.ctl-btn.stop { color: #ffd9d4; border-color: rgba(229, 64, 47, 0.7); background: linear-gradient(rgba(150, 30, 20, 0.75), rgba(90, 15, 10, 0.75)); }
+.pad { --sweep: 0; --thr: 0; position: relative; width: 210px; height: 128px; border-radius: 26px; border: 1px solid var(--edge); background: radial-gradient(ellipse at 50% 120%, rgba(255, 138, 28, calc(0.15 + var(--thr) * 0.45)), transparent 70%), var(--glass); color: #fff; touch-action: none; backdrop-filter: blur(6px); overflow: hidden; user-select: none; }
+.pad.on { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255, 138, 28, 0.35), 0 8px 24px rgba(0,0,0,0.35); }
+.pad-arc { position: absolute; left: 50%; top: 16px; width: 168px; height: 84px; margin-left: -84px; border-radius: 84px 84px 0 0; border: 2px dashed rgba(255,255,255,0.35); border-bottom: 0; }
+.pad-dot { position: absolute; left: 50%; bottom: 0; width: 0; height: 0; transform: rotate(calc(var(--sweep) * 55deg)); }
+.pad-dot::after { content: ''; position: absolute; left: -9px; top: -93px; width: 18px; height: 18px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px rgba(255, 138, 28, 0.9); }
+.pad-label { position: absolute; left: 0; right: 0; top: 54px; display: flex; align-items: center; justify-content: center; gap: 6px; font-weight: 900; font-size: 20px; letter-spacing: 2px; }
+.pad-label .ic { width: 24px; height: 24px; }
+.pad-tach { position: absolute; left: 24px; right: 24px; bottom: 26px; height: 5px; border-radius: 3px; background: rgba(255,255,255,0.18); overflow: hidden; }
+.pad-tach i { display: block; height: 100%; width: calc(var(--thr) * 100%); background: linear-gradient(90deg, #ffcf3a, var(--accent), var(--danger)); }
+.pad-hint { position: absolute; left: 0; right: 0; bottom: 8px; text-align: center; font-size: 10px; opacity: 0.7; letter-spacing: 0.5px; }
+
+/* Re-thread (hold) */
+.rethread { --p: 0; display: none; position: absolute; right: 12px; bottom: calc(318px + var(--safe-b)); align-items: center; gap: 10px; padding: 10px 18px 10px 12px; border-radius: 18px; border: 1px solid var(--accent); background: var(--glass); color: #fff; font: inherit; font-weight: 900; font-size: 14px; touch-action: none; backdrop-filter: blur(6px); }
+body.line-broken .rethread { display: flex; }
+.rethread .ring { position: absolute; inset: -1px; border-radius: 18px; background: conic-gradient(var(--accent) calc(var(--p) * 360deg), transparent 0); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; padding: 3px; pointer-events: none; }
+.rethread .ic { width: 28px; height: 28px; color: var(--accent); }
+.rethread .lbl { display: flex; flex-direction: column; line-height: 1.1; text-align: left; }
+.rethread small { font-weight: 600; font-size: 10px; opacity: 0.75; }
+
+/* Overheat panel */
+.overheat { display: none; position: absolute; left: 50%; top: calc(140px + var(--safe-t)); transform: translateX(-50%); width: min(300px, 86vw); padding: 12px 14px; border-radius: 18px; border: 1px solid var(--danger); background: rgba(40, 10, 6, 0.78); color: #fff; flex-direction: column; gap: 8px; backdrop-filter: blur(6px); }
+body.overheated #overheat { display: flex; }
+.fuel-out { border-color: #e0a92a; background: rgba(40, 30, 6, 0.8); }
+body.fuel-empty #fuel-out { display: flex; }
+.objective { position: absolute; top: calc(98px + var(--safe-t)); left: 50%; transform: translateX(-50%); width: min(340px, 90vw); text-align: center; font-weight: 800; font-size: 15px; color: #fff; background: rgba(240, 122, 26, 0.92); border-radius: 14px; padding: 8px 12px; box-shadow: 0 3px 0 rgba(0, 0, 0, 0.25); pointer-events: none; }
+.objective:empty { display: none; }
+.objective small { display: block; font-weight: 600; font-size: 12px; opacity: 0.9; }
+.objective .ic { width: 22px; height: 22px; vertical-align: -6px; margin-right: 4px; color: #fff; }
+/* Context action (take the trimmer, fit line, get on the pat pat): a big pill with an icon disc. */
+/* Top left under the minimap: clear of the worker in the follow camera and of the controls below. */
+.actions { position: absolute; left: 10px; top: calc(172px + var(--safe-t)); display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.action-btn { display: flex; align-items: center; gap: 9px; padding: 5px 16px 5px 5px; border: 0; border-radius: 40px; font: inherit; color: #fff; background: linear-gradient(180deg, #4f9a34, #2f6a1f); box-shadow: 0 5px 0 #1f4a14, 0 8px 20px rgba(0, 0, 0, 0.3); cursor: pointer; touch-action: none; }
+.action-btn:active { transform: translateY(3px); box-shadow: 0 2px 0 #1f4a14; }
+.action-btn.hold { background: linear-gradient(180deg, #f59a2a, #d26b0c); box-shadow: 0 5px 0 #8a4204, 0 8px 20px rgba(0, 0, 0, 0.3); }
+.action-btn .act-bar { display: block; width: 120px; height: 8px; margin-top: 5px; border-radius: 4px; background: rgba(0, 0, 0, 0.25); overflow: hidden; }
+.action-btn .act-bar i { display: block; height: 100%; width: 0; background: #ffe066; border-radius: 4px; }
+.objective .obj-bar { display: block; height: 10px; margin: 6px 4px 2px; border-radius: 5px; background: rgba(0, 0, 0, 0.25); overflow: hidden; }
+.objective .obj-bar i { display: block; height: 100%; background: #ffe066; border-radius: 5px; transition: width 0.1s linear; }
+.action-btn .act-ic { position: relative; width: 40px; height: 40px; border-radius: 50%; background: #fff; color: #2f6a1f; display: grid; place-items: center; }
+.action-btn .act-ic .ic { width: 22px; height: 22px; }
+.action-btn .act-text { display: flex; flex-direction: column; align-items: flex-start; white-space: nowrap; }
+.action-btn b { font-size: 15px; font-weight: 900; letter-spacing: 0.5px; }
+.action-btn small { font-size: 11px; opacity: 0.85; font-weight: 600; }
+body.intro .starter, body.intro .controls, body.intro #btn-finish, body.intro #btn-rethread, body.intro #guide { display: none !important; }
+/* On the pat pat: only the stick (throttle / steering) and the action button. */
+body.driving .starter, body.driving .controls, body.driving #btn-rethread, body.driving #guide, body.driving .tutorial { display: none !important; }
+.request-chip { margin-top: 4px; font-size: 12px; font-weight: 800; color: #fff; background: rgba(42, 90, 28, 0.85); border-radius: 10px; padding: 3px 8px; display: inline-block; }
+.request-chip:empty { display: none; }
+.request-chip.broken { background: rgba(160, 40, 30, 0.85); text-decoration: line-through; }
+#sting-flash { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle, transparent 45%, rgba(220, 40, 20, 0.55)); opacity: 0; transition: opacity 0.5s; }
+#sting-flash.on { opacity: 1; transition: none; }
+.oh-title { display: flex; align-items: center; gap: 8px; font-weight: 900; color: #ffb4a8; }
+.oh-bar { height: 8px; border-radius: 4px; background: rgba(255,255,255,0.18); overflow: hidden; }
+.oh-bar div { height: 100%; width: 0; background: linear-gradient(90deg, #4fb3ff, #8fd14f); transition: width 0.25s; }
+.overheat p { margin: 0; font-size: 13px; opacity: 0.9; }
+
+
+/* Engine start panel */
+.starter { display: none; position: absolute; right: 12px; bottom: calc(14px + var(--safe-b)); flex-direction: column; align-items: flex-end; gap: 8px; pointer-events: none; }
+body.engine-off .starter { display: flex; }
+body.engine-off .controls, body.engine-off .tutorial { display: none; }
+.starter .hint { margin: 0; max-width: 260px; background: var(--glass); border: 1px solid var(--edge); color: #fff; padding: 8px 12px; border-radius: 14px; font-weight: 700; font-size: 13px; text-align: center; backdrop-filter: blur(6px); }
+.starter-row { display: flex; gap: 14px; align-items: flex-end; background: linear-gradient(#3b3f45, #23262a); border: 1px solid rgba(255,255,255,0.12); padding: 12px 14px 8px; border-radius: 22px; pointer-events: auto; box-shadow: inset 0 1px 0 rgba(255,255,255,0.12), 0 10px 30px rgba(0,0,0,0.4); }
+.st-col { display: flex; flex-direction: column; align-items: center; gap: 6px; color: #e8e8e8; font-weight: 800; font-size: 10px; letter-spacing: 0.6px; }
+.st-btn { border: 0; padding: 0; background: none; touch-action: none; color: inherit; }
+.st-btn.highlight .bulb, .st-btn.highlight .choke-plate, .cord.highlight .handle { animation: nudge 0.8s infinite alternate; }
+@keyframes nudge { to { box-shadow: 0 0 0 4px rgba(255, 210, 58, 0.55), 0 0 18px rgba(255, 210, 58, 0.6); } }
+/* Primer bulb: translucent dome that fills with fuel */
+.bulb { display: flex; align-items: center; justify-content: center; position: relative; width: 62px; height: 62px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, rgba(255,255,255,0.55), rgba(255,255,255,0.12) 55%), rgba(200, 220, 230, 0.18); border: 3px solid #9aa3ab; overflow: hidden; box-shadow: inset 0 -6px 10px rgba(0,0,0,0.3); transition: transform 0.08s; }
+.bulb i { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: linear-gradient(rgba(255, 190, 60, 0.75), rgba(230, 130, 20, 0.9)); transition: height 0.25s; }
+.bulb .ic { position: relative; width: 22px; height: 22px; color: rgba(255,255,255,0.85); }
+.st-btn.prime:active .bulb { transform: scale(0.82); }
+/* Choke: a slider with a red knob between RUN (up) and choke (down) */
+.choke-plate { display: flex; gap: 6px; align-items: stretch; width: 62px; height: 88px; padding: 6px; border-radius: 12px; background: linear-gradient(#2a2d31, #17191b); border: 1px solid #000; box-shadow: inset 0 1px 0 rgba(255,255,255,0.1); }
+.choke-plate .marks { display: flex; flex-direction: column; justify-content: space-between; align-items: center; font-size: 8px; color: #b9bec4; padding: 2px 0; }
+.choke-plate .marks .sym { width: 18px; height: 18px; color: #ff7a5c; }
+.choke-plate .slot { position: relative; flex: 1; border-radius: 6px; background: #0b0c0d; box-shadow: inset 0 2px 4px #000; }
+.choke-plate .knob { position: absolute; left: -3px; right: -3px; top: 2px; height: 26px; border-radius: 6px; background: linear-gradient(#8f969d, #5d646b); box-shadow: 0 2px 3px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.35); transition: top 0.18s cubic-bezier(.3,1.4,.6,1), background 0.18s; }
+.st-btn.choke.on .knob { top: calc(100% - 28px); background: linear-gradient(#ff6a4a, #c22a14); }
+/* Recoil starter: housing, rope and T-handle */
+.cord { position: relative; width: 74px; height: 196px; touch-action: none; }
+.cord-housing { position: absolute; left: 50%; top: 0; width: 44px; height: 16px; margin-left: -22px; border-radius: 8px 8px 4px 4px; background: linear-gradient(#e2661b, #a94408); }
+.cord-guide { position: absolute; left: 50%; top: 58px; bottom: 6px; width: 2px; margin-left: -1px; background: repeating-linear-gradient(rgba(255,255,255,0.25) 0 6px, transparent 6px 12px); pointer-events: none; }
+.rope { position: absolute; left: 50%; top: 12px; width: 4px; height: 26px; margin-left: -2px; border-radius: 2px; background: repeating-linear-gradient(#efe6cf 0 3px, #b9aa86 3px 6px); }
+.handle { position: absolute; left: 4px; right: 4px; top: 30px; height: 38px; border-radius: 19px; background: linear-gradient(#3a3d41, #1c1e20); border: 2px solid #55595e; box-shadow: 0 4px 8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.2); display: flex; align-items: center; justify-content: center; color: var(--accent); cursor: grab; touch-action: none; z-index: 1; }
+.handle .ic { width: 24px; height: 24px; }
+
+/* Tutorial */
+.tutorial { position: absolute; bottom: calc(160px + var(--safe-b)); left: 0; right: 0; display: none; justify-content: space-between; padding: 0 18px; color: #fff; font-weight: 800; font-size: 13px; text-shadow: 0 2px 4px #000; pointer-events: none; }
+.tutorial.show { display: flex; }
+.tutorial div { display: flex; align-items: center; gap: 6px; }
+
+/* Placeholder rewarded ad */
+.ad-card { align-items: stretch; text-align: center; }
+.ad-tag { color: #7a6e55; font-weight: 700; letter-spacing: 1px; }
+.ad-box { height: 180px; border-radius: 14px; background: repeating-linear-gradient(45deg, #ece2cc 0 12px, #f6efdf 12px 24px); display: flex; align-items: center; justify-content: center; font-weight: 800; color: #9a8d70; }
+#ad-text { margin: 0; font-weight: 700; }
+
+/* Easy controls: no throttle pad, the whole screen is the stick. */
+body.easy .pad { display: none; }
+
+/* Engine labouring: the tach turns red. */
+body.strain .pad-tach i { background: var(--danger); }
+
+/* Way to the fuel can: arrow relative to where the camera looks, with the distance. */
+.guide { display: none; position: absolute; left: 50%; top: calc(122px + var(--safe-t)); transform: translateX(-50%); align-items: center; gap: 8px; padding: 6px 14px 6px 8px; border-radius: 16px; background: var(--glass); border: 1px solid #ffd23a; color: #fff; font-weight: 800; font-size: 13px; pointer-events: none; backdrop-filter: blur(6px); }
+.guide.show { display: flex; }
+.guide .arrow { width: 30px; height: 30px; color: #ffd23a; transition: transform 0.1s linear; }
+body.tangled .rethread { display: flex; border-color: #c03a6a; }
+body.tangled .rethread .ic { color: #e56a95; }
+
+/* Face shield overlay (first person) and its wipe button. */
+#visor { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; display: none; }
+.ctl-btn.visor { display: none; color: #d8f5c0; border-color: rgba(140, 200, 90, 0.7); }
+body.visor-dirty .ctl-btn.visor { display: flex; animation: nudge 0.8s infinite alternate; }
+
+/* Free camera: nothing over the view. */
+body.freecam #hud, body.freecam #touch, body.freecam #toasts { display: none !important; }
+
+/* The village map. */
+#map .map-card { width: min(94vw, 520px); padding: 12px; }
+#map .map-title { margin: 2px 0 8px; font-size: 18px; }
+#map-canvas { display: block; width: 100%; height: min(66vh, 640px); border-radius: 12px; border: 3px solid #d9c9a3; box-sizing: border-box; background: #9fbf6e; }
+.map-legend { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; margin: 8px 0 10px; font-size: 12px; font-weight: 700; color: #4a3b22; }
+.map-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.map-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
+.map-legend .lg-you { background: #e8552b; clip-path: polygon(50% 0, 100% 100%, 50% 75%, 0 100%); }
+.map-legend .lg-pat { background: #1f5fa8; border: 2px solid #fff; box-shadow: 0 0 0 1px #ccc; }
+.map-legend .lg-job { background: #f07a1a; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); }
+.map-legend .lg-lock { background: #aeb0a4; }
+
+/* A field that has not grown back yet. */
+.regrow-card .regrow-text { margin: 4px 0 14px; line-height: 1.4; }
+.level.growing { opacity: 0.85; }
+.level.growing small { color: #b36b12; font-weight: 700; }
+
+/* The job list: headings (the coffee house, each village) across the whole grid; coffee-house jobs. */
+.lv-head { grid-column: 1 / -1; display: flex; flex-direction: column; margin: 6px 2px 0; text-align: left; }
+.lv-head b { font-size: 15px; color: #2f5a1c; }
+.lv-head small { font-size: 11px; color: #7a6a4a; }
+.level.ilan { background: #fff4df; border-color: #e7c78f; }
+.level.ilan .lv-num { background: #a0642a; }
+
+/* The job list's tabs. */
+.level-tabs { margin: 0 0 10px; }
+.level-tabs .ic { width: 12px; height: 12px; vertical-align: -1px; }
+.tab-count { display: inline-block; min-width: 16px; padding: 0 4px; border-radius: 8px; background: #a0642a; color: #fff; font-size: 11px; line-height: 16px; }
+.tab-sub { font-size: 11px; font-weight: 700; color: #a0937a; }
+.level-tabs button.on .tab-sub { color: #6b8f4e; }
+
+.level .lv-ad { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; font-size: 11px; font-weight: 800; color: #a0642a; }
+.level .lv-ad .ic { width: 12px; height: 12px; }
+#result-table td.pos { color: #2f8a1c; font-weight: 800; }
+
+/* Driving: the steering wheel and the pedals (only while on the pat pat). */
+#drive-ui { display: none; }
+body.driving #drive-ui { display: block; }
+#drive-wheel { position: fixed; left: 14px; bottom: calc(18px + var(--safe-b, 0px)); width: 150px; height: 150px; border-radius: 50%; touch-action: none; pointer-events: auto; filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4)); }
+#drive-wheel svg { width: 100%; height: 100%; display: block; }
+.drive-pedals { position: fixed; right: 14px; bottom: calc(18px + var(--safe-b, 0px)); display: flex; gap: 10px; align-items: flex-end; pointer-events: auto; }
+.pedal { touch-action: none; border: 0; border-radius: 14px; color: #fff; font-weight: 900; font-size: 15px; box-shadow: 0 5px 0 rgba(0, 0, 0, 0.35), 0 8px 16px rgba(0, 0, 0, 0.3); display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.pedal small { font-size: 10px; font-weight: 700; opacity: 0.8; }
+.pedal.gas { width: 78px; height: 112px; background: linear-gradient(180deg, #4caf3a, #2e7d22); }
+.pedal.brake { width: 72px; height: 84px; background: linear-gradient(180deg, #d9502f, #a8321b); }
+.pedal.down { transform: translateY(4px) scale(0.97); box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35), 0 4px 10px rgba(0, 0, 0, 0.3); }
+
+/* The job map (a village's jobs as a path climbing the hill, first job at the bottom). */
+#levels.saga-on .card { height: 100%; width: min(460px, 100%); overflow: hidden; }
+.saga { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; border-radius: 16px; position: relative; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; box-shadow: inset 0 0 0 2px #d9c9a0; }
+.saga-map { position: relative; width: 100%;
+  background: var(--bg) center bottom / 100% auto no-repeat,
+    radial-gradient(60% 9% at 18% 22%, rgba(255, 255, 255, 0.10), transparent 70%),
+    radial-gradient(50% 7% at 85% 48%, rgba(0, 0, 0, 0.08), transparent 70%),
+    radial-gradient(55% 8% at 12% 75%, rgba(0, 0, 0, 0.08), transparent 70%),
+    linear-gradient(#cfe3b4 0%, #8fbf63 14%, #6ea64a 45%, #4f8a34 100%); }
+.saga-path { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.saga-path path { fill: none; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.saga-path .road-edge { stroke: #6d4521; stroke-width: 24px; }
+.saga-path .road { stroke: #c9965a; stroke-width: 16px; }
+.saga-path .road-off { stroke: rgba(40, 50, 30, 0.38); stroke-width: 9px; stroke-dasharray: 1 16; }
+/* The village's entrance arch at the foot of the map, where the road starts: its name and the stars won. */
+.saga-sign { position: absolute; bottom: 6px; left: 2%; z-index: 1; width: 52%; max-width: 230px; aspect-ratio: 480 / 231; background: url(./harita/tabela.webp) center / contain no-repeat; filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.35)); pointer-events: none; }
+.saga-sign b, .saga-sign small { position: absolute; left: 22%; right: 22%; text-align: center; color: #fff7e2; text-shadow: 0 2px 0 #5e3a17, 0 0 4px rgba(60, 30, 5, 0.7); white-space: nowrap; }
+.saga-sign b { top: 25%; font-size: clamp(12px, 4vw, 16px); letter-spacing: 0.3px; }
+.saga-sign small { top: 42%; display: flex; justify-content: center; align-items: center; gap: 3px; font-size: 11px; font-weight: 900; }
+.saga-sign small img { width: 14px; height: 14px; }
+
+.saga-node { position: absolute; transform: translate(-50%, -50%); width: 120px; display: flex; flex-direction: column; align-items: center; background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.saga-node:active .sn-disc { transform: scale(0.92); }
+/* A wooden badge, the number (or a padlock) on the wood. */
+.sn-disc { position: relative; width: 74px; height: 74px; display: grid; place-items: center; transition: transform 0.12s; background: url(./harita/rozet.webp) center / contain no-repeat; filter: drop-shadow(0 5px 4px rgba(0, 0, 0, 0.35)); }
+.sn-disc b { position: relative; margin-top: 2%; font-size: 24px; font-weight: 900; color: #fff; text-shadow: 0 2px 0 #5e3a17, 0 0 5px rgba(60, 30, 5, 0.6); }
+.sn-lock { width: 34px; height: 34px; display: block; }
+.sn-stars { display: flex; margin-top: -8px; position: relative; }
+.sn-stars img { width: 21px; height: 21px; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.5)); }
+.sn-stars img:nth-child(2) { translate: 0 4px; }
+.sn-name { margin-top: 3px; font-size: 12px; font-weight: 800; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8), 0 0 6px rgba(0, 0, 0, 0.5); line-height: 1.1; text-align: center; }
+.sn-tag { margin-top: 3px; display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 900; border-radius: 9px; padding: 2px 7px; white-space: nowrap; }
+.sn-tag .ic { width: 12px; height: 12px; }
+.sn-tag.price { width: 128px; aspect-ratio: 360 / 170; justify-content: center; padding: 0 4px 2px 50px; border-radius: 0; background: url(./harita/btn-para.webp) center / contain no-repeat; color: #fff3d0; font-size: 11px; text-shadow: 0 1px 0 #3e2208, 0 0 3px rgba(40, 20, 0, 0.8); filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.35)); margin-top: 0; }
+.sn-tag.wait { background: rgba(255, 247, 226, 0.95); color: #b36b12; }
+
+/* Not open yet: grey and faded, padlocked. */
+.saga-node.locked .sn-disc { background-image: none; }
+.saga-node.locked .sn-disc::before { content: ''; position: absolute; inset: 0; background: url(./harita/rozet.webp) center / contain no-repeat; filter: grayscale(0.9) brightness(0.8); }
+.saga-node.locked .sn-name { opacity: 0.75; }
+/* Grass not grown back yet: a little faded. */
+
+/* The next job: bigger, bobbing, a glow and the worker's pin over it. */
+.saga-node.next { z-index: 2; }
+.saga-node.next .sn-disc { width: 86px; height: 86px; }
+.saga-node.next .sn-disc::after { content: ''; position: absolute; inset: 8%; border-radius: 50%; z-index: -1; animation: sn-glow 1.6s ease-in-out infinite; }
+.saga-node.next .sn-disc b { font-size: 30px; }
+@keyframes sn-glow { 0%, 100% { box-shadow: 0 0 0 4px rgba(255, 214, 90, 0.85), 0 0 18px 6px rgba(255, 200, 60, 0.6); } 50% { box-shadow: 0 0 0 10px rgba(255, 214, 90, 0.25), 0 0 26px 12px rgba(255, 200, 60, 0.3); } }
+.sn-pin { position: absolute; top: -26px; left: calc(50% + 26px); z-index: 3; width: 50px; height: auto; filter: drop-shadow(0 4px 4px rgba(0, 0, 0, 0.4)); animation: sn-bob 1.2s ease-in-out infinite; pointer-events: none; }
+/* A job on the left half: the pin on its left, clear of the path going on to the right. */
+.saga-node.pin-left .sn-pin { left: auto; right: calc(50% + 26px); }
+@keyframes sn-bob { 50% { translate: 0 -7px; } }
+
+/* Just opened: the button pops in. */
+.saga-node.fresh .sn-disc { animation: sn-pop 0.7s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+@keyframes sn-pop { 0% { transform: scale(0.3) rotate(-20deg); filter: grayscale(1); } 60% { filter: none; } 100% { transform: scale(1); } }
+/* The artist's map: its picture fills the map (the picture's own road under the jobs). */
+.saga-map.art { background: var(--bg) center / 100% 100% no-repeat, #2c5124; }
+.saga-mist { position: absolute; left: 0; right: 0; top: 0; pointer-events: none; -webkit-backdrop-filter: grayscale(0.9) brightness(0.8) blur(1px); backdrop-filter: grayscale(0.9) brightness(0.8) blur(1px); background: rgba(225, 230, 220, 0.18); -webkit-mask-image: linear-gradient(to top, transparent, #000 70px); mask-image: linear-gradient(to top, transparent, #000 70px); }
+
+/* The wooden play button (public/harita/btn-oyna.webp): the label on its green board. */
+.btn.art-go { display: flex; align-items: center; width: min(250px, 100%); aspect-ratio: 520 / 248; margin: 0 auto; padding: 4% 8% 0 32%; border-radius: 0; background: url(./harita/btn-oyna.webp) center / contain no-repeat; box-shadow: none; filter: drop-shadow(0 5px 5px rgba(0, 0, 0, 0.3)); transition: transform 0.1s; }
+.btn.art-go span { flex: 1; text-align: center; font-size: 17px; font-weight: 900; color: #fff; line-height: 1.05; text-shadow: 0 2px 0 #1d5a0a, 0 0 4px rgba(0, 40, 0, 0.5); }
+.btn.art-go:active { transform: scale(0.95); }
+.btn.play.art-go { width: min(290px, 100%); background-color: transparent; }
+.btn.play.art-go span { font-size: 20px; }
+
+/* A card on the hazelnut board (public/harita/pano.webp): its corners kept, its middle stretched to fit. */
+.card.pano { border: solid transparent; border-width: 60px 36px 80px; border-image: url(./harita/pano.webp) 200 120 270 fill stretch; border-radius: 0; background: none; box-shadow: none; filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.4)); padding: 6px 8px 0; }
+.card.pano h2 { color: #5e3a17; }
+.card.pano .sub { color: #6a4a28; opacity: 1; }
+.card.pano .btn.ghost { background: rgba(255, 248, 230, 0.75); box-shadow: 0 3px 0 rgba(120, 80, 30, 0.35); }
+.call-card.pano { width: min(340px, 100%); overflow: visible; gap: 0; }
+.call-card.pano .call-name { color: #5e3a17; }
+.call-card.pano .call-place { color: #6a4a28; opacity: 0.9; }
+.call-card.pano .call-bubble { background: rgba(255, 252, 240, 0.92); box-shadow: 0 2px 0 rgba(120, 80, 30, 0.35); font-size: 14px; }
+.card.call-card.pano .btn.ghost { margin-top: 4px; width: auto; padding: 6px 18px; background: none; box-shadow: none; color: #6a4a28; text-decoration: underline; font-size: 14px; }
+
+/* The result's stars (public/harita/yildiz*.webp). */
+.stars img { width: 52px; height: 52px; margin: 0 2px; filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.3)); }
+.stars span:nth-child(2) img { width: 62px; height: 62px; translate: 0 -6px; }

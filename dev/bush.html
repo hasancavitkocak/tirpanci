@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Ocak Önizleme</title>
+    <base href="/" />
+    <style>
+      html, body { margin: 0; background: #fff; font: 13px system-ui; }
+      .row { display: flex; }
+      img { width: 50vw; height: 50vw; object-fit: contain; }
+      canvas { width: 50vw; height: 50vw; }
+    </style>
+  </head>
+  <body>
+    <!-- Dev only: the procedural hazelnut bush next to the reference photo. ?v=variant -->
+    <div class="row"><img src="/assets-src/findik-ocagi-referans.png" /><canvas id="c"></canvas></div>
+    <script type="module">
+      import * as THREE from 'three';
+      import { hazelnutBush, hazelnutTriangles, preloadBushTextures } from '/src/render/hazelnut.ts';
+      const v = Number(new URLSearchParams(location.search).get('v') ?? 0);
+      await preloadBushTextures();
+      const canvas = document.getElementById('c');
+      const r = new THREE.WebGLRenderer({ canvas, antialias: true });
+      r.setSize(canvas.clientWidth, canvas.clientHeight, false);
+      r.setClearColor('#ffffff');
+      r.toneMapping = THREE.ACESFilmicToneMapping;
+      const scene = new THREE.Scene();
+      scene.add(new THREE.HemisphereLight('#dceeff', '#4a5a2a', 1.4));
+      const sun = new THREE.DirectionalLight('#fff3dc', 2.2);
+      sun.position.set(-6, 12, 8);
+      scene.add(sun);
+      const bush = hazelnutBush(v);
+      scene.add(bush);
+      const cam = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
+      cam.position.set(0, 2.2, 9.5);
+      cam.lookAt(0, 1.9, 0);
+      r.render(scene, cam);
+      document.title = `tris ${hazelnutTriangles(v)}`;
+      window.__done = true;
+    </script>
+  </body>
+</html>

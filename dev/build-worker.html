@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <base href="/" />
+    <title>İşçi GLB derleyici</title>
+  </head>
+  <body>
+    <!-- Dev only: merges the Mixamo FBX files (assets-src/isci) into public/models/isci.glb.
+         Run with: node scripts/build-worker.mjs -->
+    <script type="module">
+      import * as THREE from 'three';
+      import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
+      import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
+
+      const fbx = new FBXLoader();
+      const tex = new THREE.TextureLoader();
+      const [idle, walk, base, normal] = await Promise.all([
+        fbx.loadAsync('assets-src/isci/idle.fbx'),
+        fbx.loadAsync('assets-src/isci/walking.fbx'),
+        tex.loadAsync('assets-src/isci/basecolor.jpg'),
+        tex.loadAsync('assets-src/isci/normal.jpg'),
+      ]);
+      base.colorSpace = THREE.SRGBColorSpace;
+      // FBX UVs use the GL convention (flipY textures); GLTFExporter flips such images when writing.
+      // Keep the photos as JPEG inside the GLB.
+      base.userData.mimeType = normal.userData.mimeType = 'image/jpeg';
+      const info = { meshes: [], clips: [] };
+      idle.traverse((o) => {
+        if (!o.isMesh) return;
+        o.material = new THREE.MeshStandardMaterial({ map: base, normalMap: normal, roughness: 0.85, metalness: 0 });
+        info.meshes.push({ name: o.name, skinned: !!o.isSkinnedMesh, verts: o.geometry.attributes.position.count, tris: (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3 });
+      });
+      const idleClip = idle.animations[0];
+      const walkClip = walk.animations[0];
+      idleClip.name = 'Idle';
+      walkClip.name = 'Walk';
+      // Mixamo exports in centimetres: report the size so the game can fit it.
+      const box = new THREE.Box3().setFromObject(idle);
+      info.size = box.getSize(new THREE.Vector3()).toArray();
+      info.clips = [idleClip, walkClip].map((c) => ({ name: c.name, duration: c.duration, tracks: c.tracks.length }));
+      const glb = await new GLTFExporter().parseAsync(idle, { binary: true, animations: [idleClip, walkClip], onlyVisible: true });
+      const bytes = new Uint8Array(glb);
+      let s = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      window.__info = info;
+      window.__glb = btoa(s);
+      window.__done = true;
+    </script>
+  </body>
+</html>

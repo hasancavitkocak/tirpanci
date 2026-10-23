@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <base href="/" />
+    <title>İşçiye klip ekle</title>
+  </head>
+  <body>
+    <!-- Dev only: adds a Mixamo clip (FBX, same rig) to public/models/isci.glb without rebuilding the
+         mesh. ?fbx=assets-src/isci/driving.fbx&name=Drive. Run with: node scripts/add-clip.mjs -->
+    <script type="module">
+      import * as THREE from 'three';
+      import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
+      import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+      import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
+      import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+
+      const q = new URLSearchParams(location.search);
+      const loader = new GLTFLoader();
+      loader.setMeshoptDecoder(MeshoptDecoder);
+      const [gltf, fbx] = await Promise.all([loader.loadAsync('models/isci.glb'), new FBXLoader().loadAsync(q.get('fbx'))]);
+      const clip = fbx.animations[0];
+      clip.name = q.get('name');
+      // Keep only tracks for bones the worker has.
+      const names = new Set();
+      gltf.scene.traverse((o) => names.add(o.name));
+      clip.tracks = clip.tracks.filter((t) => names.has(t.name.split('.')[0]));
+      gltf.scene.traverse((o) => {
+        const m = o.material;
+        if (!m) return;
+        for (const t of [m.map, m.normalMap]) if (t) t.userData.mimeType = 'image/jpeg';
+      });
+      const anims = [...gltf.animations.filter((a) => a.name !== clip.name), clip];
+      const glb = await new GLTFExporter().parseAsync(gltf.scene, { binary: true, animations: anims, onlyVisible: true });
+      const bytes = new Uint8Array(glb);
+      let s = '';
+      for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      window.__info = { clips: anims.map((a) => ({ name: a.name, duration: a.duration, tracks: a.tracks.length })), fbxTracks: fbx.animations[0].tracks.length };
+      window.__glb = btoa(s);
+      window.__done = true;
+    </script>
+  </body>
+</html>

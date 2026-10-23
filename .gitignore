@@ -1,0 +1,11 @@
+node_modules
+dist
+test-output
+android
+ios
+release
+.gradle-home
+.tmp
+
+# raw recordings (the cut sounds are in public/audio)
+assets-src/**/*.mp4

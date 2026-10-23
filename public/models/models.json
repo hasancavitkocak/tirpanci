@@ -1,0 +1,21 @@
+{
+  "trimmer": "tirpan_govde.glb",
+  "handlebar": "tirpan_gidon.glb",
+  "hands": "eller.glb",
+  "worker": "isci.glb",
+  "patpat": "patpat_tum.glb",
+  "patpatTeker": "patpat_kafa_teker.glb",
+  "patpatDireksiyon": "patpat_direksiyon.glb",
+  "shoot": "surgun.glb",
+  "house": "ev.glb",
+  "hut": "yayla.glb",
+  "mosque": "cami.glb",
+  "grave": "mezar.glb",
+  "hive": "kovan.glb",
+  "hen": "tavuk.glb",
+  "snake": "yilan.glb",
+  "hose": "hortum.glb",
+  "backpack": "sirt_motoru.glb",
+  "earmuffs": "kulaklik.glb",
+  "fuelcan": "bidon.glb"
+}

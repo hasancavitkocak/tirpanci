@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Model Görüntüleyici</title>
+    <style>
+      html, body { margin: 0; background: #d9dcd5; font: 13px system-ui; }
+      canvas { display: block; }
+      .lbl { position: fixed; color: #333; font-weight: 700; background: rgba(255,255,255,0.7); padding: 2px 6px; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <!-- Dev only: renders a model from public/models from four sides. ?m=file.glb -->
+    <script type="module">
+      import * as THREE from 'three';
+      import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+      import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+
+      const file = new URLSearchParams(location.search).get('m');
+      const W = innerWidth, H = innerHeight;
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(W, H);
+      renderer.setScissorTest(true);
+      renderer.setClearColor('#e4e6df');
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      document.body.appendChild(renderer.domElement);
+      const scene = new THREE.Scene();
+      scene.add(new THREE.HemisphereLight('#ffffff', '#667755', 1.6));
+      const sun = new THREE.DirectionalLight('#ffffff', 2.2);
+      sun.position.set(2, 4, 3);
+      scene.add(sun);
+      const loader = new GLTFLoader();
+      loader.setMeshoptDecoder(MeshoptDecoder);
+      const gltf = await loader.loadAsync(`/models/${file}`);
+      const obj = gltf.scene;
+      // ?cut=minx,miny,minz,maxx,maxy,maxz removes triangles whose centre lies in that box (preview of a mesh fix).
+      const cut = new URLSearchParams(location.search).get('cut');
+      if (new URLSearchParams(location.search).has('noline')) {
+        const { cutTriangles, isBakedLine } = await import('/src/render/trimmerRig.ts');
+        cutTriangles(obj, isBakedLine, true);
+      }
+      if (cut) {
+        const [a, b, c2, d, e, f] = cut.split(',').map(Number);
+        obj.traverse((o) => {
+          if (!o.isMesh) return;
+          const g = o.geometry;
+          const p = g.getAttribute('position');
+          const idx = g.index.array;
+          const keep = [];
+          for (let i = 0; i < idx.length; i += 3) {
+            let x = 0, y = 0, z = 0;
+            for (let k = 0; k < 3; k++) { x += p.getX(idx[i + k]) / 3; y += p.getY(idx[i + k]) / 3; z += p.getZ(idx[i + k]) / 3; }
+            const inside = x > a && x < d && y > b && y < e && z > c2 && z < f;
+            if (!inside) keep.push(idx[i], idx[i + 1], idx[i + 2]);
+          }
+          console.log('removed', (idx.length - keep.length) / 3, 'triangles');
+          g.setIndex(keep);
+        });
+      }
+      scene.add(obj);
+      const box = new THREE.Box3().setFromObject(obj);
+      const size = box.getSize(new THREE.Vector3());
+      const c = box.getCenter(new THREE.Vector3());
+      scene.add(new THREE.AxesHelper(Math.max(size.x, size.y, size.z) * 0.6));
+      const r = Math.max(size.x, size.y, size.z);
+      // [label, view direction, look-at point (fraction of the box, 0..1 per axis), distance factor]
+      const preset = new URLSearchParams(location.search).get('v');
+      const engine = [
+        ['Motor ön', [0, 0.2, 1], [0.1, 0.5, 0.5], 0.3],
+        ['Motor arka', [0, 0.2, -1], [0.1, 0.5, 0.5], 0.3],
+        ['Motor alttan', [0.2, -1, 0.3], [0.1, 0.3, 0.5], 0.3],
+        ['Motor uçtan (-X)', [-1, 0.3, 0.2], [0.1, 0.5, 0.5], 0.3],
+        ['Motor üstten', [0, 1, 0.01], [0.1, 0.5, 0.5], 0.3],
+        ['Motor çapraz', [-0.7, 0.5, -0.7], [0.1, 0.5, 0.5], 0.3],
+      ];
+      const headV = [
+        ['Kafa önden', [0, 0.3, 1], [0.92, 0.25, 0.5], 0.22],
+        ['Kafa alttan', [0.1, -1, 0.2], [0.92, 0.2, 0.5], 0.22],
+        ['Kafa üstten', [0, 1, 0.01], [0.92, 0.3, 0.5], 0.22],
+        ['Kafa yandan (+X)', [1, 0.2, 0.1], [0.92, 0.25, 0.5], 0.22],
+        ['Kafa çapraz', [0.7, 0.5, 0.8], [0.92, 0.25, 0.5], 0.22],
+        ['Kafa arka çapraz', [-0.5, 0.4, -0.8], [0.92, 0.25, 0.5], 0.22],
+      ];
+      const sideV = [
+        ['Yan (+X)', [1, 0.05, 0], [0.5, 0.5, 0.5], 1.2],
+        ['Yan (-X)', [-1, 0.05, 0], [0.5, 0.5, 0.5], 1.2],
+        ['Üst (+Y)', [0, 1, 0.0001], [0.5, 0.5, 0.5], 1.2],
+        ['Arka (-Z)', [0, 0.3, -1], [0.5, 0.5, 0.5], 1.2],
+        ['Ön yakın', [0.3, 0.5, 1], [0.5, 0.6, 0.75], 0.6],
+        ['Koltuk yakın', [0.8, 0.6, 0.3], [0.5, 0.6, 0.55], 0.5],
+      ];
+      const views = preset === 'side' ? sideV : preset === 'head' ? headV : preset === 'engine' ? engine : [
+        ['Ön (+Z)', [0, 0, 1], [0.5, 0.5, 0.5], 1.15],
+        ['Üst (+Y)', [0, 1, 0.0001], [0.5, 0.5, 0.5], 1.15],
+        ['Çapraz ön', [1, 0.7, 1], [0.5, 0.5, 0.5], 1.1],
+        ['Çapraz arka', [-1, 0.7, -1], [0.5, 0.5, 0.5], 1.1],
+        ['-X ucu yakın', [-0.6, 0.5, 1], [0.1, 0.5, 0.5], 0.4],
+        ['+X ucu yakın', [0.6, 0.5, 1], [0.9, 0.5, 0.5], 0.4],
+      ];
+      const cols = 2, rows = 3;
+      const vw = W / cols, vh = H / rows;
+      views.forEach(([name, d, at, dist], i) => {
+        const x = (i % cols) * vw, y = Math.floor(i / cols) * vh;
+        const cam = new THREE.PerspectiveCamera(35, vw / vh, 0.005, 100);
+        const dir = new THREE.Vector3(...d).normalize();
+        const target = new THREE.Vector3(box.min.x + size.x * at[0], box.min.y + size.y * at[1], box.min.z + size.z * at[2]);
+        cam.position.copy(target).addScaledVector(dir, r * dist);
+        cam.lookAt(target);
+        renderer.setViewport(x, H - y - vh, vw, vh);
+        renderer.setScissor(x, H - y - vh, vw, vh);
+        renderer.render(scene, cam);
+        const l = document.createElement('div');
+        l.className = 'lbl';
+        l.style.left = `${x + 6}px`;
+        l.style.top = `${y + 6}px`;
+        l.textContent = name;
+        document.body.appendChild(l);
+      });
+      const info = document.createElement('div');
+      info.className = 'lbl';
+      info.style.left = '6px';
+      info.style.bottom = '6px';
+      info.textContent = `${file}: ${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)} (x×y×z) · eksen: kırmızı X, yeşil Y, mavi Z`;
+      document.body.appendChild(info);
+      window.__done = true;
+    </script>
+  </body>

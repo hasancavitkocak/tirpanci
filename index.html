@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#3f7a2a" />
+    <meta name="format-detection" content="telephone=no" />
+    <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+    <title>Kral Tırpan</title>
+  </head>
+  <body>
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+      <defs>
+        <symbol id="i-fuel" viewBox="0 0 24 24"><path d="M6 4h7l5 5v11a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><path d="M9 4V2h4"/><path d="M8.5 11.5l5 5M13.5 11.5l-5 5"/></symbol>
+        <symbol id="i-line" viewBox="0 0 24 24"><circle cx="11" cy="12" r="8"/><circle cx="11" cy="12" r="2.5"/><path d="M19 12h4"/></symbol>
+        <symbol id="i-temp" viewBox="0 0 24 24"><path d="M10 4a2 2 0 1 1 4 0v10.3a4 4 0 1 1-4 0z"/><path d="M12 10v7"/><path d="M17 6h3M17 10h3"/></symbol>
+        <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/></symbol>
+        <symbol id="i-bump" viewBox="0 0 24 24"><circle cx="12" cy="8" r="5.5"/><circle cx="12" cy="8" r="1.6"/><path d="M12 15v7M8.5 18.5L12 22l3.5-3.5"/></symbol>
+        <symbol id="i-rethread" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2"/><path d="M4 12c3-1 5-4 8-4M20 12c-3 1-5 4-8 4"/></symbol>
+        <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+        <symbol id="i-camera" viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+        <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7"/></symbol>
+        <symbol id="i-throttle" viewBox="0 0 24 24"><path d="M4 18a8 8 0 1 1 16 0"/><path d="M12 18l4.5-5.5"/><path d="M7 14.5l1 .5M12 9.5V11M17 14.5l-1 .5"/></symbol>
+        <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></symbol>
+        <symbol id="i-pull" viewBox="0 0 24 24"><path d="M5 5h14"/><path d="M12 5v13"/><path d="M8 14.5l4 4 4-4"/></symbol>
+        <symbol id="i-choke" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M6.5 17.5l11-11"/></symbol>
+        <symbol id="i-prime" viewBox="0 0 24 24"><path d="M12 3s6 6.8 6 11a6 6 0 0 1-12 0c0-4.2 6-11 6-11z"/></symbol>
+        <symbol id="i-move" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4M10 4l2-2 2 2M10 20l2 2 2-2M4 10l-2 2 2 2M20 10l2 2-2 2"/></symbol>
+        <symbol id="i-drag" viewBox="0 0 24 24"><path d="M3 12h18M7 8l-4 4 4 4M17 8l4 4-4 4"/></symbol>
+        <symbol id="i-gear" viewBox="0 0 24 24"><path d="M20.9 8.5 L22.7 9.4 L22.7 14.6 L20.9 15.5 L19.8 15.2 L20.8 15.8 L21.4 17.7 L17.7 21.4 L15.8 20.8 L15.2 19.8 L15.5 20.9 L14.6 22.7 L9.4 22.7 L8.5 20.9 L8.8 19.8 L8.2 20.8 L6.3 21.4 L2.6 17.7 L3.2 15.8 L4.2 15.2 L3.1 15.5 L1.3 14.6 L1.3 9.4 L3.1 8.5 L4.2 8.8 L3.2 8.2 L2.6 6.3 L6.3 2.6 L8.2 3.2 L8.8 4.2 L8.5 3.1 L9.4 1.3 L14.6 1.3 L15.5 3.1 L15.2 4.2 L15.8 3.2 L17.7 2.6 L21.4 6.3 L20.8 8.2 L19.8 8.8Z" stroke-linejoin="round"/><circle cx="12" cy="12" r="3.4"/></symbol>
+        <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M12 2.5l7.5 9h-4.5v10h-6v-10H4.5z" fill="currentColor" stroke="none"/></symbol>
+        <symbol id="i-visor" viewBox="0 0 24 24"><path d="M4 9c0-3 3.6-5 8-5s8 2 8 5v4c0 4-3.6 7-8 7s-8-3-8-7z"/><path d="M7 10.5c1.5-1 3.2-1.5 5-1.5"/></symbol>
+        <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></symbol>
+        <symbol id="i-rain" viewBox="0 0 24 24"><path d="M7 15a4.5 4.5 0 1 1 1.2-8.8A5.5 5.5 0 0 1 18.5 8 3.5 3.5 0 0 1 18 15z"/><path d="M8 18l-1 3M12 18l-1 3M16 18l-1 3"/></symbol>
+        <symbol id="i-fog" viewBox="0 0 24 24"><path d="M3 8h13M6 12h15M3 16h14M7 20h10"/></symbol>
+        <symbol id="i-evening" viewBox="0 0 24 24"><path d="M6 16a6 6 0 0 1 12 0"/><path d="M2 16h20M5 20h14M12 4v3M4.6 8.6l2 2M19.4 8.6l-2 2"/></symbol>
+        <symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 12V5.5a1.5 1.5 0 0 1 3 0V11M11 10V4a1.5 1.5 0 0 1 3 0v7M14 10.5V6a1.5 1.5 0 0 1 3 0v8a7 7 0 0 1-7 7h-.5a6 6 0 0 1-4.6-2.2L3.4 16a1.6 1.6 0 0 1 2.4-2L8 16"/></symbol>
+        <symbol id="i-noads" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9.5l4 2.5-4 2.5z"/><path d="M3 3l18 18"/></symbol>
+        <symbol id="i-person" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+        <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 2.8l2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3-4.6-4.4 6.3-.9z" fill="currentColor" stroke="none"/></symbol>
+        <symbol id="i-spool" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="2.5"/><path d="M5 6v12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V6"/><path d="M5.5 10c4 1.6 9 1.6 13 0M5.5 14c4 1.6 9 1.6 13 0"/></symbol>
+        <symbol id="i-tank" viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="15" rx="3"/><path d="M9 6V3h6v3M8 13h8"/></symbol>
+        <symbol id="i-boot" viewBox="0 0 24 24"><path d="M7 3h6v10l6 3a2 2 0 0 1 1 1.8V19H4V3z"/><path d="M4 21h16M6 21v-2M10 21v-2M14 21v-2M18 21v-2"/></symbol>
+        <symbol id="i-engine" viewBox="0 0 24 24"><rect x="6" y="8" width="12" height="11" rx="2"/><path d="M4 10h2M4 13h2M4 16h2M18 10h2M18 13h2M18 16h2M9 8V5h6v3"/></symbol>
+        <symbol id="i-head" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/><path d="M17 12h5M2 12h5"/></symbol>
+        <symbol id="i-ear" viewBox="0 0 24 24"><path d="M5 14V11a7 7 0 0 1 14 0v3"/><rect x="3" y="13" width="4" height="7" rx="2"/><rect x="17" y="13" width="4" height="7" rx="2"/></symbol>
+        <symbol id="i-tractor" viewBox="0 0 24 24"><circle cx="7" cy="17" r="3.5"/><circle cx="18" cy="18" r="2.5"/><path d="M10.5 17h5M3.5 14V8h7l2 6M12.5 14h7v1.5M14 9h4v5"/><path d="M5 8V5h3"/></symbol>
+        <symbol id="i-coffee" viewBox="0 0 24 24"><path d="M5 9h11v5a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5z"/><path d="M16 10h1.5a2.5 2.5 0 0 1 0 5H16"/><path d="M8 3c0 1.5 1 1.5 1 3M12 3c0 1.5 1 1.5 1 3"/></symbol>
+        <symbol id="i-coins" viewBox="0 0 24 24"><ellipse cx="9" cy="7" rx="6" ry="3"/><path d="M3 7v4c0 1.7 2.7 3 6 3s6-1.3 6-3V7"/><path d="M9 14v3c0 1.7 2.7 3 6 3s6-1.3 6-3v-4c0-1.7-2.7-3-6-3"/></symbol>
+        <symbol id="i-map" viewBox="0 0 24 24"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z"/><path d="M9 4v14M15 6v14"/></symbol>
+        <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+        <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+      </defs>
+    </svg>
+    <canvas id="game"></canvas>
+    <canvas id="visor"></canvas>
+    <div id="touch"></div>
+    <div id="stick"><div id="knob"></div></div>
+
+    <section id="loading" class="screen show">
+      <!-- The portrait opening picture (public/acilis.webp) when there is one; else the green screen below. -->
+      <img class="load-art" src="./acilis.webp" alt="" onload="this.parentNode.classList.add('has-art')" onerror="this.remove()" />
+      <div class="load-hills"></div>
+      <img class="load-icon" src="./ikon.webp" alt="" />
+      <h1 class="logo"><img class="logo-img" src="./logo.webp" alt="Kral Tırpan" onload="this.parentNode.classList.add('has-img')" onerror="this.remove()" /><div class="logo-text">KRAL<span>TIRPAN</span></div></h1>
+      <div class="load-bottom">
+        <div class="load-bar"><div id="load-fill"></div></div>
+        <p id="loading-text">Motor ısınıyor…</p>
+        <p id="loading-tip" class="load-tip">İpucu: ocak diplerinde gazı hafiflet, dallara vurma.</p>
+      </div>
+    </section>
+
+    <section id="menu" class="screen">
+      <button id="btn-noads" class="corner-btn"><svg class="ic"><use href="#i-noads"/></svg><span>Reklamsız</span></button>
+      <button id="btn-tasks" class="corner-btn tasks-btn"><svg class="ic"><use href="#i-check"/></svg><span>Görevler</span><b id="tasks-badge" class="corner-badge"></b></button>
+      <button id="btn-starter" class="corner-btn starter-pack"><svg class="ic"><use href="#i-coins"/></svg><span>Başlangıç Paketi</span></button>
+      <div class="menu-top">
+        <h1 class="logo"><img class="logo-img" src="./logo.webp" alt="Kral Tırpan" onload="this.parentNode.classList.add('has-img')" onerror="this.remove()" /><div class="logo-text">KRAL<span>TIRPAN</span></div></h1>
+        <p class="tagline">Fındık bahçesi simülatörü</p>
+        <p id="event-banner" class="event-banner"></p>
+      </div>
+      <div class="menu-bottom">
+        <div class="wallet"><span class="coin"></span><b class="money">0</b> TL</div>
+        <button id="btn-play" class="btn play art-go"><span>BAHÇEYE GİT</span></button>
+        <div class="row">
+          <button id="btn-shop" class="btn ghost">Dükkan</button>
+          <button id="btn-store" class="btn ghost store-btn"><svg class="ic"><use href="#i-coins"/></svg>Mağaza</button>
+          <button id="btn-howto" class="btn ghost">Nasıl?</button>
+          <button id="btn-settings" class="btn ghost icon" aria-label="Ayarlar"><svg class="ic"><use href="#i-gear"/></svg></button>
+        </div>
+      </div>
+    </section>
+
+    <section id="daily" class="screen dim">
+      <div class="card pano">
+        <h2>Günlük Ödül</h2>
+        <p class="sub">Her gün gel, ödül büyüsün!</p>
+        <div id="daily-days" class="daily-days"></div>
+        <div class="daily-amount"><span class="coin"></span><b id="daily-amount">0</b> TL</div>
+        <button id="btn-daily-ad" class="btn ad"><span class="ad-play"><svg class="ic"><use href="#i-play"/></svg></span><span class="ad-text">2 katını al</span><span class="ad-tag">REKLAM</span></button>
+        <button id="btn-daily-take" class="btn ghost">Al</button>
+      </div>
+    </section>
+
+    <section id="noads-offer" class="screen dim">
+      <div class="card offer">
+        <div class="offer-badge"><svg class="ic"><use href="#i-noads"/></svg></div>
+        <h2>Reklamsız Oyna</h2>
+        <ul class="offer-list">
+          <li><svg class="ic"><use href="#i-check"/></svg>Bahçe aralarındaki reklamlar tamamen kalkar</li>
+          <li><svg class="ic"><use href="#i-check"/></svg>Ödüllü reklamlar senin elinde: 2 kat kazanç, benzin, soğutma</li>
+          <li><svg class="ic"><use href="#i-check"/></svg>Tek seferlik ödeme, hep senin</li>
+          <li><svg class="ic"><use href="#i-check"/></svg>Kral Tırpan'ın gelişmesine destek olursun</li>
+        </ul>
+        <div class="offer-price"><b id="offer-price">₺299,99</b><small>tek seferlik</small></div>
+        <button id="btn-offer-buy" class="btn gold">Satın Al</button>
+        <button id="btn-offer-later" class="btn ghost">Belki sonra</button>
+        <button id="btn-offer-restore" class="link-btn">Satın alımları geri yükle</button>
+      </div>
+    </section>
+
+    <section id="call" class="screen dim">
+      <div class="card call-card pano">
+        <div class="call-ring"><div id="call-face" class="call-face"></div></div>
+        <b id="call-name" class="call-name"></b>
+        <small id="call-place" class="call-place"></small>
+        <p id="call-text" class="call-bubble"></p>
+        <div id="call-request" class="call-request"></div>
+        <button id="btn-call-ok" class="btn art-go"><span>Geliyorum!</span></button>
+        <button id="btn-call-no" class="btn ghost">Vazgeç</button>
+      </div>
+    </section>
+
+    <section id="regrow" class="screen dim">
+      <div class="card regrow-card pano">
+        <h2>Ot daha bağlamadı</h2>
+        <p id="regrow-text" class="regrow-text"></p>
+        <button id="btn-regrow-ad" class="btn ad"><span class="ad-play"><svg class="ic"><use href="#i-play"/></svg></span><span class="ad-text">Hemen büyüt</span><span class="ad-tag">REKLAM</span></button>
+        <button id="btn-regrow-other" class="btn ghost">Başka iş seç</button>
+      </div>
+    </section>
+
+    <section id="levels" class="screen dim">
+      <div class="card">
+        <button id="btn-levels-close" class="close-x" aria-label="Kapat"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+        <h2>Bahçe Seç</h2>
+        <div id="level-tabs" class="tabs level-tabs"></div>
+        <div id="level-list" class="level-grid"></div>
+      </div>
+    </section>
+
+    <section id="shop" class="screen dim">
+      <div class="card">
+        <button id="btn-shop-close" class="close-x" aria-label="Kapat"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+        <h2>Dükkan</h2>
+        <div class="wallet"><span class="coin"></span><b class="money">0</b> TL</div>
+        <div id="shop-tabs" class="tabs"></div>
+        <div id="shop-list" class="shop-grid"></div>
+      </div>
+    </section>
+
+    <section id="tasks" class="screen dim">
+      <div class="card">
+        <button id="btn-tasks-close" class="close-x" aria-label="Kapat"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+        <h2>Günlük Görevler</h2>
+        <p class="sub">Her gün yeni görevler. Üçünü de bitir, büyük ödülü al!</p>
+        <div id="task-list" class="task-list"></div>
+      </div>
+    </section>
+
+    <div id="confirm" class="confirm">
+      <div class="card pano">
+        <h2 id="confirm-title">Satın al</h2>
+        <p id="confirm-text" class="sub"></p>
+        <div class="confirm-row">
+          <button id="btn-confirm-no" class="btn ghost">Vazgeç</button>
+          <button id="btn-confirm-yes" class="btn">Satın Al</button>
+        </div>
+      </div>
+    </div>
+
+    <section id="store" class="screen dim">
+      <div class="card">
+        <button id="btn-store-close" class="close-x" aria-label="Kapat"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+        <h2>Mağaza</h2>
+        <div class="wallet"><span class="coin"></span><b class="money">0</b> TL</div>
+        <div id="store-list" class="shop-grid"></div>
+        <button id="btn-store-restore" class="btn ghost">Satın Alımları Geri Yükle</button>
+      </div>
+    </section>
+
+    <section id="howto" class="screen dim">
+      <div class="card">
+        <h2>Nasıl Oynanır?</h2>
+        <ul class="howto">
+          <li><b>İşe git:</b> evin yanındaki patpata bin, yolu takip edip tarlaya sür. İn, tırpanı kasadan al, misinayı tak. Tarlanın yeri HARİTA'da işaretli.</li>
+          <li><b>Motoru çalıştır:</b> POMPA'ya 3 kez bas, motor soğuksa JİKLE'yi çek, ipi sertçe aşağı çek. Motor öksürünce jikleyi bırak, bir daha çek. Jikleyi açık unutursan motor boğulur!</li>
+          <li><b>Ekrana bas:</b> motor gaz alır, misina keser. <b>Basılı tutup sürükle:</b> o yöne yürürsün. <b>İkinci parmakla sürükle:</b> etrafa bakarsın, misina baktığın yeri keser. Göz tuşu kamerayı değiştirir.</li>
+          <li><b>STOP</b> motoru durdurur. Uzun süre ağır işte motor ısınır; hararet yaparsa soğumasını bekle.</li>
+          <li><b>Taşlara dikkat:</b> taşın tepesi otun arasından görünür, etrafındaki ot seyrektir. Misina yaklaşınca <b>tık tık</b> ses ve kıvılcım uyarır. Vurduğun taşın üstünde kırmızı <b>!</b> kalır. Taşa vurursan misina kısalır, kopabilir: motoru durdur, <b>MİSİNA TAK</b>'a basılı tut.</li>
+          <li><b>Fındık ocağının</b> dallarına vurursan ağaca zarar verirsin, ücretinden kesilir. Ocak diplerinde gazı hafiflet!</li>
+          <li>Benzin ya da misina biterse <b>sarı halkaya</b> (bidonun yanına) git. Benzin ve misina parası ücretten düşülür.</li>
+          <li>Bahçenin <b>%90'ını</b> biçince işi bitirip paranı alabilirsin. Ne kadar temiz ve hızlı, o kadar çok para ve yıldız.</li>
+          <li><b>Otlar yeniden uzar:</b> biçtiğin tarlanın otu gerçek zamanda büyür, bitince yine iş verir. Beklemek istemezsen reklam izleyip hemen büyütebilir ya da başka iş seçebilirsin.</li>
+          <li><b>İlanlar:</b> komşular bahçeleri için ilan verir; İlanlar sekmesinden alıp ekstra para kazan.</li>
+          <li><b>Günlük görevler:</b> her gün 3 yeni görev çıkar. Ödülleri Görevler'den al, üçünü de bitirirsen büyük ödül var.</li>
+          <li><b>Kilitli tarlalar:</b> kapısında zincir ve kilit olur. Önceki işi bitirince açılır ya da kapısına gidip <b>BÖLÜMÜ AÇ</b> ile parayla hemen açabilirsin.</li>
+          <li><b>Dükkan</b> (menüde ya da evin yanında): tırpan, misina, donanım, patpat boyası, avlu süsleri. <b>Mağaza:</b> para paketleri ve reklamsız oyun.</li>
+        </ul>
+        <button id="btn-howto-close" class="btn">Anladım</button>
+      </div>
+    </section>
+
+    <section id="settings" class="screen dim">
+      <div class="card settings">
+        <h2>Ayarlar</h2>
+        <label class="setting"><span>Ses</span><input id="set-sfx" type="range" min="0" max="100" step="5" /></label>
+        <label class="setting"><span>Titreşim</span><input id="set-vibration" type="checkbox" class="switch" /></label>
+        <div class="setting column">
+          <span>Grafik kalitesi</span>
+          <div id="set-quality" class="segmented">
+            <button data-q="low">Düşük</button>
+            <button data-q="medium">Orta</button>
+            <button data-q="high">Yüksek</button>
+          </div>
+          <small>Kalite değişikliği bir sonraki bahçede uygulanır.</small>
+        </div>
+        <div class="setting column">
+          <span>Hava durumu</span>
+          <div id="set-weather" class="segmented">
+            <button data-w="auto">Bölüme göre</button>
+            <button data-w="sunny" aria-label="Güneşli"><svg class="ic"><use href="#i-sun"/></svg></button>
+            <button data-w="rain" aria-label="Yağmurlu"><svg class="ic"><use href="#i-rain"/></svg></button>
+            <button data-w="fog" aria-label="Sisli"><svg class="ic"><use href="#i-fog"/></svg></button>
+          </div>
+          <small>Yağmurda ıslak ot ağır biçilir; siste uzağı göremezsin.</small>
+        </div>
+        <button id="btn-restore" class="btn ghost">Satın Alımları Geri Yükle</button>
+        <button id="btn-reset" class="btn ghost danger">İlerlemeyi Sıfırla</button>
+        <button id="btn-settings-close" class="btn">Tamam</button>
+      </div>
+    </section>
+
+    <section id="hud" class="screen">
+      <!-- Driving the pat pat: the steering wheel (bottom left) and the pedals (bottom right). -->
+      <div id="drive-ui">
+        <div id="drive-wheel"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="44" fill="none" stroke="#1d1d1f" stroke-width="9"/><circle cx="50" cy="50" r="44" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="2"/><path d="M50 50L12 58M50 50L88 58M50 50V92" stroke="#2a2a2c" stroke-width="8" stroke-linecap="round"/><circle cx="50" cy="50" r="12" fill="#2f62b0" stroke="#1d1d1f" stroke-width="3"/><rect x="45" y="4" width="10" height="9" rx="2" fill="#f2c12e"/></svg></div>
+        <div class="drive-pedals">
+          <button id="pedal-brake" class="pedal brake">FREN<small>geri</small></button>
+          <button id="pedal-gas" class="pedal gas">GAZ</button>
+        </div>
+      </div>
+      <div class="hud-top">
+        <canvas id="minimap" width="96" height="96"></canvas>
+        <div class="hud-mid">
+          <div class="progress"><div id="progress-fill"></div><div class="progress-goal"></div><b id="progress-text">%0</b></div>
+          <div class="gauges">
+            <div class="gauge fuel" title="Benzin"><svg class="ic"><use href="#i-fuel"/></svg><div class="bar"><div id="fuel-fill"></div></div></div>
+            <div class="gauge line" title="Misina"><svg class="ic"><use href="#i-line"/></svg><div class="bar"><div id="line-fill"></div></div><small id="spool-text"></small></div>
+            <div class="gauge temp" title="Motor sıcaklığı"><svg class="ic"><use href="#i-temp"/></svg><div class="bar"><div id="temp-fill"></div></div></div>
+          </div>
+          <div class="hud-info"><span id="hud-time">0:00</span> · <span id="hud-knocks">0</span> <span id="hud-knock-name">ocak darbesi</span></div>
+          <div id="request-chip" class="request-chip"></div>
+        </div>
+        <div class="hud-btns">
+          <button id="btn-pause" class="icon-btn" aria-label="Mola"><svg class="ic"><use href="#i-pause"/></svg></button>
+          <button id="btn-cam" class="icon-btn" aria-label="Kamerayı değiştir"><svg class="ic"><use href="#i-camera"/></svg></button>
+          <button id="btn-map" class="icon-btn" aria-label="Harita"><svg class="ic"><use href="#i-map"/></svg></button>
+        </div>
+      </div>
+      <div id="objective" class="objective"></div>
+      <div id="toasts"></div>
+      <div id="actions" class="actions"></div>
+      <div id="guide" class="guide"><svg class="ic arrow" id="guide-arrow"><use href="#i-arrow"/></svg><span id="guide-text"></span></div>
+      <button id="btn-finish" class="btn finish"><svg class="ic"><use href="#i-check"/></svg> İŞİ BİTİR</button>
+
+      <div id="overheat" class="overheat">
+        <div class="oh-title"><svg class="ic"><use href="#i-temp"/></svg> Motor hararet yaptı</div>
+        <div class="oh-bar"><div id="oh-fill"></div></div>
+        <p id="oh-text">Soğuması bekleniyor…</p>
+        <button id="btn-ad-cool" class="btn ad"><span class="ad-play"><svg class="ic"><use href="#i-play"/></svg></span><span class="ad-text">Hemen soğut</span><span class="ad-tag">REKLAM</span></button>
+      </div>
+
+      <div id="fuel-out" class="overheat fuel-out">
+        <div class="oh-title"><svg class="ic"><use href="#i-fuel"/></svg> Benzin bitti</div>
+        <p>Bidona yürü ya da reklam izle, depo hemen dolsun.</p>
+        <button id="btn-ad-fuel" class="btn ad"><span class="ad-play"><svg class="ic"><use href="#i-play"/></svg></span><span class="ad-text">Depoyu doldur</span><span class="ad-tag">REKLAM</span></button>
+      </div>
+      <div id="sting-flash"></div>
+
+      <button id="btn-rethread" class="rethread" aria-label="Misina tak (basılı tut)">
+        <span class="ring"></span>
+        <svg class="ic"><use href="#i-rethread"/></svg>
+        <span class="lbl"><span id="rethread-label">MİSİNA TAK</span><small>basılı tut</small></span>
+      </button>
+
+      <div id="starter" class="starter">
+        <p id="starter-hint" class="hint"></p>
+        <div class="starter-row">
+          <div class="st-col">
+            <button id="btn-prime" class="st-btn prime" aria-label="Pompa">
+              <span class="bulb"><i id="bulb-fill"></i><svg class="ic"><use href="#i-prime"/></svg></span>
+            </button>
+            <small>POMPA</small>
+          </div>
+          <div class="st-col">
+            <button id="btn-choke" class="st-btn choke" aria-label="Jikle">
+              <span class="choke-plate">
+                <span class="marks"><b>ÇALIŞ</b><svg class="ic sym"><use href="#i-choke"/></svg></span>
+                <span class="slot"><span class="knob"></span></span>
+              </span>
+            </button>
+            <small id="choke-text">JİKLE</small>
+          </div>
+          <div class="st-col">
+            <div id="cord" class="cord">
+              <div class="cord-housing"></div>
+              <div id="rope" class="rope"></div>
+              <div id="cord-handle" class="handle"><svg class="ic"><use href="#i-pull"/></svg></div>
+              <div class="cord-guide"></div>
+            </div>
+            <small>İPİ ÇEK</small>
+          </div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <div class="ctl-row">
+          <button id="btn-bump" class="ctl-btn"><svg class="ic"><use href="#i-bump"/></svg><span>MİSİNA</span></button>
+          <button id="btn-visor" class="ctl-btn visor"><svg class="ic"><use href="#i-visor"/></svg><span>SİPERLİK</span></button>
+          <button id="btn-stop" class="ctl-btn stop"><svg class="ic"><use href="#i-power"/></svg><span>STOP</span></button>
+        </div>
+        <div id="pad" class="pad">
+          <div class="pad-arc"><span class="pad-dot"></span></div>
+          <div class="pad-label"><svg class="ic"><use href="#i-throttle"/></svg>GAZ</div>
+          <div class="pad-tach"><i></i></div>
+          <small class="pad-hint">bas · sağa sola kaydır</small>
+        </div>
+      </div>
+
+      <div id="tutorial" class="tutorial">
+        <div id="tut-left"><svg class="ic"><use href="#i-move"/></svg> Sürükle: yürü / dön</div>
+        <div id="tut-right">Sürükle: etrafa bak <svg class="ic"><use href="#i-drag"/></svg></div>
+      </div>
+    </section>
+
+    <section id="ad" class="screen dim">
+      <div class="card ad-card">
+        <small class="ad-tag">REKLAM · deneme</small>
+        <div class="ad-box">Reklam alanı</div>
+        <div class="oh-bar"><div id="ad-fill"></div></div>
+        <p id="ad-text"></p>
+      </div>
+    </section>
+
+    <section id="map" class="screen dim">
+      <div class="card map-card">
+        <h2 id="map-title" class="map-title">Yeşilyamaç Köyü</h2>
+        <canvas id="map-canvas"></canvas>
+        <div class="map-legend"><span><i class="lg-you"></i>Sen</span><span><i class="lg-pat"></i>Patpat</span><span><i class="lg-job"></i>Bugünkü iş</span><span><i class="lg-lock"></i>Kilitli</span></div>
+        <button id="btn-map-close" class="btn">Kapat</button>
+      </div>
+    </section>
+
+    <section id="pause" class="screen dim">
+      <div class="card">
+        <h2>Çay Molası</h2>
+        <button id="btn-resume" class="btn">Devam Et</button>
+        <button id="btn-pause-settings" class="btn ghost">Ayarlar</button>
+        <button id="btn-restart" class="btn ghost">Baştan Başla</button>
+        <button id="btn-quit" class="btn ghost">Ana Menü</button>
+      </div>
+    </section>
+
+    <section id="result" class="screen dim">
+      <div class="card pano">
+        <h2 id="result-title"></h2>
+        <div id="result-stars" class="stars"></div>
+        <table id="result-table"></table>
+        <button id="btn-ad-double" class="btn ad"><span class="ad-play"><svg class="ic"><use href="#i-play"/></svg></span><span class="ad-text" id="ad-double-text">2 katını al</span><span class="ad-tag">REKLAM</span></button>
+        <button id="btn-next" class="btn">Sonraki Bahçe</button>
+        <button id="btn-again" class="btn ghost">Tekrar</button>
+        <button id="btn-menu" class="btn ghost">Ana Menü</button>
+      </div>
+    </section>
+
+    <script type="module" src="./src/main.ts"></script>
+  </body>
+</html>
