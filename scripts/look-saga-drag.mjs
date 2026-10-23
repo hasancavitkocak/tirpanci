@@ -1,0 +1,30 @@
+// Dev: the job map dragged with the mouse (no scroll bar), and Karadere's map.
+import puppeteer from 'puppeteer-core';
+import { findChrome } from './chrome.mjs';
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const browser = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const page = await browser.newPage();
+await page.setViewport({ width: 400, height: 760 });
+page.on('pageerror', (e) => console.log('pageerror', e.message));
+await page.goto('http://localhost:5173/?quality=low', { timeout: 120000 });
+await page.waitForFunction('window.__ready === true', { timeout: 120000 });
+await page.evaluate(() => {
+  document.getElementById('daily')?.classList.remove('show');
+  const g = window.__game;
+  g.levelTab = 2;
+  g.openLevels();
+});
+await sleep(2500);
+const top = () => page.evaluate(() => document.getElementById('level-list').scrollTop);
+const before = await top();
+await page.mouse.move(200, 300);
+await page.mouse.down();
+await page.mouse.move(200, 400, { steps: 5 });
+await page.mouse.move(200, 500, { steps: 5 });
+await page.mouse.up();
+await sleep(800);
+console.log('scrollTop before', before, 'after drag down', await top());
+const screen = await page.evaluate(() => document.querySelector('.screen.show')?.id);
+console.log('screen after drag (should still be levels):', screen);
+await page.screenshot({ path: 'test-output/saga-2.png' });
+await browser.close();

@@ -202,7 +202,7 @@ body.driving #drive-ui { display: block; }
 
 /* The job map (a village's jobs as a path climbing the hill, first job at the bottom). */
 #levels.saga-on .card { height: 100%; width: min(460px, 100%); overflow: hidden; }
-.saga { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; border-radius: 16px; position: relative; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; box-shadow: inset 0 0 0 2px #d9c9a0; }
+.saga { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; cursor: grab; user-select: none; -webkit-user-select: none; border-radius: 16px; position: relative; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; box-shadow: inset 0 0 0 2px #d9c9a0; }
 .saga-map { position: relative; width: 100%;
   background: var(--bg) center bottom / 100% auto no-repeat,
     radial-gradient(60% 9% at 18% 22%, rgba(255, 255, 255, 0.10), transparent 70%),
@@ -256,6 +256,10 @@ body.driving #drive-ui { display: block; }
 /* Just opened: the button pops in. */
 .saga-node.fresh .sn-disc { animation: sn-pop 0.7s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
 @keyframes sn-pop { 0% { transform: scale(0.3) rotate(-20deg); filter: grayscale(1); } 60% { filter: none; } 100% { transform: scale(1); } }
+/* No scroll bar: the map is dragged. */
+.saga::-webkit-scrollbar { display: none; }
+.saga:active { cursor: grabbing; }
+.saga img { -webkit-user-drag: none; }
 /* The artist's map: its picture fills the map (the picture's own road under the jobs). */
 .saga-map.art { background: var(--bg) center / 100% 100% no-repeat, #2c5124; }
 .saga-mist { position: absolute; left: 0; right: 0; top: 0; pointer-events: none; -webkit-backdrop-filter: grayscale(0.9) brightness(0.8) blur(1px); backdrop-filter: grayscale(0.9) brightness(0.8) blur(1px); background: rgba(225, 230, 220, 0.18); -webkit-mask-image: linear-gradient(to top, transparent, #000 70px); mask-image: linear-gradient(to top, transparent, #000 70px); }

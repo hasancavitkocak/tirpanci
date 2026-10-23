@@ -521,7 +521,7 @@ export class Field {
     return { x, z, yaw: Math.atan2(gx - x, gz - z) };
   }
 
-  /** The fence round the yard with its gate where the trunk leaves, the haystacks and the woodpile. */
+  /** The fence round the yard with its gate where the trunk leaves, and the woodpile. */
   private buildYard(): void {
     const p = this.plateau;
     const R = p.r - 0.4;
@@ -550,11 +550,7 @@ export class Field {
     const first = this.yardWalls[0];
     const last = this.yardWalls[this.yardWalls.length - 1];
     this.yardGate = { ax: last.bx, az: last.bz, bx: first.ax, bz: first.az };
-    // Haystacks across the yard from the gate, the woodpile against the house's side.
-    for (const [da, r] of [[2.5, 1.15], [2.9, 1.0]] as const) {
-      const a = gate + da;
-      this.yardProps.push({ x: p.x + Math.cos(a) * (R - 2.2), z: p.z + Math.sin(a) * (R - 2.2), r, kind: 'hay' });
-    }
+    // The woodpile against the house's side (no haystacks: they stood in the house).
     this.yardProps.push({ x: this.house.x + 0.6, z: this.house.z + 3.7, r: 0.8, kind: 'wood' });
     // Two old posts either side of the way into this field.
     if (this.level.theme !== 'mezarlik') for (const s of [-1, 1]) this.yardProps.push({ x: this.entryX + s * 2.6, z: this.depth / 2 + 1.2, r: 0.12, kind: 'post' });

@@ -132,7 +132,8 @@ body.playing #touch { display: block; }
 .call-face img.ok { opacity: 1; }
 .call-place .ic { width: 16px; height: 16px; vertical-align: -3px; }
 .stars .star { width: 44px; height: 44px; }
-.corner-btn { display: inline-flex; align-items: center; gap: 6px; }
+/* Above the logo, which reaches up under them on small screens. */
+.corner-btn { display: inline-flex; align-items: center; gap: 6px; z-index: 2; }
 .corner-btn .ic { width: 16px; height: 16px; }
 #set-weather .ic { width: 20px; height: 20px; vertical-align: -4px; }
 @keyframes ring { 0%, 100% { box-shadow: 0 0 0 0 rgba(63, 122, 42, 0.45); } 50% { box-shadow: 0 0 0 14px rgba(63, 122, 42, 0); } }

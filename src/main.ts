@@ -612,6 +612,52 @@ class Game {
     list.scrollTop = Math.max(0, (focus / 100) * list.firstElementChild!.clientHeight - list.clientHeight * 0.55);
   }
 
+  /**
+   * The job map is moved by dragging it, like a page on the phone: fingers do that already; this gives
+   * the mouse the same (with a little glide after letting go), and a drag does not count as a tap.
+   */
+  private dragToScroll(el: HTMLElement): void {
+    let startY = 0, startTop = 0, lastY = 0, lastT = 0, speed = 0, moved = false, down = false, glide = 0;
+    el.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'mouse' || !el.classList.contains('saga')) return;
+      cancelAnimationFrame(glide);
+      down = true;
+      moved = false;
+      startY = lastY = e.clientY;
+      startTop = el.scrollTop;
+      lastT = performance.now();
+      speed = 0;
+    });
+    window.addEventListener('pointermove', (e) => {
+      if (!down) return;
+      if (Math.abs(e.clientY - startY) > 6) moved = true;
+      el.scrollTop = startTop - (e.clientY - startY);
+      const now = performance.now();
+      speed = (lastY - e.clientY) / Math.max(1, now - lastT);
+      lastY = e.clientY;
+      lastT = now;
+    });
+    window.addEventListener('pointerup', () => {
+      if (!down) return;
+      down = false;
+      let v = speed * 16;
+      const step = () => {
+        if (Math.abs(v) < 0.5) return;
+        el.scrollTop += v;
+        v *= 0.93;
+        glide = requestAnimationFrame(step);
+      };
+      step();
+    });
+    el.addEventListener('click', (e) => {
+      if (moved) {
+        e.stopPropagation();
+        e.preventDefault();
+        moved = false;
+      }
+    }, true);
+  }
+
   /** The highest job open when the map was last drawn: a job opened since gets its opening shown. */
   private sagaSeen = 0;
 
@@ -1096,6 +1142,7 @@ class Game {
         fn();
       });
     on('btn-play', () => this.openLevels());
+    this.dragToScroll($('level-list'));
     on('btn-noads', () => void this.openNoAds());
     on('btn-starter', () => this.openStore());
     on('btn-tasks', () => this.openTasks());
