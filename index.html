@@ -1,6 +1,9 @@
 <!doctype html>
 <html lang="tr">
   <head>
+    <!-- The very first frame, before any stylesheet: see-through (in the app the launch picture, the
+         loading screen's own, shows under it). -->
+    <style>html, body { background: transparent; }</style>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#3f7a2a" />
@@ -61,7 +64,7 @@
 
     <section id="loading" class="screen show">
       <!-- The portrait opening picture (public/acilis.webp) when there is one; else the green screen below. -->
-      <img class="load-art" src="./acilis.webp" alt="" onload="this.parentNode.classList.add('has-art')" onerror="this.remove()" />
+      <img class="load-art" src="./acilis.webp" alt="" onload="this.parentNode.classList.add('has-art')" onerror="this.parentNode.classList.add('no-art'); this.remove()" />
       <div class="load-hills"></div>
       <img class="load-icon" src="./ikon.webp" alt="" />
       <h1 class="logo"><img class="logo-img" src="./logo.webp" alt="Kral Tırpan" onload="this.parentNode.classList.add('has-img')" onerror="this.remove()" /><div class="logo-text">KRAL<span>TIRPAN</span></div></h1>
@@ -250,9 +253,9 @@
         <div class="hud-mid">
           <div class="progress"><div id="progress-fill"></div><div class="progress-goal"></div><b id="progress-text">%0</b></div>
           <div class="gauges">
-            <div class="gauge fuel" title="Benzin"><svg class="ic"><use href="#i-fuel"/></svg><div class="bar"><div id="fuel-fill"></div></div></div>
-            <div class="gauge line" title="Misina"><svg class="ic"><use href="#i-line"/></svg><div class="bar"><div id="line-fill"></div></div><small id="spool-text"></small></div>
-            <div class="gauge temp" title="Motor sıcaklığı"><svg class="ic"><use href="#i-temp"/></svg><div class="bar"><div id="temp-fill"></div></div></div>
+            <div class="gauge fuel" title="Benzin"><i class="gi"></i><div class="bar"><div id="fuel-fill"></div></div></div>
+            <div class="gauge line" title="Misina"><i class="gi"></i><div class="bar"><div id="line-fill"></div></div><small id="spool-text"></small></div>
+            <div class="gauge temp" title="Motor sıcaklığı"><i class="gi"></i><div class="bar"><div id="temp-fill"></div></div></div>
           </div>
           <div class="hud-info"><span id="hud-time">0:00</span> · <span id="hud-knocks">0</span> <span id="hud-knock-name">ocak darbesi</span></div>
           <div id="request-chip" class="request-chip"></div>
@@ -294,16 +297,13 @@
         <div class="starter-row">
           <div class="st-col">
             <button id="btn-prime" class="st-btn prime" aria-label="Pompa">
-              <span class="bulb"><i id="bulb-fill"></i><svg class="ic"><use href="#i-prime"/></svg></span>
+              <span class="bulb"><i id="bulb-fill"></i></span>
             </button>
             <small>POMPA</small>
           </div>
           <div class="st-col">
             <button id="btn-choke" class="st-btn choke" aria-label="Jikle">
-              <span class="choke-plate">
-                <span class="marks"><b>ÇALIŞ</b><svg class="ic sym"><use href="#i-choke"/></svg></span>
-                <span class="slot"><span class="knob"></span></span>
-              </span>
+              <span class="choke-plate"></span>
             </button>
             <small id="choke-text">JİKLE</small>
           </div>
@@ -311,7 +311,7 @@
             <div id="cord" class="cord">
               <div class="cord-housing"></div>
               <div id="rope" class="rope"></div>
-              <div id="cord-handle" class="handle"><svg class="ic"><use href="#i-pull"/></svg></div>
+              <div id="cord-handle" class="handle"></div>
               <div class="cord-guide"></div>
             </div>
             <small>İPİ ÇEK</small>
@@ -335,7 +335,7 @@
 
       <!-- The throttle trigger (right thumb), like a pedal: the longer it is held the more gas (full in two
            seconds), let go = idle. -->
-      <div id="gas-btn" class="gas-btn" aria-label="Gaz"><svg class="gb-ring" viewBox="0 0 100 100"><circle cx="50" cy="50" r="44"/><circle class="gb-fill" cx="50" cy="50" r="44"/></svg><div class="gb-face"><svg class="ic"><use href="#i-throttle"/></svg><b>GAZ</b></div></div>
+      <div id="gas-btn" class="gas-btn" aria-label="Gaz"><span class="gb-meter"><i></i></span><span class="gb-grip"></span><b class="gb-label">GAZ</b></div>
 
       <div id="tutorial" class="tutorial">
         <div id="tut-left"><svg class="ic"><use href="#i-move"/></svg> Sürükle: yürü / dön</div>

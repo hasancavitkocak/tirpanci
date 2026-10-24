@@ -82,6 +82,12 @@ function picture(files: string[], fallback: string): string {
   return `${icon(fallback, 'ic pic-icon')}<img src="./textures/${first}" alt="" onload="this.classList.add('ok')" onerror="${next}">`;
 }
 
+/**
+ * How far the starter's handle may be pulled, px (the cord on screen: see .cord in hud.css). A full,
+ * fast pull is 87 % of it in about 290 ms: the same pull as ever, scaled with the panel.
+ */
+const PULL_PX = 108;
+
 /** Shop pictures in public/textures (shop-<id>.webp), preloaded at start. */
 const SHOP_PICTURES = ['patpat', 'traktor', 'romork', 'emektar', 'usta', 'sirt', 'yuvarlak', 'koseli', 'burgulu', 'kulaklik', 'siperlik', 'depo', 'kalin', 'kafa', 'motor', 'cizme'];
 
@@ -89,8 +95,9 @@ const SHOP_PICTURES = ['patpat', 'traktor', 'romork', 'emektar', 'usta', 'sirt',
 const UNLOCK_ALL = true;
 /** Development: ?tirpan in the address starts jobs in the field, trimmer in hand (no pat pat ride). */
 const DEV_TRIMMER = new URLSearchParams(location.search).has('tirpan');
-/** Development build only: the purse never runs below this (never in a release build). */
+/** Development: the purse never runs below this, in the browser and in the test APK (DEV_MONEY_ON). Set DEV_MONEY_ON to false before release. */
 const DEV_MONEY = 9_999_999;
+const DEV_MONEY_ON = true;
 
 class Game {
   mode: Mode = 'loading';
@@ -137,7 +144,7 @@ class Game {
     // The starter pack is offered for the first days from here.
     this.save.firstPlay ??= Date.now();
     // Development build only: money without end, to try everything in the shop.
-    if (import.meta.env.DEV) this.save.money = Math.max(this.save.money, DEV_MONEY);
+    if (import.meta.env.DEV || DEV_MONEY_ON) this.save.money = Math.max(this.save.money, DEV_MONEY);
     setVibration(this.save.vibration);
     this.audio.setVolume(this.save.sfxVolume);
     setAdsRemoved(this.save.noAds);
@@ -521,6 +528,11 @@ class Game {
   }
 
   private updateMoney(): void {
+    // (Never running out while testing: topped up again when it runs low.)
+    if ((import.meta.env.DEV || DEV_MONEY_ON) && this.save.money < DEV_MONEY / 10) {
+      this.save.money = DEV_MONEY;
+      void writeSave(this.save);
+    }
     document.querySelectorAll('.money').forEach((e) => (e.textContent = this.save.money.toLocaleString('tr-TR')));
   }
 
@@ -1377,7 +1389,7 @@ class Game {
     });
     handle.addEventListener('pointermove', (e) => {
       if (e.pointerId !== id) return;
-      const d = Math.max(0, Math.min(150, e.clientY - y0));
+      const d = Math.max(0, Math.min(PULL_PX, e.clientY - y0));
       // Speed is measured from when the cord starts moving, so holding the handle first is fine.
       if (max < 4 && d < 4) t0 = performance.now();
       if (d > max) {
@@ -1390,9 +1402,9 @@ class Game {
       if (e.pointerId !== id) return;
       id = null;
       // A real pull is long and fast: strength = length x speed.
-      const len = max / 130;
+      const len = max / (PULL_PX * 0.87);
       const speed = max / Math.max(1, tMax - t0); // px per ms
-      const strength = Math.min(1, len) * Math.max(0.3, Math.min(1, speed / 0.45));
+      const strength = Math.min(1, len) * Math.max(0.3, Math.min(1, speed / (PULL_PX * 0.003)));
       handle.style.transition = 'transform 0.18s ease-out';
       rope.style.transition = 'height 0.18s ease-out';
       set(0);
@@ -1545,7 +1557,9 @@ class Game {
     document.body.classList.toggle('engine-off', off);
     if (!s || !off) return;
     const st = s.starter;
-    $('bulb-fill').style.height = `${Math.min(1, st.primes / PRIMES_NEEDED) * 100}%`;
+    // (The bulb's lower third is its base: the dome above it fills, a third with each press.)
+    const primed = Math.min(1, st.primes / PRIMES_NEEDED);
+    $('bulb-fill').style.height = `${primed > 0 ? 35 + primed * 65 : 0}%`;
     $('btn-choke').classList.toggle('on', st.choke);
     $('choke-text').textContent = st.choke ? 'JİKLE ÇEKİLİ' : 'JİKLE';
     let hint: string;

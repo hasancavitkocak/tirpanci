@@ -10,8 +10,8 @@ import { PatpatEngine, TRACTOR_FILES } from './patpatEngine';
 import { DieselEngine } from './diesel';
 import { Bed, Kit, Surface, Tractor, beeBed, cluck, dog, ezan, farBus, hoseCut, rainBed, snakeHiss, splash, sprayBed, step, sting, thunder, trafficBed } from './village';
 
-/** The trimmer engine's loudness (a notch under where it was first set). */
-const ENGINE_LEVEL = 0.8;
+/** The trimmer engine's loudness: a notch over the tractor's (measured: tractor full -18 dB, trimmer -17). */
+const ENGINE_LEVEL = 0.56;
 /** Loudness of the grass-cutting swish relative to the engine. */
 const CUT_VOLUME = 1.6;
 
@@ -538,7 +538,7 @@ export class GameAudio {
       e.whine.gain.setTargetAtTime(e.rec ? 0 : r * r * 0.11, t, 0.05);
       // Swelling and easing off with the grass cut (no sudden starts); fuller and lower in tall grass.
       // Coming in quickly and dying away a little slower than it came (it does not stop dead between swings).
-      const sw = CUT_VOLUME * (2.0 * cutting * r + 0.25 * load * r) * (1 + tall * 0.3);
+      const sw = CUT_VOLUME * (1.5 * cutting * r + 0.2 * load * r) * (1 + tall * 0.3);
       e.swish.gain.setTargetAtTime(sw, t, sw > e.swish.gain.value ? 0.08 : 0.3);
       e.strands.frequency.setTargetAtTime(90 + r * 150, t, 0.05);
       // Misfires while lugging: the output drops out for a moment with a wet pop.
@@ -808,7 +808,7 @@ interface EngineNodes {
  */
 /** The trimmer's engine is the recording (?tirpanses=sentez: the drawn one, to compare). */
 const TRIMMER_RECORDED = typeof location === 'undefined' || new URLSearchParams(location.search).get('tirpanses') !== 'sentez';
-const TRIMMER_REC = { files: ['tirpan_mid.wav', 'tirpan_full.wav'], hz: [100, 163], level: [4.1, 2.9] };
+const TRIMMER_REC = { files: ['tirpan_mid.wav', 'tirpan_full.wav'], hz: [100, 163], level: [3.6, 2.3] };
 /**
  * Idling it is the drawn engine (a little quieter than drawn alone: the recorded idle droned on); given
  * gas, the recording comes in as the drawn one goes (equal power, over the first half of the throttle).

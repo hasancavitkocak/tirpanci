@@ -37,6 +37,11 @@ body.playing #touch { display: block; }
 
 /* Loading: the same green as the Android launch screen, hills at the bottom, the app icon bobbing. */
 #loading { background: radial-gradient(circle at 50% 35%, #5a9a3a, #3f7a2a 55%, #2a5a1c); overflow: hidden; }
+/* Until the opening picture is in, see-through (in the app the same picture lies under the page, put
+   there at launch): the green screen with the icon only if the picture cannot be had. */
+#loading:not(.has-art):not(.no-art) { background: transparent; }
+html:has(#loading.show:not(.has-art):not(.no-art)), html:has(#loading.show:not(.has-art):not(.no-art)) body { background: transparent; }
+#loading:not(.has-art):not(.no-art) > :not(.load-art) { visibility: hidden; }
 .load-hills { position: absolute; left: -10%; right: -10%; bottom: 0; height: 32%; pointer-events: none; background: radial-gradient(120% 90% at 20% 100%, #2a5a1c 60%, transparent 61%), radial-gradient(110% 80% at 85% 100%, #24501a 60%, transparent 61%), radial-gradient(140% 70% at 50% 110%, #1d4314 60%, transparent 61%); }
 .load-icon { width: 128px; height: 128px; border-radius: 30px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35); margin-bottom: 18px; animation: bob 2.4s ease-in-out infinite; }
 @keyframes bob { 50% { transform: translateY(-8px) rotate(-2deg); } }

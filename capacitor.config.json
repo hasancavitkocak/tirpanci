@@ -2,7 +2,7 @@
   "appId": "com.kraltirpan.game",
   "appName": "Kral Tırpan",
   "webDir": "dist",
-  "backgroundColor": "#3f7a2a",
+  "backgroundColor": "#00000000",
   "android": { "allowMixedContent": false, "captureInput": true },
   "ios": { "contentInset": "never", "scrollEnabled": false },
   "plugins": { "StatusBar": { "overlaysWebView": true, "style": "DARK" } }
