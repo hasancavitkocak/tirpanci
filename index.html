@@ -56,6 +56,8 @@
     <canvas id="visor"></canvas>
     <div id="touch"></div>
     <div id="stick"><div id="knob"></div></div>
+    <!-- Until the player has looked round once: a finger swiping on the right half, "drag: look". -->
+    <div id="look-hint"><div class="lh-finger"><svg class="ic"><use href="#i-hand"/></svg></div><span>Sürükle: etrafa, yukarı aşağı bak</span></div>
 
     <section id="loading" class="screen show">
       <!-- The portrait opening picture (public/acilis.webp) when there is one; else the green screen below. -->
@@ -81,11 +83,13 @@
       </div>
       <div class="menu-bottom">
         <div class="wallet"><span class="coin"></span><b class="money">0</b> TL</div>
-        <button id="btn-play" class="btn play art-go"><span>BAHÇEYE GİT</span></button>
+        <div class="menu-go">
+          <button id="btn-play" class="btn play art-go"><span>BAHÇEYE GİT</span></button>
+          <button id="btn-roam" class="btn roam art-go art-roam"><span>SERBEST GEZ</span></button>
+        </div>
         <div class="row">
           <button id="btn-shop" class="btn ghost">Dükkan</button>
           <button id="btn-store" class="btn ghost store-btn"><svg class="ic"><use href="#i-coins"/></svg>Mağaza</button>
-          <button id="btn-howto" class="btn ghost">Nasıl?</button>
           <button id="btn-settings" class="btn ghost icon" aria-label="Ayarlar"><svg class="ic"><use href="#i-gear"/></svg></button>
         </div>
       </div>
@@ -150,7 +154,7 @@
     </section>
 
     <section id="shop" class="screen dim">
-      <div class="card">
+      <div class="card pano shop-card-board">
         <button id="btn-shop-close" class="close-x" aria-label="Kapat"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
         <h2>Dükkan</h2>
         <div class="wallet"><span class="coin"></span><b class="money">0</b> TL</div>
@@ -189,28 +193,6 @@
       </div>
     </section>
 
-    <section id="howto" class="screen dim">
-      <div class="card">
-        <h2>Nasıl Oynanır?</h2>
-        <ul class="howto">
-          <li><b>İşe git:</b> evin yanındaki patpata bin, yolu takip edip tarlaya sür. İn, tırpanı kasadan al, misinayı tak. Tarlanın yeri HARİTA'da işaretli.</li>
-          <li><b>Motoru çalıştır:</b> POMPA'ya 3 kez bas, motor soğuksa JİKLE'yi çek, ipi sertçe aşağı çek. Motor öksürünce jikleyi bırak, bir daha çek. Jikleyi açık unutursan motor boğulur!</li>
-          <li><b>Ekrana bas:</b> motor gaz alır, misina keser. <b>Basılı tutup sürükle:</b> o yöne yürürsün. <b>İkinci parmakla sürükle:</b> etrafa bakarsın, misina baktığın yeri keser. Göz tuşu kamerayı değiştirir.</li>
-          <li><b>STOP</b> motoru durdurur. Uzun süre ağır işte motor ısınır; hararet yaparsa soğumasını bekle.</li>
-          <li><b>Taşlara dikkat:</b> taşın tepesi otun arasından görünür, etrafındaki ot seyrektir. Misina yaklaşınca <b>tık tık</b> ses ve kıvılcım uyarır. Vurduğun taşın üstünde kırmızı <b>!</b> kalır. Taşa vurursan misina kısalır, kopabilir: motoru durdur, <b>MİSİNA TAK</b>'a basılı tut.</li>
-          <li><b>Fındık ocağının</b> dallarına vurursan ağaca zarar verirsin, ücretinden kesilir. Ocak diplerinde gazı hafiflet!</li>
-          <li>Benzin ya da misina biterse <b>sarı halkaya</b> (bidonun yanına) git. Benzin ve misina parası ücretten düşülür.</li>
-          <li>Bahçenin <b>%90'ını</b> biçince işi bitirip paranı alabilirsin. Ne kadar temiz ve hızlı, o kadar çok para ve yıldız.</li>
-          <li><b>Otlar yeniden uzar:</b> biçtiğin tarlanın otu gerçek zamanda büyür, bitince yine iş verir. Beklemek istemezsen reklam izleyip hemen büyütebilir ya da başka iş seçebilirsin.</li>
-          <li><b>İlanlar:</b> komşular bahçeleri için ilan verir; İlanlar sekmesinden alıp ekstra para kazan.</li>
-          <li><b>Günlük görevler:</b> her gün 3 yeni görev çıkar. Ödülleri Görevler'den al, üçünü de bitirirsen büyük ödül var.</li>
-          <li><b>Kilitli tarlalar:</b> kapısında zincir ve kilit olur. Önceki işi bitirince açılır ya da kapısına gidip <b>BÖLÜMÜ AÇ</b> ile parayla hemen açabilirsin.</li>
-          <li><b>Dükkan</b> (menüde ya da evin yanında): tırpan, misina, donanım, patpat boyası, avlu süsleri. <b>Mağaza:</b> para paketleri ve reklamsız oyun.</li>
-        </ul>
-        <button id="btn-howto-close" class="btn">Anladım</button>
-      </div>
-    </section>
-
     <section id="settings" class="screen dim">
       <div class="card settings">
         <h2>Ayarlar</h2>
@@ -235,6 +217,27 @@
           </div>
           <small>Yağmurda ıslak ot ağır biçilir; siste uzağı göremezsin.</small>
         </div>
+        <details class="howto">
+          <summary>Nasıl oynanır?</summary>
+          <ul>
+            <li><b>Yürümek:</b> ekranda sürükle. Tırpan elindeyken sol baştaki çubukla yürür, döner.</li>
+            <li><b>Etrafa bakmak:</b> ekranın sağ yarısında sürükle (tırpan yokken).</li>
+            <li><b>Gaz:</b> sağdaki GAZ düğmesini basılı tut, gaz yavaş yavaş artar; bırakınca yavaşça düşer.</li>
+            <li><b>Motoru çalıştırmak:</b> ipi aşağı doğru hızlı ve uzun çek. Soğuk motorda önce jikle.</li>
+            <li><b>Patpat / traktör sürmek:</b> sağda sürükle: yukarı gaz, aşağı fren (durunca geri gider), sağa sola dön. İN ile inersin.</li>
+            <li><b>Avlu kapısı:</b> kapının yanına gel, KAPIYI AÇ'a bas.</li>
+            <li><b>Misina:</b> bitince MİSİNA TAK'a basılı tut; makara boşalırsa sarı halkaya git.</li>
+            <li><b>STOP</b> motoru durdurur. Uzun süre ağır işte motor ısınır; hararet yaparsa soğumasını bekle.</li>
+            <li><b>Taşlara dikkat:</b> taşın tepesi otun arasından görünür. Misina yaklaşınca tık tık ses ve kıvılcım uyarır; vurursan misina kısalır, kopabilir.</li>
+            <li><b>Fındık ocağının</b> dallarına vurursan ağaca zarar verirsin, ücretinden kesilir. Ocak diplerinde gazı hafiflet.</li>
+            <li><b>Benzin ya da misina</b> biterse sarı halkaya (bidonun yanına) git; parası ücretten düşülür.</li>
+            <li>Bahçenin <b>%90'ını</b> biçince işi bitirip paranı alabilirsin. Ne kadar temiz ve hızlı, o kadar çok para ve yıldız.</li>
+            <li><b>Otlar yeniden uzar:</b> biçtiğin tarlanın otu gerçek zamanda büyür, bitince yine iş verir.</li>
+            <li><b>İlanlar ve görevler:</b> komşuların ilanlarından ekstra para kazan; her gün 3 yeni görev çıkar.</li>
+            <li><b>Kilitli tarlalar:</b> önceki işi bitirince açılır ya da kapısında BÖLÜMÜ AÇ ile parayla açılır.</li>
+            <li><b>Dükkan</b> (menüde ya da evin yanında): tırpan, misina, donanım, araçlar, boya, avlu süsleri. <b>Mağaza:</b> para paketleri ve reklamsız oyun.</li>
+          </ul>
+        </details>
         <button id="btn-restore" class="btn ghost">Satın Alımları Geri Yükle</button>
         <button id="btn-reset" class="btn ghost danger">İlerlemeyi Sıfırla</button>
         <button id="btn-settings-close" class="btn">Tamam</button>
@@ -242,14 +245,6 @@
     </section>
 
     <section id="hud" class="screen">
-      <!-- Driving the pat pat: the steering wheel (bottom left) and the pedals (bottom right). -->
-      <div id="drive-ui">
-        <div id="drive-wheel"><img src="/harita/direksiyon.webp" alt="" draggable="false"></div>
-        <div class="drive-pedals">
-          <button id="pedal-brake" class="pedal brake" aria-label="Fren / geri"></button>
-          <button id="pedal-gas" class="pedal gas" aria-label="Gaz"></button>
-        </div>
-      </div>
       <div class="hud-top">
         <canvas id="minimap" width="96" height="96"></canvas>
         <div class="hud-mid">
@@ -337,6 +332,10 @@
           <small class="pad-hint">bas · sağa sola kaydır</small>
         </div>
       </div>
+
+      <!-- The throttle trigger (right thumb), like a pedal: the longer it is held the more gas (full in two
+           seconds), let go = idle. -->
+      <div id="gas-btn" class="gas-btn" aria-label="Gaz"><svg class="gb-ring" viewBox="0 0 100 100"><circle cx="50" cy="50" r="44"/><circle class="gb-fill" cx="50" cy="50" r="44"/></svg><div class="gb-face"><svg class="ic"><use href="#i-throttle"/></svg><b>GAZ</b></div></div>
 
       <div id="tutorial" class="tutorial">
         <div id="tut-left"><svg class="ic"><use href="#i-move"/></svg> Sürükle: yürü / dön</div>

@@ -124,6 +124,11 @@ body.engine-off .controls, body.engine-off .tutorial { display: none; }
 /* Tutorial */
 .tutorial { position: absolute; bottom: calc(160px + var(--safe-b)); left: 0; right: 0; display: none; justify-content: space-between; padding: 0 18px; color: #fff; font-weight: 800; font-size: 13px; text-shadow: 0 2px 4px #000; pointer-events: none; }
 .tutorial.show { display: flex; }
+/* Serbest gez: no job, so no progress, gauges, time, request or objective. */
+body.roam .progress, body.roam .gauges, body.roam .hud-info, body.roam #request-chip, body.roam #objective { display: none !important; }
+/* Nor the trimmer: its starter, throttle and line buttons stay away. */
+body.roam .starter, body.roam .controls, body.roam #btn-rethread, body.roam .gas-btn { display: none !important; }
+body.has-acts .tutorial { padding-left: calc(186px + var(--safe-l)); }
 .tutorial div { display: flex; align-items: center; gap: 6px; }
 
 /* Placeholder rewarded ad */
@@ -188,21 +193,6 @@ body.freecam #hud, body.freecam #touch, body.freecam #toasts, body.freecam .scre
 .level .lv-ad .ic { width: 12px; height: 12px; }
 #result-table td.pos { color: #2f8a1c; font-weight: 800; }
 
-/* Driving: the steering wheel and the pedals (only while on the pat pat). */
-#drive-ui { display: none; }
-body.driving #drive-ui { display: block; }
-#drive-wheel { position: fixed; left: 14px; bottom: calc(18px + var(--safe-b, 0px)); width: 132px; height: 132px; border-radius: 50%; touch-action: none; pointer-events: auto; filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4)); }
-#drive-wheel svg, #drive-wheel img { width: 100%; height: 100%; display: block; pointer-events: none; }
-.drive-pedals { position: fixed; right: 14px; bottom: calc(18px + var(--safe-b, 0px)); display: flex; gap: 10px; align-items: flex-end; pointer-events: auto; }
-.pedal { touch-action: none; border: 0; border-radius: 14px; color: #fff; font-weight: 900; font-size: 15px; box-shadow: 0 5px 0 rgba(0, 0, 0, 0.35), 0 8px 16px rgba(0, 0, 0, 0.3); display: flex; flex-direction: column; align-items: center; justify-content: center; }
-.pedal small { font-size: 10px; font-weight: 700; opacity: 0.8; }
-/* The pedals (public/harita): the brake a wide red-rimmed pad, the gas a tall one whose green rim takes
-   the pat pat's paint (--paint-turn, set from the paint bought); the word on a small dark tag. */
-.pedal.gas, .pedal.brake { background: center / contain no-repeat; box-shadow: none; border-radius: 0; filter: drop-shadow(0 5px 6px rgba(0, 0, 0, 0.45)); justify-content: flex-end; padding-bottom: 8px; }
-.pedal.gas { position: relative; width: 54px; height: 126px; }
-.pedal.gas::before { content: ''; position: absolute; inset: 0; background: url(/harita/pedal-gaz.webp) center / contain no-repeat; filter: hue-rotate(var(--paint-turn, 100deg)); }
-.pedal.brake { width: 94px; height: 57px; background-image: url(/harita/pedal-fren.webp); justify-content: center; padding-bottom: 0; }
-.pedal.down { transform: translateY(4px) scale(0.95); box-shadow: none; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45)) brightness(0.88); }
 
 /* The job map (a village's jobs as a path climbing the hill, first job at the bottom). */
 #levels.saga-on .card { height: 100%; width: min(460px, 100%); overflow: hidden; }
@@ -268,12 +258,17 @@ body.driving #drive-ui { display: block; }
 .saga-map.art { background: var(--bg) center / 100% 100% no-repeat, #2c5124; }
 .saga-mist { position: absolute; left: 0; right: 0; top: 0; pointer-events: none; -webkit-backdrop-filter: grayscale(0.9) brightness(0.8) blur(1px); backdrop-filter: grayscale(0.9) brightness(0.8) blur(1px); background: rgba(225, 230, 220, 0.18); -webkit-mask-image: linear-gradient(to top, transparent, #000 70px); mask-image: linear-gradient(to top, transparent, #000 70px); }
 
-/* The wooden play button (public/harita/btn-oyna.webp): the label on its green board. */
-.btn.art-go { display: flex; align-items: center; width: min(250px, 100%); aspect-ratio: 520 / 248; margin: 0 auto; padding: 4% 8% 0 32%; border-radius: 0; background: url(/harita/btn-oyna.webp) center / contain no-repeat; box-shadow: none; filter: drop-shadow(0 5px 5px rgba(0, 0, 0, 0.3)); transition: transform 0.1s; }
-.btn.art-go span { flex: 1; text-align: center; font-size: 17px; font-weight: 900; color: #fff; line-height: 1.05; text-shadow: 0 2px 0 #1d5a0a, 0 0 4px rgba(0, 40, 0, 0.5); }
+/* The wooden play button (public/harita/btn-oyna2.webp, the menu's twin): the label centred on its
+   coloured board, measured from the picture: 32.6-95.5 % across, 34.5-84 % down (beside the badge,
+   below the leaves). */
+.btn.art-go { position: relative; display: block; width: min(280px, 100%); aspect-ratio: 760 / 275; margin: 0 auto; padding: 0; border-radius: 0; background: url(/harita/btn-oyna2.webp) center / contain no-repeat; box-shadow: none; filter: drop-shadow(0 5px 5px rgba(0, 0, 0, 0.3)); transition: transform 0.1s; }
+.btn.art-go span { position: absolute; left: 32.6%; right: 4.5%; top: 34.5%; bottom: 16%; display: flex; align-items: center; justify-content: center; margin: 0; text-align: center; font-size: 17px; font-weight: 900; color: #fff; line-height: 1.05; white-space: nowrap; text-shadow: 0 2px 0 #1d5a0a, 0 0 4px rgba(0, 40, 0, 0.5); }
 .btn.art-go:active { transform: scale(0.95); }
 .btn.play.art-go { width: min(290px, 100%); background-color: transparent; }
 .btn.play.art-go span { font-size: 20px; }
+/* Serbest gez: the same wooden plank in sky blue with a compass (public/harita/btn-gez.webp), a little smaller. */
+.btn.art-roam { width: min(250px, 100%); background-image: url(/harita/btn-gez.webp); background-color: transparent; }
+.btn.art-roam span { font-size: 17px; text-shadow: 0 2px 0 #0d4a78, 0 0 4px rgba(0, 30, 60, 0.5); }
 
 /* A card on the hazelnut board (public/harita/pano.webp): its corners kept, its middle stretched to fit. */
 /* No scroll bar: everything fits, and a pressed button (moved down 3 px) must not make one appear. */
@@ -282,11 +277,74 @@ body.driving #drive-ui { display: block; }
 .card.pano .sub { color: #6a4a28; opacity: 1; }
 .card.pano .btn.ghost { background: rgba(255, 248, 230, 0.75); box-shadow: 0 3px 0 rgba(120, 80, 30, 0.35); }
 .call-card.pano { width: min(340px, 100%); overflow: visible; gap: 0; }
+/* A phone held sideways: too short for the card's column (its buttons fell off the screen), so the
+   face on the left, the words and the two buttons side by side on the right. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .call-card.pano { width: min(600px, 100%); display: grid; grid-template-columns: auto 1fr 1fr; grid-template-areas: 'face name name' 'face place place' 'face text text' 'face req req' 'face ok no'; column-gap: 14px; align-items: center; }
+  .call-card.pano .call-ring { grid-area: face; margin: 0; }
+  .call-card.pano .call-name { grid-area: name; }
+  .call-card.pano .call-place { grid-area: place; margin-bottom: 6px; }
+  .call-card.pano .call-bubble { grid-area: text; margin-bottom: 8px; }
+  .call-card.pano .call-request { grid-area: req; margin-bottom: 6px; }
+  .call-card.pano #btn-call-ok { grid-area: ok; width: 100%; max-width: 230px; margin: 0; }
+  .card.call-card.pano #btn-call-no { grid-area: no; justify-self: center; margin: 0; }
+}
 .call-card.pano .call-name { color: #5e3a17; }
 .call-card.pano .call-place { color: #6a4a28; opacity: 0.9; }
 .call-card.pano .call-bubble { background: rgba(255, 252, 240, 0.92); box-shadow: 0 2px 0 rgba(120, 80, 30, 0.35); font-size: 14px; }
-.card.call-card.pano .btn.ghost { margin-top: 4px; width: auto; padding: 6px 18px; background: none; box-shadow: none; color: #6a4a28; text-decoration: underline; font-size: 14px; }
+/* "Vazgeç" under the green play board: a small plank of the frame's own wood, branded text burnt in. */
+.card.call-card.pano .btn.ghost { margin-top: 8px; width: auto; min-width: 128px; padding: 8px 22px; border-radius: 10px; font-size: 15px; font-weight: 900; letter-spacing: 0.5px; color: #fff3dc; text-shadow: 0 1px 0 #4a2a0e, 0 0 3px rgba(60, 30, 5, 0.6);
+  background: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.05) 0 3px, transparent 3px 9px), linear-gradient(180deg, #b77a3e, #8a5424);
+  border: 2px solid #5e3713; box-shadow: inset 0 1px 0 rgba(255, 225, 170, 0.45), 0 3px 0 #4a2a0e, 0 5px 8px rgba(0, 0, 0, 0.25); }
+.card.call-card.pano .btn.ghost:active { transform: translateY(2px); box-shadow: inset 0 1px 0 rgba(255, 225, 170, 0.35), 0 1px 0 #4a2a0e; }
 
 /* The result's stars (public/harita/yildiz*.webp). */
 .stars img { width: 52px; height: 52px; margin: 0 2px; filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.3)); }
 .stars span:nth-child(2) img { width: 62px; height: 62px; translate: 0 -6px; }
+
+/* The throttle trigger: a round button above the control row; its ring fills with the throttle (--gas
+   0..1). */
+.gas-btn { --gas: 0; display: none; position: fixed; right: calc(18px + var(--safe-r)); bottom: calc(150px + var(--safe-b)); width: 104px; height: 104px; touch-action: none; pointer-events: auto; user-select: none; z-index: 4; }
+body.gas-on .gas-btn { display: block; }
+.gb-ring { position: absolute; inset: 0; width: 100%; height: 100%; rotate: -90deg; }
+.gb-ring circle { fill: none; stroke: rgba(0, 0, 0, 0.35); stroke-width: 8; }
+.gb-ring .gb-fill { stroke: #ffb347; stroke-linecap: round; stroke-dasharray: calc(276.5 * var(--gas)) 276.5; }
+.gb-face { position: absolute; inset: 12px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #5a5d63, #24262a); border: 2px solid rgba(255, 255, 255, 0.35); box-shadow: 0 5px 12px rgba(0, 0, 0, 0.45); display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; }
+.gb-face .ic { width: 26px; height: 26px; color: #ffb347; }
+.gb-face b { font-size: 13px; letter-spacing: 1px; }
+.gas-btn.held .gb-face { transform: scale(0.94); background: radial-gradient(circle at 40% 35%, #7a5a33, #3a2410); }
+
+/* The shop on the hazelnut board: wooden tab plates (public/harita/sekme.webp, the chosen one sekme-on.webp,
+   brighter and lifted), each item on a framed parchment (parsomen.webp: its wooden frame kept, the
+   paper stretched; the leaves along its top), names dark and large enough to read, a gold price. */
+.card.pano.shop-card-board { width: min(440px, 100%); max-height: 100%; overflow: hidden; display: flex; flex-direction: column; gap: 8px; padding: 0 4px; }
+.shop-card-board h2 { margin: 0; font-size: 22px; }
+.shop-card-board .wallet { align-self: center; margin: 0; background: rgba(60, 35, 10, 0.75); }
+.shop-card-board { position: relative; }
+.shop-card-board .close-x { position: absolute; top: -6px; right: -6px; margin: 0; width: 38px; height: 38px; }
+.shop-card-board #shop-list { overflow-y: auto; min-height: 0; padding: 2px 2px 10px; scrollbar-width: none; overscroll-behavior: contain; touch-action: pan-y; }
+.shop-card-board #shop-list::-webkit-scrollbar { display: none; }
+.shop-card-board .tabs { background: none; padding: 0; gap: 3px; flex-wrap: nowrap; }
+.shop-card-board .tabs button { aspect-ratio: auto; height: 34px; padding: 0 0 2px; border-radius: 0; background: url(/harita/sekme.webp) center / 100% 100% no-repeat; color: #fff6e0; font-size: clamp(10px, 2.7vw, 13px); letter-spacing: -0.2px; font-weight: 900; text-overflow: clip; text-shadow: 0 1px 0 #6b3608, 0 0 3px rgba(80, 40, 5, 0.7); box-shadow: none; filter: brightness(0.85) saturate(0.85); }
+.shop-card-board .tabs button.on { background-image: url(/harita/sekme-on.webp); color: #fff; filter: drop-shadow(0 3px 2px rgba(0, 0, 0, 0.35)); transform: translateY(-3px) scale(1.06); }
+.shop-card-board .shop-card { border: solid transparent; border-width: 26px 9px 11px 13px; border-image: url(/harita/parsomen.webp) 130 45 50 70 fill stretch; border-radius: 0; background: none; box-shadow: none; padding: 0 5px 4px 6px; gap: 4px; }
+.shop-card-board .shop-card.selected { border-color: transparent; }
+.shop-card-board .shop-card.selected::after { content: '✓'; position: absolute; top: -8px; right: -4px; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: #4fae2a; color: #fff; font-weight: 900; font-size: 16px; box-shadow: 0 2px 0 #2f7a14; }
+.shop-card-board .shop-card { position: relative; }
+.shop-card-board .shop-card .pic { background: radial-gradient(circle at 50% 55%, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 70%); }
+.shop-card-board .shop-card b { color: #4a2a0c; font-size: 15px; }
+.shop-card-board .shop-card small { color: #5e4426; font-size: 12.5px; font-weight: 600; }
+.shop-card-board .shop-card .buy { border-radius: 10px; background: linear-gradient(180deg, #7ccf3e, #3f9a1f); box-shadow: 0 3px 0 #2b6e12; color: #fff; text-shadow: 0 1px 0 #24590c; font-weight: 900; }
+.shop-card-board .shop-card .buy:disabled { background: linear-gradient(180deg, #c9b48d, #a8916a); box-shadow: 0 3px 0 #7d6a48; text-shadow: none; opacity: 1; }
+.shop-card-board .shop-card.selected .buy { background: linear-gradient(180deg, #f1e6c8, #dccca2); box-shadow: 0 3px 0 #b39d6c; color: #5e4426; text-shadow: none; }
+/* A phone held sideways: a thinner board, no title (the tabs say where you are), the money beside the
+   tabs, so the items get the height. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .card.pano.shop-card-board { width: min(640px, 100%); border-width: 34px 26px 44px; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto 1fr; column-gap: 8px; row-gap: 6px; }
+  .shop-card-board h2 { display: none; }
+  .shop-card-board .wallet { grid-column: 1; grid-row: 1; font-size: 13px; padding: 4px 10px 4px 6px; }
+  .shop-card-board .tabs { grid-column: 2; grid-row: 1; margin-right: 34px; }
+  .shop-card-board #shop-list { grid-column: 1 / 3; grid-row: 2; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .shop-card-board .close-x { top: -10px; right: -10px; }
+}
+

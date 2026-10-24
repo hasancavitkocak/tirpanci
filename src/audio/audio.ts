@@ -6,10 +6,13 @@
  * amplitude-modulated by the same pulse), through an exhaust resonance that follows the rpm.
  * Idle lopes irregularly; load from cutting drags the rpm down; the spinning line adds an air whine.
  */
-import { PatpatEngine } from './patpatEngine';
+import { PatpatEngine, TRACTOR_FILES } from './patpatEngine';
+import { DieselEngine } from './diesel';
 import { Bed, Kit, Surface, Tractor, beeBed, cluck, dog, ezan, farBus, hoseCut, rainBed, snakeHiss, splash, sprayBed, step, sting, thunder, trafficBed } from './village';
 
-/** Loudness of the grass-cutting sounds (snaps and swish) relative to the engine. */
+/** The trimmer engine's loudness (a notch under where it was first set). */
+const ENGINE_LEVEL = 0.8;
+/** Loudness of the grass-cutting swish relative to the engine. */
 const CUT_VOLUME = 1.6;
 
 /** What the place sounds like round a job. */
@@ -33,6 +36,8 @@ export class GameAudio {
   private rpm = 0;
   /** Engine, line and cutting sounds go through here (ear muffs filter them). */
   private engineBus: GainNode | null = null;
+  /** What goes to the speaker (after the compressor and the limiter). */
+  out: GainNode | null = null;
   private engineLp: BiquadFilterNode | null = null;
   private earmuffs = false;
   private far: GainNode | null = null;
@@ -60,7 +65,23 @@ export class GameAudio {
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -14;
     comp.ratio.value = 4;
-    this.master.connect(comp).connect(ctx.destination);
+    // Last, a safety limiter: untouched up to 0.8, above it rounded softly under 1 (engine and cutting
+    // swish together could otherwise peak past it and crackle).
+    const limit = ctx.createWaveShaper();
+    const lc = new Float32Array(2048);
+    for (let i = 0; i < lc.length; i++) {
+      const x = (i / (lc.length - 1)) * 4 - 2;
+      const m = Math.abs(x);
+      lc[i] = Math.sign(x) * (m <= 0.8 ? m : 0.8 + 0.2 * Math.tanh((m - 0.8) / 0.2));
+    }
+    limit.curve = lc;
+    limit.oversample = '2x';
+    // (A wave shaper reads -1..1: the signal halved into it; its curve, over -2..2, gives the level out.)
+    const into = ctx.createGain();
+    into.gain.value = 0.5;
+    const outOf = ctx.createGain();
+    this.master.connect(comp).connect(into).connect(limit).connect(outOf).connect(ctx.destination);
+    this.out = outOf;
     this.engineBus = ctx.createGain();
     this.engineLp = ctx.createBiquadFilter();
     this.engineLp.type = 'lowpass';
@@ -80,7 +101,9 @@ export class GameAudio {
     this.far = farBus(this.kit!);
     // Start fetching the pat pat recordings now, so they are in before the first ride.
     this.patpatEngine = new PatpatEngine(ctx, this.master);
+    this.tractorEngine = this.newTractorEngine();
     this.loadGate();
+    if (TRIMMER_RECORDED) this.loadTrimmerRec();
   }
 
   private get kit(): Kit | null {
@@ -176,26 +199,58 @@ export class GameAudio {
     this.beds?.traffic.set(level * 0.5);
   }
 
-  private tractor: Tractor | null = null;
+  /** The drawn engine, standing in for the pat pat's recording until it has loaded. */
+  private drawnEngine: Tractor | null = null;
+  /** The recorded engines (both loaded from the start), and which is driven. */
   private patpatEngine: PatpatEngine | null = null;
+  private tractorEngine: PatpatEngine | DieselEngine | null = null;
+  private onTractor = false;
 
-  /** The pat pat's engine: on while driving; `rpm` 0 (idle) .. 1. The recording once it has loaded. */
-  patpat(on: boolean, rpm = 0): void {
+  /**
+   * The tractor's engine: the diesel tractor's recording, or with ?traktorses=sentez the drawn one
+   * (a three-cylinder diesel), to compare.
+   */
+  private newTractorEngine(): PatpatEngine | DieselEngine | null {
+    const k = this.kit;
+    if (!k) return null;
+    const drawn = new URLSearchParams(location.search).get('traktorses') === 'sentez';
+    return drawn ? new DieselEngine(k) : new PatpatEngine(k.ctx, k.out, TRACTOR_FILES);
+  }
+
+  private get vehicleEngine(): PatpatEngine | DieselEngine | null {
+    return this.onTractor ? this.tractorEngine : this.patpatEngine;
+  }
+
+  /** The vehicle's engine: on while driving; `rpm` 0 (idle) .. 1. The recording once it has loaded. */
+  patpat(on: boolean, rpm = 0, moving = rpm): void {
     const k = this.kit;
     if (!k) return;
     this.patpatEngine ??= new PatpatEngine(k.ctx, k.out);
-    this.tractor ??= new Tractor(k);
-    const real = this.patpatEngine;
-    const e = real.ready || real.running ? real : this.tractor;
-    if (e === real && this.tractor.running) this.tractor.stop();
+    this.tractorEngine ??= this.newTractorEngine();
+    const real = this.vehicleEngine!;
+    // The tractor waits for its own recording (silent a moment at most); only the pat pat has the drawn
+    // stand-in (the tractor would otherwise start on a pat pat's sound).
+    this.drawnEngine ??= new Tractor(k);
+    const e = real.ready || real.running || this.onTractor ? real : this.drawnEngine;
+    if (e === real && this.drawnEngine.running) this.drawnEngine.stop();
+    if (!real.ready && e === real) return;
     if (on && !e.running) e.start();
     if (!on && e.running) e.stop();
-    if (on) e.set(rpm);
+    if (on) e.set(rpm, moving);
   }
 
-  /** The pat pat's gear lever thrown (only with the recorded engine); `blip`: a touch of throttle with it. */
-  patpatGear(blip = true): void {
-    if (this.patpatEngine?.running) this.patpatEngine.gear(blip);
+  /** The vehicle driven is the tractor: its own recorded engine instead of the pat pat's. */
+  setTractor(on: boolean): void {
+    if (on === this.onTractor) return;
+    const was = this.vehicleEngine;
+    if (was?.running) was.stop();
+    if (this.drawnEngine?.running) this.drawnEngine.stop();
+    this.onTractor = on;
+  }
+
+  /** The pat pat's gear lever thrown (only with the recorded engine). */
+  patpatGear(): void {
+    if (this.vehicleEngine?.running) this.vehicleEngine.gear();
   }
 
   /**
@@ -236,8 +291,9 @@ export class GameAudio {
     const ctx = this.ctx;
     if (!ctx) return;
     const t = ctx.currentTime;
-    this.tone(t + 0.05, 'sine', 120, 45, 0.5, 0.004, 0.25);
-    this.hiss(t, 'bandpass', 1800, 0.7, 0.25, 0.02, 0.35, 700);
+    // A dull thump into the grass and a short brush of it (the hiss before was a harsh whoosh).
+    this.tone(t + 0.05, 'sine', 110, 50, 0.4, 0.004, 0.22);
+    this.hiss(t, 'lowpass', 900, 0.6, 0.1, 0.03, 0.22, 400);
   }
 
   /** Old mobile phone ringing (the customer's call). */
@@ -301,13 +357,32 @@ export class GameAudio {
   startEngine(): void {
     const ctx = this.ctx;
     if (!ctx || this.engine) return;
-    this.engine = buildEngine(ctx, this.engineBus!, this.pulseWave!, (r) => this.noiseSource(r));
+    this.engine = buildEngine(ctx, this.engineBus!, this.pulseWave!, (r) => this.noiseSource(r), TRIMMER_RECORDED ? this.trimmerRec : null);
     this.flare = 0.5;
     this.rpm = 0.35;
     const t = ctx.currentTime;
+    // The engine catches as the pull's sound runs out (not over it).
+    const at = Math.max(t, this.pullEnd - 0.15);
+    this.engineQuietUntil = at;
     this.engine.out.gain.setValueAtTime(0, t);
-    this.engine.out.gain.linearRampToValueAtTime(0.5, t + 0.08);
+    this.engine.out.gain.setValueAtTime(0, at);
+    this.engine.out.gain.linearRampToValueAtTime(0.5 * ENGINE_LEVEL, at + 0.08);
   }
+
+  /** The trimmer's recorded loops, once loaded (until then, and if they fail, the drawn engine). */
+  private trimmerRec: AudioBuffer[] | null = null;
+
+  private loadTrimmerRec(): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    void Promise.all(TRIMMER_REC.files.map(async (f) => ctx.decodeAudioData(await (await fetch(`./audio/${f}`)).arrayBuffer())))
+      .then((b) => (this.trimmerRec = b))
+      .catch(() => undefined);
+  }
+
+  /** When the last cord pull's sound ends, and until when a just started engine stays silent. */
+  private pullEnd = 0;
+  private engineQuietUntil = 0;
 
   /** Engine dies: rpm falls away. `sputter` = dies with a couple of misfires (overheat). */
   stopEngine(sputter = false): void {
@@ -320,6 +395,12 @@ export class GameAudio {
     e.osc.frequency.cancelScheduledValues(t);
     e.osc.frequency.setValueAtTime(e.osc.frequency.value, t);
     e.osc.frequency.exponentialRampToValueAtTime(9, t + dur);
+    // The recording runs down the same way.
+    for (const l of e.rec?.loops ?? []) {
+      l.playbackRate.cancelScheduledValues(t);
+      l.playbackRate.setValueAtTime(l.playbackRate.value, t);
+      l.playbackRate.exponentialRampToValueAtTime(Math.max(0.05, l.playbackRate.value * 0.25), t + dur);
+    }
     e.muffler.frequency.setTargetAtTime(160, t, 0.25);
     e.lowpass.frequency.setTargetAtTime(500, t, 0.2);
     e.out.gain.setValueAtTime(e.out.gain.value, t);
@@ -343,11 +424,11 @@ export class GameAudio {
   setWater(level: number): void {
     const ctx = this.ctx;
     if (!ctx) return;
-    // A recording of a stream (public/audio/dere.mp3), looped, once there is one; until then the
+    // A recording of a stream (public/audio/dere.wav, made seamless), looped; until it has loaded the
     // drawn gurgle below.
     if (!this.waterRec) {
       this.waterRec = 'loading';
-      void fetch('./audio/dere.mp3')
+      void fetch('./audio/dere.wav')
         .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('no stream recording'))))
         .then((b) => ctx.decodeAudioData(b))
         .then((buf) => {
@@ -364,7 +445,7 @@ export class GameAudio {
         .catch(() => (this.waterRec = 'none'));
     }
     if (typeof this.waterRec === 'object') {
-      this.waterRec.gain.gain.setTargetAtTime(level * level * 0.9, ctx.currentTime, 0.3);
+      this.waterRec.gain.gain.setTargetAtTime(level * level * 0.3, ctx.currentTime, 0.3);
       return;
     }
     if (!this.water) {
@@ -395,7 +476,8 @@ export class GameAudio {
     this.water.gain.gain.setTargetAtTime(level * level * 0.3, ctx.currentTime, 0.3);
   }
 
-  private grainAcc = 0;
+  /** The revs given last frame (to hear a blip of throttle). */
+  private lastRev = 0;
   private misfireT = 0;
 
   /**
@@ -407,33 +489,58 @@ export class GameAudio {
     if (!ctx) return;
     const t = ctx.currentTime;
     const e = this.engine;
-    if (e) {
-      this.flare = Math.max(0, this.flare - dt * 0.7);
+    if (e && t >= this.engineQuietUntil) {
+      this.flare = Math.max(0, this.flare - dt * 2.5);
       const load = Math.min(1, Math.max(0, loadRatio - 0.3) / 0.9);
       // Rpm with inertia (it already sags under load in the simulation); a hot engine runs a bit rough.
-      const want = Math.min(1, throttle + this.flare);
-      this.rpm += (want - this.rpm) * Math.min(1, dt * (want > this.rpm ? 5 : 3));
+      // A sharp opening of the throttle overshoots for a moment (the two-stroke's snarl on a blip).
+      if (throttle - this.lastRev > dt * 2.5) this.flare = Math.max(this.flare, Math.min(0.45, (throttle - this.lastRev) * 4));
+      this.lastRev = throttle;
+      const want = Math.min(1.25, throttle + this.flare);
+      this.rpm += (want - this.rpm) * Math.min(1, dt * (want > this.rpm ? 22 : 13));
       const r = this.rpm;
       // Lugging: past its capacity the engine drops in pitch, sounds choked and starts to misfire.
       const bog = Math.min(1, Math.max(0, (loadRatio - 0.85) / 0.6) * 0.7 + strain * 0.6);
-      const f = (46 + r * 112) * (1 - 0.2 * bog);
+      // (Idle at about 68 Hz: much lower, a phone's small speaker hardly gives it out at all.)
+      const f = (68 + r * 92) * (1 - 0.2 * bog);
       e.osc.frequency.setTargetAtTime(f, t, 0.03);
+      if (e.rec) {
+        // The drawn engine idles; with the gas the recording comes in as it goes (equal power).
+        const b = Math.max(0, Math.min(1, (r - TRIMMER_BLEND.from) / TRIMMER_BLEND.over));
+        e.rec.body.gain.setTargetAtTime(Math.cos((b * Math.PI) / 2) * TRIMMER_IDLE_LEVEL, t, 0.06);
+        e.rec.mix.gain.setTargetAtTime(Math.sin((b * Math.PI) / 2), t, 0.06);
+        // Its firing rate from idle (50 Hz) to flat out (163), past it on a blip, down when lugging;
+        // below the middle loop's 100 Hz that one slowed down (only faintly heard there), above it the
+        // two loops crossfaded.
+        const hz = TRIMMER_REC.hz;
+        const fr = (50 + r * (hz[1] - 50)) * (1 - 0.2 * bog);
+        const x = Math.max(0, Math.min(1, (fr - hz[0]) / (hz[1] - hz[0])));
+        e.rec.loops.forEach((l, k) => {
+          const w = k === 0 ? Math.cos((x * Math.PI) / 2) : Math.sin((x * Math.PI) / 2);
+          e.rec!.gains[k].gain.setTargetAtTime(w * TRIMMER_REC.level[k], t, 0.05);
+          l.playbackRate.setTargetAtTime(Math.max(0.5, fr / hz[k]), t, 0.03);
+        });
+      }
       e.am.gain.setTargetAtTime(0.5 + r * 0.4, t, 0.05);
       // Labouring engine: uneven firing when overloaded or overheating.
       e.jitter.gain.setTargetAtTime(4.5 * (1 - r) + 0.8 + Math.max(0, temp - 0.85) * 25 + Math.max(0, loadRatio - 1) * 14, t, 0.1);
       e.lope.gain.setTargetAtTime(0.3 * (1 - r) * (1 - r) + 0.45 * bog, t, 0.1);
       e.lfo.frequency.setTargetAtTime(6.3 - 3 * bog, t, 0.2);
       e.muffler.frequency.setTargetAtTime(f * 2.6, t, 0.04);
-      e.lowpass.frequency.setTargetAtTime((700 + r * 4200) * (1 - 0.5 * bog), t, 0.04);
+      e.lowpass.frequency.setTargetAtTime((1300 + r * 3600) * (1 - 0.5 * bog), t, 0.04);
       e.clatter.gain.setTargetAtTime(0.025 + r * 0.05, t, 0.05);
-      e.out.gain.setTargetAtTime(0.32 + r * 0.38, t, 0.05);
+      // (Mowing for real gives about 30 a second, now and then over 100: full at 35.)
+      const cutting = Math.min(1, cutRate / 35);
+      e.out.gain.setTargetAtTime((0.48 + r * 0.24) * ENGINE_LEVEL, t, 0.05);
       // Line whine: air rushing past the spinning line, rises with rpm.
       e.whineFilter.frequency.setTargetAtTime(900 + r * 2600, t, 0.05);
-      e.whine.gain.setTargetAtTime(r * r * 0.11, t, 0.05);
-      const cutting = Math.min(1, cutRate / 120);
-      e.swish.gain.setTargetAtTime(CUT_VOLUME * (0.2 * cutting * r + 0.06 * load * r), t, 0.04);
+      // (The recording has the line's whine in it.)
+      e.whine.gain.setTargetAtTime(e.rec ? 0 : r * r * 0.11, t, 0.05);
+      // Swelling and easing off with the grass cut (no sudden starts); fuller and lower in tall grass.
+      // Coming in quickly and dying away a little slower than it came (it does not stop dead between swings).
+      const sw = CUT_VOLUME * (2.0 * cutting * r + 0.25 * load * r) * (1 + tall * 0.3);
+      e.swish.gain.setTargetAtTime(sw, t, sw > e.swish.gain.value ? 0.08 : 0.3);
       e.strands.frequency.setTargetAtTime(90 + r * 150, t, 0.05);
-      this.cutGrains(dt, cutRate * r, tall);
       // Misfires while lugging: the output drops out for a moment with a wet pop.
       this.misfireT -= dt;
       if (bog > 0.25 && this.misfireT <= 0) {
@@ -453,25 +560,6 @@ export class GameAudio {
         this.birdsT = 3 + Math.random() * 6;
         this.bird();
       }
-    }
-  }
-
-  /**
-   * The satisfying part: each clump the line goes through gives a short "fip" (a bright noise snap
-   * sweeping down) over a soft low "tup". Density follows the grass cut per second, with random
-   * spacing so it never sounds like a machine gun. `tall` makes them fuller and lower.
-   */
-  private cutGrains(dt: number, cellsPerSec: number, tall = 0): void {
-    const ctx = this.ctx!;
-    this.grainAcc += dt * Math.min(32, cellsPerSec * 0.2);
-    const t = ctx.currentTime;
-    while (this.grainAcc >= 1) {
-      this.grainAcc -= 1;
-      const at = t + Math.random() * dt;
-      const f = (3200 + Math.random() * 2400) * (1 - tall * 0.25);
-      const v = CUT_VOLUME * (0.18 + Math.random() * 0.14 + tall * 0.06);
-      this.hiss(at, 'bandpass', f, 3.2, v, 0.0015, 0.028 + Math.random() * 0.02 + tall * 0.015, f * 0.35);
-      this.tone(at, 'sine', 240 + Math.random() * 60, 110, v * 0.35, 0.002, 0.035);
     }
   }
 
@@ -574,6 +662,8 @@ export class GameAudio {
     }
     // Recoil spring winding the rope back.
     this.hiss(t + dur, 'bandpass', 1800, 3, 0.1, 0.02, 0.18, 900);
+    // (The engine catches once the pull's sound is out.)
+    this.pullEnd = t + dur;
   }
 
   /** The engine fires a few times and dies (on choke). `wet` = flooded, soggy pops. */
@@ -702,10 +792,31 @@ interface EngineNodes {
   strands: OscillatorNode;
   /** Idle lope LFO (slows down when the engine lugs). */
   lfo: OscillatorNode;
+  /**
+   * The recorded engine (TRIMMER_REC), when its loops are in: played instead of the drawn exhaust (that
+   * is silenced), through the same output (its start, misfires and fading out), each loop pitched to the
+   * engine's firing rate and the two recorded nearest it heard.
+   */
+  rec: { loops: AudioBufferSourceNode[]; gains: GainNode[]; body: GainNode; mix: GainNode } | null;
   stop: () => void;
 }
 
-function buildEngine(ctx: AudioContext, master: AudioNode, wave: PeriodicWave, noise: (rate?: number) => AudioBufferSourceNode): EngineNodes {
+/**
+ * The trimmer's recorded loops (public/audio, cut by assets-src/audio/cut-tirpan.py), their firing rates
+ * as recorded (the idle from another, cleaner recording) and their levels, set by measuring them
+ * against the drawn engine through the same output (a little under it: louder, it grated).
+ */
+/** The trimmer's engine is the recording (?tirpanses=sentez: the drawn one, to compare). */
+const TRIMMER_RECORDED = typeof location === 'undefined' || new URLSearchParams(location.search).get('tirpanses') !== 'sentez';
+const TRIMMER_REC = { files: ['tirpan_mid.wav', 'tirpan_full.wav'], hz: [100, 163], level: [4.1, 2.9] };
+/**
+ * Idling it is the drawn engine (a little quieter than drawn alone: the recorded idle droned on); given
+ * gas, the recording comes in as the drawn one goes (equal power, over the first half of the throttle).
+ */
+const TRIMMER_IDLE_LEVEL = 0.7;
+const TRIMMER_BLEND = { from: 0.08, over: 0.5 };
+
+function buildEngine(ctx: AudioContext, master: AudioNode, wave: PeriodicWave, noise: (rate?: number) => AudioBufferSourceNode, recorded: AudioBuffer[] | null = null): EngineNodes {
   const sources: AudioScheduledSourceNode[] = [];
   const osc = ctx.createOscillator();
   osc.setPeriodicWave(wave);
@@ -776,6 +887,49 @@ function buildEngine(ctx: AudioContext, master: AudioNode, wave: PeriodicWave, n
   lfo.connect(lope).connect(trem.gain);
   mix.connect(shaper).connect(trem).connect(out).connect(master);
   sources.push(lfo);
+  // The recording instead of the drawn exhaust: that one silenced, the loops into the output (the idle
+  // heard at first).
+  let rec: EngineNodes['rec'] = null;
+  if (recorded) {
+    // The drawn exhaust through its own level (it idles; the recording takes over with the gas).
+    trem.disconnect();
+    const body = ctx.createGain();
+    body.gain.value = TRIMMER_IDLE_LEVEL;
+    trem.connect(body).connect(out);
+    const loops = recorded.map((b) => {
+      const src = ctx.createBufferSource();
+      src.buffer = b;
+      src.loop = true;
+      return src;
+    });
+    const gains = recorded.map(() => {
+      const g = ctx.createGain();
+      g.gain.value = 0;
+      return g;
+    });
+    // Its spiky peaks (up to 2.8 once brought up to level) rounded off softly: y = 1.3 tanh(x / 1.3),
+    // linear for the body of the sound. (A wave shaper takes -1..1: scaled into it and back.)
+    const pre = ctx.createGain();
+    pre.gain.value = 1 / 3;
+    const soft = ctx.createWaveShaper();
+    const sc = new Float32Array(1024);
+    for (let i = 0; i < sc.length; i++) sc[i] = (1.3 * Math.tanh(((i / (sc.length - 1)) * 2 - 1) * 3 / 1.3)) / 3;
+    soft.curve = sc;
+    soft.oversample = '2x';
+    const post = ctx.createGain();
+    post.gain.value = 3;
+    // (Its top hissed when brought up: cut above 7 kHz.)
+    const top = ctx.createBiquadFilter();
+    top.type = 'lowpass';
+    top.frequency.value = 7000;
+    top.Q.value = 0.5;
+    const mix = ctx.createGain();
+    mix.gain.value = 0;
+    pre.connect(soft).connect(post).connect(top).connect(mix).connect(out);
+    loops.forEach((l, i) => l.connect(gains[i]).connect(pre));
+    sources.push(...loops);
+    rec = { loops, gains, body, mix };
+  }
 
   // Mechanical clatter (piston, clutch drum): bright noise ticking with the pulse.
   const mn = noise();
@@ -787,7 +941,8 @@ function buildEngine(ctx: AudioContext, master: AudioNode, wave: PeriodicWave, n
   osc.connect(clatterAm.gain);
   const clatter = ctx.createGain();
   clatter.gain.value = 0.03;
-  mn.connect(mf).connect(clatterAm).connect(clatter).connect(out);
+  // (Part of the drawn engine: with the recording, faded with it.)
+  mn.connect(mf).connect(clatterAm).connect(clatter).connect(rec ? rec.body : out);
   sources.push(mn);
 
   // Line whine and grass swish (not shaped by the exhaust).
@@ -800,14 +955,18 @@ function buildEngine(ctx: AudioContext, master: AudioNode, wave: PeriodicWave, n
   whine.gain.value = 0;
   wn.connect(whineFilter).connect(whine).connect(master);
   sources.push(wn);
-  // Cutting: noise in the mid band, roughened by a fast random flutter and chopped at the rate the
-  // line strands pass (two per turn), so it rasps instead of hissing. The crisp snaps of single stems
-  // are added on top as grains (GameAudio.cutGrains).
+  // Cutting: a soft, low swish of grass going down: noise in the low mid band with its top cut off,
+  // roughened a little by a slow flutter and the line strands passing. (The single stems' snaps once
+  // played on top grated; there are none now.)
   const sn = noise(1.3);
   const sf = ctx.createBiquadFilter();
   sf.type = 'bandpass';
-  sf.frequency.value = 1500;
-  sf.Q.value = 0.8;
+  // (Above the recorded engine's loudest band, 0.5-1.5 kHz: there it was not heard at all.)
+  sf.frequency.value = recorded ? 2000 : 900;
+  sf.Q.value = recorded ? 0.9 : 0.7;
+  const sTop = ctx.createBiquadFilter();
+  sTop.type = 'lowpass';
+  sTop.frequency.value = recorded ? 4500 : 2000;
   const flutter = ctx.createGain();
   flutter.gain.value = 0.6;
   const fn = noise(0.06);
@@ -823,11 +982,20 @@ function buildEngine(ctx: AudioContext, master: AudioNode, wave: PeriodicWave, n
   strands.type = 'square';
   strands.frequency.value = 160;
   const chopDepth = ctx.createGain();
-  chopDepth.gain.value = 0.45;
+  chopDepth.gain.value = 0.22;
   strands.connect(chopDepth).connect(chop.gain);
   const swish = ctx.createGain();
   swish.gain.value = 0;
-  sn.connect(sf).connect(flutter).connect(chop).connect(swish).connect(master);
+  // (Noise has sharp peaks: rounded off softly, so it can be loud enough to hear without crackling.)
+  const swPre = ctx.createGain();
+  swPre.gain.value = 0.5;
+  const swSoft = ctx.createWaveShaper();
+  const swc = new Float32Array(512);
+  for (let i = 0; i < swc.length; i++) swc[i] = Math.tanh(((i / (swc.length - 1)) * 2 - 1) * 2) / 2;
+  swSoft.curve = swc;
+  const swPost = ctx.createGain();
+  swPost.gain.value = 1.4;
+  sn.connect(sf).connect(sTop).connect(flutter).connect(chop).connect(swish).connect(swPre).connect(swSoft).connect(swPost).connect(master);
   sources.push(sn, fn, strands);
 
   for (const s of sources) s.start();
@@ -845,6 +1013,7 @@ function buildEngine(ctx: AudioContext, master: AudioNode, wave: PeriodicWave, n
     swish,
     strands,
     lfo,
+    rec,
     stop: () => sources.forEach((s) => s.stop()),
   };
 }

@@ -1,6 +1,10 @@
 /**
- * Easy controls (default): first finger anywhere = throttle on, drag = walk / turn; a second finger (or
- * the right mouse button) drags to look around, also with the follow camera. The head stays straight ahead.
+ * Easy controls (default): on foot without the trimmer, and on the pat pat, a finger on the right half
+ * drags the stick (walk; or gas up, brake / reverse down, steer left / right), on the left half to look
+ * around. Trimmer in hand the stick walks (up / down) and turns (left / right), and the right thumb
+ * holds the round throttle trigger: the longer it is held the more gas (full in two seconds, like a
+ * pedal pressed down); let go, it eases back to idle in a second. The right mouse button looks round.
+ * The head stays straight ahead.
  *
  * Advanced touch controls:
  * - left half: floating joystick (first person: up/down walks, left/right turns);
@@ -10,6 +14,10 @@
  * Keyboard: W/S walk, A/D turn, Space throttle, ←/→ swing the head, F bump, X stop, T re-thread (hold),
  * Esc pause.
  */
+/** The throttle trigger: milliseconds from idle to full held down, and from full back to idle let go. */
+const GAS_UP = 2000;
+const GAS_DOWN = 1000;
+
 export class Input {
   /** Joystick: x right, y down, length 0..1. */
   stickX = 0;
@@ -38,6 +46,15 @@ export class Input {
   private stopQueued = false;
   private rethreadHeld = false;
   private readonly keys = new Set<string>();
+  /** The throttle trigger: how far it is held 0..1, the finger on it and where it came down, the lock. */
+  private gas = 0;
+  private gasId: number | null = null;
+  /** When the trigger was pressed (its throttle rises with the time held), and let go (it falls back). */
+  private gasAt = 0;
+  private gasOffAt = 0;
+  private readonly gasBtn = document.getElementById('gas-btn');
+  /** The trimmer in hand on foot (first person): the left thumb walks and turns, the right one is on the trigger. */
+  trimmer = false;
 
   constructor(
     surface: HTMLElement,
@@ -49,6 +66,35 @@ export class Input {
     rethread: HTMLElement,
   ) {
     surface.addEventListener('pointerdown', (e) => this.down(e));
+    const btn = this.gasBtn;
+    if (btn) {
+      btn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        if (this.gasId !== null) return;
+        // Like a pedal: opening the longer it is held (see holdGas), from where it is now (it may still
+        // be easing back from the last press).
+        const now = this.throttleLevel;
+        this.gasId = e.pointerId;
+        this.gasAt = performance.now() - now * GAS_UP;
+        try {
+          btn.setPointerCapture(e.pointerId);
+        } catch {
+          // (A pointer already gone: nothing to hold on to.)
+        }
+        this.showGas();
+      });
+      const leave = (e: PointerEvent) => {
+        if (e.pointerId !== this.gasId) return;
+        // Let go: it eases back to idle (see the throttle).
+        this.gas = this.holdGas();
+        this.gasOffAt = performance.now();
+        this.gasId = null;
+        this.showGas();
+      };
+      btn.addEventListener('pointerup', leave);
+      btn.addEventListener('pointercancel', leave);
+      btn.addEventListener('lostpointercapture', leave);
+    }
     surface.addEventListener('contextmenu', (e) => e.preventDefault());
     window.addEventListener('pointermove', (e) => this.move(e));
     window.addEventListener('pointerup', (e) => this.up(e));
@@ -142,8 +188,43 @@ export class Input {
     return r;
   }
 
+  /** The throttle, 0..1: the trigger as held (Space: full). */
+  get throttleLevel(): number {
+    if (this.keys.has('Space')) return 1;
+    if (this.easy) return this.gasId !== null ? this.holdGas() : Math.max(0, this.gas - (performance.now() - this.gasOffAt) / GAS_DOWN);
+    return this.throttleOn ? 1 : 0;
+  }
+
+  /** Let go of the trigger and its lock (the engine stopped). */
+  setGas(v: number): void {
+    this.gas = v;
+    if (v === 0) {
+      this.gasId = null;
+      this.gas = 0;
+    }
+    this.showGas();
+  }
+
+  /** Held, the trigger opens like a pedal pressed down: from idle to full over two seconds, steadily. */
+  private holdGas(): number {
+    this.gas = Math.min(1, (performance.now() - this.gasAt) / GAS_UP);
+    return this.gas;
+  }
+
+  /** Each frame: the trigger's ring follows the throttle as it rises. */
+  tickGas(): void {
+    this.showGas();
+  }
+
+  private showGas(): void {
+    const b = this.gasBtn;
+    if (!b) return;
+    b.style.setProperty('--gas', String(this.throttleLevel));
+    b.classList.toggle('held', this.gasId !== null);
+  }
+
   get throttleOn(): boolean {
-    if (this.easy) return this.stickId !== null || this.keys.has('Space');
+    if (this.easy) return this.throttleLevel > 0.04;
     return (this.toggleThrottle ? this.throttleLatched : this.throttleHeld) || this.keys.has('Space');
   }
 
@@ -187,6 +268,8 @@ export class Input {
     this.throttleHeld = this.throttleLatched = false;
     this.bumpQueued = this.stopQueued = false;
     this.rethreadHeld = false;
+    this.gasId = null;
+    this.setGas(0);
     this.stickBase.classList.remove('show');
     this.renderPad();
   }
@@ -200,7 +283,10 @@ export class Input {
   private down(e: PointerEvent): void {
     // The first finger walks (and opens the throttle in easy mode); a second finger, or the right
     // mouse button, looks around. In advanced first person the right half is for looking.
-    const look = e.button === 2 || (this.stickId !== null && e.pointerType === 'touch') || (!this.easy && this.fpv && e.clientX > window.innerWidth * 0.5);
+    // (Trimmer in hand, a finger anywhere walks and turns: the right thumb is on the trigger.)
+    // (On foot without the trimmer the stick is on the right and the left half looks; trimmer in hand
+    // the right thumb is on the trigger and a finger anywhere else walks and turns.)
+    const look = e.button === 2 || (!this.trimmer && ((this.stickId !== null && e.pointerType === 'touch') || ((e.pointerType === 'touch' || !this.easy) && this.fpv && e.clientX < window.innerWidth * 0.5)));
     if (look) {
       if (this.lookId !== null) return;
       this.lookId = e.pointerId;
@@ -220,6 +306,7 @@ export class Input {
 
   private move(e: PointerEvent): void {
     if (e.pointerId === this.lookId) {
+      this.looked += Math.abs(e.clientX - this.lookLastX) + Math.abs(e.clientY - this.lookLastY);
       this.lookDX += e.clientX - this.lookLastX;
       this.lookDY += e.clientY - this.lookLastY;
       this.lookLastX = e.clientX;
@@ -257,5 +344,11 @@ export class Input {
     this.stickId = null;
     this.stickX = this.stickY = 0;
     this.stickBase.classList.remove('show');
+    // Back to where it rests (the stylesheet's place).
+    this.stickBase.style.left = this.stickBase.style.top = '';
+    this.stickKnob.style.transform = 'translate(-50%, -50%)';
   }
+
+  /** How far the player has dragged to look round, in all (pixels). */
+  looked = 0;
 }

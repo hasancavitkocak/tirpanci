@@ -2,7 +2,7 @@ import './styles.css';
 import './hud.css';
 import * as THREE from 'three';
 import { GameAudio } from './audio/audio';
-import { BushKind, DAILY, ENGINE, EXTRAS, HIVE, LEVELS, LINE_TYPES, LevelDef, MACHINES, NO_UPGRADES, PATPAT, PLAYER, REQUEST_TEXT, THEME_NAME, TRIMMER, Theme, UPGRADES, WEATHER_ICON, Weather, VEHICLES, DECOR, PAINTS } from './game/config';
+import { BushKind, DAILY, ENGINE, EXTRAS, HIVE, LEVELS, LINE_TYPES, LevelDef, MACHINES, NO_UPGRADES, PLAYER, REQUEST_TEXT, THEME_NAME, TRIMMER, Theme, UPGRADES, WEATHER_ICON, Weather, VEHICLES, DECOR, PAINTS } from './game/config';
 import { CarryOver, Result, Session } from './game/session';
 import { PRIMES_NEEDED, PullResult } from './game/starter';
 import { Input } from './input/input';
@@ -21,7 +21,6 @@ import { formatWait, readyIn } from './game/regrow';
 import { makeIlan } from './game/ilan';
 import { GoldKind, goldArt } from './ui/goldArt';
 import { ShopPreview } from './render/shopPreview';
-import { DriveControls } from './input/driveControls';
 import { ALL_DONE_BONUS, JobDone, TaskDef, dayTasks, taskCount } from './game/tasks';
 import { activeEvents, eventPay } from './game/events';
 import { REGIONS, setPosted } from './game/village';
@@ -84,10 +83,12 @@ function picture(files: string[], fallback: string): string {
 }
 
 /** Shop pictures in public/textures (shop-<id>.webp), preloaded at start. */
-const SHOP_PICTURES = ['patpat', 'traktor', 'emektar', 'usta', 'sirt', 'yuvarlak', 'koseli', 'burgulu', 'kulaklik', 'siperlik', 'depo', 'kalin', 'kafa', 'motor', 'cizme'];
+const SHOP_PICTURES = ['patpat', 'traktor', 'romork', 'emektar', 'usta', 'sirt', 'yuvarlak', 'koseli', 'burgulu', 'kulaklik', 'siperlik', 'depo', 'kalin', 'kafa', 'motor', 'cizme'];
 
 /** Development: every field playable without unlocking. Set to false before release. */
 const UNLOCK_ALL = true;
+/** Development: ?tirpan in the address starts jobs in the field, trimmer in hand (no pat pat ride). */
+const DEV_TRIMMER = new URLSearchParams(location.search).has('tirpan');
 /** Development build only: the purse never runs below this (never in a release build). */
 const DEV_MONEY = 9_999_999;
 
@@ -116,38 +117,7 @@ class Game {
   /** Where the job just finished ended, while the day goes on (next job); null from the menu. */
   private lastJob: CarryOver | null = null;
   /** The pat pat's gear: 1 forward, -1 reverse, 0 neutral. */
-  /** The pat pat's gear: 0 neutral, -1 reverse, 1..3 forward. */
   private patGear = 0;
-
-  /**
-   * The pat pat's gearbox, like a car's: into first (or reverse) pulling away, up through the gears as
-   * it gathers speed and down again as it slows, each with the lever's clunk. In each gear the revs
-   * climb with the speed and fall as the next goes in. Gives the revs, 0 (idle) .. 1.
-   */
-  private patpatRevs(throttle: number, speed: number): number {
-    // Each gear's speed band, m/s (they overlap, so it does not hunt between two).
-    const BAND = [[0, 0], [0, 1.7], [1.3, 3.1], [2.6, PATPAT.forward]];
-    const sp = Math.abs(speed);
-    const dir = throttle > 0.15 ? 1 : throttle < -0.15 ? -1 : 0;
-    const g = this.patGear;
-    if (sp < 0.15 && dir && Math.sign(g) !== dir) {
-      this.patGear = dir;
-      this.audio.patpatGear();
-    } else if (g > 0 && g < 3 && sp > BAND[g][1] - 0.1 && throttle > 0.15) {
-      this.patGear = g + 1;
-      this.audio.patpatGear(false);
-    } else if (g > 1 && sp < BAND[g][0]) {
-      this.patGear = g - 1;
-      this.audio.patpatGear();
-    } else if (!dir && sp < 0.1) this.patGear = 0;
-    const gear = this.patGear;
-    // Standing in neutral: the revs follow the throttle alone.
-    if (gear === 0) return 0.35 * Math.abs(throttle);
-    const [lo, hi] = gear < 0 ? [0, PATPAT.reverse] : BAND[gear];
-    const inGear = 0.15 + 0.85 * Math.min(1, Math.max(0, (sp - lo) / (hi - lo)));
-    // Labouring (throttle open, the speed not coming): the revs held up.
-    return Math.max(inGear, Math.abs(throttle) * (sp < 0.4 ? 0.55 : 0.3));
-  }
   private lastCutHaptic = 0;
   private visor!: Visor;
   private visorHinted = false;
@@ -220,19 +190,52 @@ class Game {
     this.showMenu();
     // Warm the browser cache with the portraits and shop pictures so the screens show them at once.
     for (const f of [...new Set(LEVELS.map((l) => l.client.face))].map((x) => `${x}.webp`).concat(SHOP_PICTURES.map((x) => `shop-${x}.webp`))) new Image().src = `./textures/${f}`;
+    // And the painted screens' pictures (the job map's regions, the wooden boards, the buttons): fetched
+    // and decoded now, held so they stay decoded (they appeared a moment late the first time).
+    for (const f of [...REGIONS.map((r) => `bolge${r.id}.webp`), 'pano.webp', 'tabela.webp', 'rozet.webp', 'pin.webp', 'kilit.webp', 'yildiz.webp', 'yildiz-bos.webp', 'btn-oyna2.webp', 'btn-gez.webp', 'btn-para.webp']) {
+      const im = new Image();
+      im.src = `./harita/${f}`;
+      void im.decode().catch(() => {});
+      this.warmed.push(im);
+    }
     requestAnimationFrame((t) => this.loop(t));
     (window as unknown as { __ready: boolean }).__ready = true;
+  }
+
+  /** The vehicle (and trailer) chosen in the shop during a job: it stands where the old one stood, at once. */
+  private applyVehicle(): void {
+    const s = this.session;
+    if (!s || s.driving) return;
+    s.field.tractor = this.save.vehicle === 'traktor';
+    s.field.trailer = this.trailerOn ? { yaw: NaN } : null;
+    this.audio.setTractor(s.field.tractor);
+    this.view.swapVehicle(this.models);
+  }
+
+  /** Serbest gez: in the village without a job. */
+  private roaming = false;
+
+  /** Pictures decoded ahead of the screens that show them (held so they stay decoded). */
+  private readonly warmed: HTMLImageElement[] = [];
+
+  /** The trailer bought and hitched, behind the tractor driven. */
+  private get trailerOn(): boolean {
+    return this.save.vehicle === 'traktor' && !!this.save.vehicles?.includes('romork') && !this.save.trailerOff;
   }
 
   /** Menu background: the worker with his trimmer standing in front of the pat pat, on the harman at home. */
   private menuSession(): Session {
     const s = new Session(LEVELS[0], NO_UPGRADES);
+    // The vehicle chosen in the shop stands there.
+    s.field.tractor = this.save.vehicle === 'traktor';
+    s.field.trailer = this.trailerOn ? { yaw: NaN } : null;
     const v = s.field.vehicle;
     // At home: the pat pat on the harman in front of the house.
-    const top = s.field.laneStart;
+    const top = s.field.harmanSpot;
     if (top) ({ x: v.x, z: v.z, yaw: v.yaw } = top);
     // In front of the tractor's nose, a little to its right, turned a quarter away from it.
-    const nose = PATPAT.joint + PATPAT.headAxle + PATPAT.headFront + 0.9;
+    const D = s.field.dims;
+    const nose = D.joint + D.headAxle + D.headFront + 0.9;
     const fx = Math.sin(v.yaw);
     const fz = Math.cos(v.yaw);
     s.x = v.x + fx * nose - fz * 0.6;
@@ -264,6 +267,9 @@ class Game {
     $('confirm-text').innerHTML = html;
     $('btn-confirm-yes').textContent = yes;
     box.classList.add('show');
+    // Whatever was held lets go: the stick held under the question (BÖLÜMÜ AÇ while driving) would
+    // otherwise stay pushed and the pat pat run on by itself after it.
+    this.input.reset();
     return new Promise((done) => {
       const close = (yes: boolean) => {
         box.classList.remove('show');
@@ -834,8 +840,6 @@ class Game {
   /** The village as the player has made it: the pat pat's paint, the yard decorations (for the next world built). */
   private applyLook(): void {
     WorldView.paintHue = PAINTS.find((p) => p.id === this.save.paint)?.hue ?? null;
-    // The gas pedal's rim (painted green, hue 0.33) in the pat pat's colour (factory blue about 0.6).
-    document.documentElement.style.setProperty('--paint-turn', `${Math.round(((WorldView.paintHue ?? 0.6) - 0.33) * 360)}deg`);
     WorldView.decor = (this.save.decor ?? []).filter((d) => !this.save.decorOff?.includes(d));
   }
 
@@ -866,8 +870,6 @@ class Game {
   /** What the Köy tab's turntable shows: a paint (by id) or a yard decoration (by id). */
   private koyLook: { boya: string | null; avlu: string } = { boya: null, avlu: 'saksi' };
   private shopPreview: ShopPreview | null = null;
-  /** The on-screen steering wheel and pedals for the pat pat. */
-  private readonly driveUi = new DriveControls($('drive-wheel'), $('pedal-gas'), $('pedal-brake'));
   /** The shop opened from the yard during a job (closing it goes back to the job). */
   private shopInGame = false;
   /** Store prices of the money packs and the starter pack, once fetched. */
@@ -958,8 +960,8 @@ class Game {
       ['tirpan', 'Tırpan'],
       ['misina', 'Misina'],
       ['donanim', 'Donanım'],
-      ['yukseltme', 'Yükseltme'],
-      ['arac', 'Araçlar'],
+      ['yukseltme', 'Güç'],
+      ['arac', 'Araç'],
       ['koy', 'Köy'],
     ];
     const bar = $('shop-tabs');
@@ -1109,6 +1111,27 @@ class Game {
       const using = this.save.vehicle ?? 'patpat';
       for (const v of VEHICLES) {
         const has = owned.includes(v.id);
+        if (v.attach) {
+          // The trailer: bought once (with the tractor), then hitched on or left off.
+          const hitched = has && !this.save.trailerOff;
+          const canBuy = owned.includes('traktor') && this.save.money >= v.price;
+          const label = has ? (hitched ? 'ÇIKAR' : 'TAK') : owned.includes('traktor') ? `${v.price.toLocaleString('tr-TR')} TL` : 'ÖNCE TRAKTÖR';
+          card(pic(v.id, 'i-tractor'), v.name, v.desc, '', label, has || canBuy, () => {
+            if (!has) {
+              if (!canBuy) return;
+              this.save.money -= v.price;
+              this.save.vehicles = [...owned, v.id];
+              this.save.trailerOff = false;
+              this.audio.coin();
+            } else {
+              this.save.trailerOff = hitched;
+              this.audio.ui();
+            }
+            if (this.mode === 'menu') this.view.load(this.menuSession(), this.models, true);
+            else if (this.shopInGame) this.applyVehicle();
+          }, hitched);
+          continue;
+        }
         const on = using === v.id;
         const label = v.soon ? 'YAKINDA' : on ? 'SEÇİLİ' : has ? 'SEÇ' : `${v.price.toLocaleString('tr-TR')} TL`;
         const badge = v.soon ? `<span class="pic-badge">${v.price.toLocaleString('tr-TR')} TL</span>` : '';
@@ -1120,6 +1143,9 @@ class Game {
             this.audio.coin();
           } else this.audio.ui();
           this.save.vehicle = v.id;
+          // On the menu: the yard behind it shows the vehicle chosen; in a job it stands there at once.
+          if (this.mode === 'menu') this.view.load(this.menuSession(), this.models, true);
+          else if (this.shopInGame) this.applyVehicle();
         }, on);
       }
     } else if (this.shopTab === 'donanim') {
@@ -1201,8 +1227,7 @@ class Game {
       if (this.shopInGame) this.resume();
       else this.show('menu');
     });
-    on('btn-howto', () => $('howto').classList.add('show'));
-    on('btn-howto-close', () => $('howto').classList.remove('show'));
+    on('btn-roam', () => void this.startRoam());
     on('btn-settings', () => this.openSettings());
     // From the pause menu: the settings over the game, back to the pause menu when done.
     on('btn-pause-settings', () => {
@@ -1285,8 +1310,14 @@ class Game {
     const drag = '<svg class="ic"><use href="#i-drag"/></svg>';
     const move = '<svg class="ic"><use href="#i-move"/></svg>';
     if (this.input.easy) {
-      $('tut-left').innerHTML = `${move} Bas: gaz, sürükle: yürü`;
-      $('tut-right').innerHTML = `2. parmak: etrafa bak ${drag}`;
+      if (this.input.trimmer) {
+        // (Both on the left: the trigger stands where the right one would be.)
+        $('tut-left').innerHTML = `${move} Sürükle: yürü, sağa sola dön<br>GAZ: basılı tut, yavaş yavaş artar`;
+        $('tut-right').innerHTML = '';
+      } else {
+        $('tut-left').innerHTML = `${drag} Sol: sürükle, etrafa bak`;
+        $('tut-right').innerHTML = `Sağ: sürükle, yürü ${move}`;
+      }
     } else {
       $('tut-left').innerHTML = `${move} Sürükle: yürü / dön`;
       $('tut-right').innerHTML = this.cameraMode === 'fpv' ? `Sürükle: etrafa bak ${drag}` : `Gaz pedi: bas ve kaydır ${drag}`;
@@ -1555,10 +1586,10 @@ class Game {
    * Build a job behind the loading screen: it is shown (and painted) first, so the seconds the phone
    * spends building the field are spent on it, not on a frozen screen.
    */
-  private async startWithLoader(def: LevelDef): Promise<void> {
+  private async startWithLoader(def: LevelDef, title = `${def.name} hazırlanıyor…`): Promise<void> {
     this.mode = 'loading';
     this.audio.stopEngine();
-    $('loading-text').textContent = `${def.name} hazırlanıyor…`;
+    $('loading-text').textContent = title;
     $('loading-tip').textContent = LOAD_TIPS[Math.floor(Math.random() * LOAD_TIPS.length)];
     $('load-fill').style.width = '60%';
     this.show('loading');
@@ -1566,15 +1597,39 @@ class Game {
     this.start(def);
   }
 
+  /**
+   * Serbest gez: the village of the job map's region shown last, no job in it. From the house door
+   * (the vehicle in the garage, the trimmer left in it), in first person; walk, drive, look round, the
+   * shop by the house. No objective, gauges, time or pay; the pause card's Ana Menü ends it.
+   */
+  private async startRoam(): Promise<void> {
+    const tab = this.levelTab ?? 1;
+    const def = LEVELS.find((l) => (l.region ?? 1) === tab) ?? LEVELS[0];
+    const place = REGIONS.find((r) => r.id === tab)?.name ?? 'Köy';
+    this.roaming = true;
+    this.lastJob = null;
+    await this.startWithLoader(def, `${place} hazırlanıyor…`);
+  }
+
   start(def: LevelDef): void {
-    this.driveUi.reset();
     // Today's events may raise the pay.
     const lv = { ...def, weather: this.weatherOf(def), pay: eventPay(def, new Date()) };
     this.level = def;
     // Every job starts on the pat pat by the house at the top of the slope, the trimmer in the trailer without line.
-    const from = !this.save.introDone && def.id === LEVELS[0].id ? 'home' : 'patpat';
+    // (Development: ?tirpan in the address starts every job in the field with the trimmer in hand.)
+    const from = this.roaming ? 'home' : DEV_TRIMMER ? 'ready' : !this.save.introDone && def.id === LEVELS[0].id ? 'home' : 'patpat';
     // On from the last job's field if the day goes on; from home after the menu.
-    this.session = new Session(lv, this.save.upgrades, this.input.easy ? 1.5 : 1, this.save.equipment, from, this.lastJob ?? undefined);
+    this.session = new Session(lv, this.save.upgrades, this.input.easy ? 1.5 : 1, this.save.equipment, from, this.roaming ? undefined : (this.lastJob ?? undefined));
+    // Roaming: nothing to do first (no trimmer to take for a job).
+    if (this.roaming) {
+      this.session.intro = null;
+      this.session.roaming = true;
+    }
+    document.body.classList.toggle('roam', this.roaming);
+    // The vehicle bought and chosen in the shop.
+    this.session.field.tractor = this.save.vehicle === 'traktor';
+    this.session.field.trailer = this.trailerOn ? { yaw: NaN } : null;
+    this.audio.setTractor(this.session.field.tractor);
     this.lastJob = null;
     // The coffee-house jobs stand in the neighbours' gardens.
     this.refreshIlanlar();
@@ -1622,7 +1677,8 @@ class Game {
     chip.textContent = lv.client.request === 'none' ? '' : `${lv.client.name}: ${REQUEST_TEXT[lv.client.request]}`;
     this.updateStarterUi();
     // The job: which field (it is marked on the map), for whom.
-    this.toast(`Bugünkü iş: ${lv.name} (${lv.client.name}). Yeri HARİTA'da işaretli`, 'good', 'job', 6);
+    if (this.roaming) this.toast('Serbest gez: köyü istediğin gibi dolaş. Çıkmak için duraklat › Ana Menü', 'good');
+    else this.toast(`Bugünkü iş: ${lv.name} (${lv.client.name}). Yeri HARİTA'da işaretli`, 'good', 'job', 6);
   }
 
   /** The shop from the yard: the job waits (paused, without the pause card) until it is closed. */
@@ -1664,6 +1720,8 @@ class Game {
 
   private quitToMenu(): void {
     this.lastJob = null;
+    this.roaming = false;
+    document.body.classList.remove('roam');
     this.audio.resume();
     this.audio.stopEngine();
     this.audio.patpat(false);
@@ -1752,8 +1810,12 @@ class Game {
     el.textContent = text;
     const box = $('toasts');
     box.appendChild(el);
+    this.placeToasts();
     while (box.children.length > 3) box.firstChild?.remove();
-    setTimeout(() => el.remove(), 2300);
+    // Long enough to read: by its length (warnings a little longer).
+    const ms = Math.max(2600, 1200 + text.length * 70) * (kind === 'warn' ? 1.3 : 1);
+    el.style.animationDuration = `${ms}ms`;
+    setTimeout(() => el.remove(), ms + 100);
   }
 
   private handleEvents(s: Session): void {
@@ -1875,7 +1937,7 @@ class Game {
           this.audio.patpat(true);
           haptic('medium');
           this.updateStarterUi();
-          this.toast('Direksiyonu çevir, GAZ ile git, FREN ile dur (durunca geri gider). Bidon da seninle gelir', 'good', 'board', 120);
+          this.toast('Sağda sürükle ve sür (tarifi: Ayarlar › Nasıl oynanır?)', 'good', 'board', 120);
           break;
         case 'alight':
           this.audio.patpat(false);
@@ -2146,6 +2208,8 @@ class Game {
   }
 
   private mapOpen = false;
+  /** Seconds the look hint has been on screen. */
+  private lookHintFor = 0;
   /** First person: whether the view's pitch was last set for the trimmer in hand, and where it is easing to. */
   private pitchHands = false;
   private pitchEase: number | null = null;
@@ -2242,16 +2306,15 @@ class Game {
       }
       // First person: looking up past straight ahead lifts the trimmer off the ground.
       const lift = fpv ? Math.max(0, Math.min(1, (this.view.pitch - 0.05) / 0.45)) : 0;
-      const throttle = this.input.throttleOn;
+      this.input.tickGas();
+      const throttle = this.input.throttleLevel;
       const bump = this.input.takeBump();
       if (!this.save.tutorialSeen && (Math.hypot(m.x, m.y) > 0.3 || throttle)) {
         this.save.tutorialSeen = true;
         setTimeout(() => $('tutorial').classList.remove('show'), 2500);
       }
-      // On the pat pat the stick is throttle (up / down) and steering (left / right).
-      // Or the steering wheel and pedals on the screen, when they are in use.
-      this.driveUi.update(dt);
-      const drive = s.driving ? (this.driveUi.active ? { throttle: this.driveUi.throttle, steer: this.driveUi.steer } : { throttle: -m.y, steer: m.x }) : undefined;
+      // On the pat pat the stick is throttle (up; down brakes, then backs up) and steering (left / right).
+      const drive = s.driving ? { throttle: -m.y, steer: m.x } : undefined;
       if (s.driving) {
         moveX = moveZ = 0;
         this.lookYaw = s.yaw;
@@ -2259,7 +2322,14 @@ class Game {
         this.view.driveOrbit -= look.dx * 0.006;
         if (look.dx === 0) this.view.driveOrbit *= Math.exp(-dt * 0.8);
         this.view.driveOrbit = Math.max(-Math.PI, Math.min(Math.PI, this.view.driveOrbit));
-        this.audio.patpat(true, this.patpatRevs(drive!.throttle, s.field.vehicle.speed));
+        this.audio.patpat(true, Math.min(1, Math.abs(s.field.vehicle.speed) / 4 + Math.max(0, -m.y) * 0.3), Math.min(1, Math.abs(s.field.vehicle.speed) / s.field.dims.forward));
+        // The gear: into first or reverse as the stick is pushed from standing, or across from one to
+        // the other; back to neutral once stopped with the stick let go.
+        const dir = Math.abs(m.y) > 0.15 ? (m.y < 0 ? 1 : -1) : 0;
+        if (dir && dir !== this.patGear) {
+          this.audio.patpatGear();
+          this.patGear = dir;
+        } else if (!dir && Math.abs(s.field.vehicle.speed) < 0.1) this.patGear = 0;
       }
       s.advance(dt, {
         drive,
@@ -2273,13 +2343,36 @@ class Game {
         rethread: this.input.rethreading || this.actionHeld,
         lift,
       });
+      // The throttle lever: shown with the trimmer in hand and the engine running; back to idle when it
+      // stops (it starts again ticking over, not flat out).
+      const trimmerInHand = s.hasTrimmer && !s.driving && !s.intro;
+      document.body.classList.toggle('gas-on', trimmerInHand && s.running);
+      document.body.classList.toggle('trimmer-hand', trimmerInHand);
+      // Trimmer in hand the right thumb is on the trigger: the left one walks and turns (looking).
+      if (this.input.trimmer !== trimmerInHand) {
+        this.input.trimmer = trimmerInHand;
+        this.updateTutorialText();
+      }
+      // The look hint: it stays a few seconds, then goes as soon as the player moves (walks or looks).
+      const hint = !this.save.lookSeen && !s.intro && !trimmerInHand;
+      if (hint) {
+        this.lookHintFor += dt;
+        const moved = this.input.looked > 0 || Math.hypot(m.x, m.y) > 0.2;
+        if (this.lookHintFor > 3 && moved) {
+          this.save.lookSeen = true;
+          void writeSave(this.save);
+        }
+      }
+      document.body.classList.toggle('look-hint', hint);
+      if (!s.running && this.input.throttleOn) this.input.setGas(0);
       if (throttle && s.cold) this.toast('Motor ısınıyor, birkaç saniye tam güç vermez', '', 'cold', 8);
       this.handleEvents(s);
       this.cutRate += (this.cutAcc / Math.max(dt, 1e-3) - this.cutRate) * 0.2;
       this.cutAcc = 0;
       this.audio.update(dt, s.rpm, s.cutting ? s.loadRatio : 0, true, s.temp, s.cutting ? this.cutRate : 0, s.strain, this.cutTall);
       this.input.renderPad(s.sweep / PLAYER.sweepMax, s.rpm);
-      this.audio.setWater(Math.max(0, 1 - streamDistance(s.field, s.x, s.z) / 24));
+      // (Heard only near it: from 12 m off, rising by the bank.)
+      this.audio.setWater(Math.max(0, 1 - streamDistance(s.field, s.x, s.z) / 12));
       this.ambientSounds(s, dt);
       // Face shield: dirtied by the cut grass in first person.
       this.visor.visible = this.view.mode === 'fpv';
@@ -2318,12 +2411,29 @@ class Game {
    * in the trailer or take it out; at the start of a job take the trimmer and fit line (held, with a
    * progress bar); on the pat pat get off. Rebuilt only when the choices change.
    */
+  /**
+   * The messages line up under the objective and beside the action buttons (on the left), never over
+   * either of them; the right edge's round buttons stay clear too.
+   */
+  private placeToasts(): void {
+    const box = $('toasts');
+    const o = $('objective');
+    const acts = $('actions');
+    box.style.top = o.innerHTML ? `${o.getBoundingClientRect().bottom + 8}px` : '';
+    const left = acts.children.length ? acts.getBoundingClientRect().right + 8 : 0;
+    box.style.left = `${left}px`;
+    box.style.right = left ? '62px' : '0';
+  }
+
   private renderActions(list: { id: string; icon: string; label: string; sub: string; hold?: boolean; progress?: number; run?: () => void }[]): void {
     const box = $('actions');
     // A held button keeps its element while its text and bar move (rebuilding would drop the hold).
     const key = list.map((a) => `${a.id}|${a.label}|${a.hold ? '' : a.sub}`).join(';');
     if (key !== this.actionKey) {
       this.actionKey = key;
+      // (The hints along the bottom move clear of the buttons on the left.)
+      document.body.classList.toggle('has-acts', list.length > 0);
+      requestAnimationFrame(() => this.placeToasts());
       this.actionHeld = false;
       box.innerHTML = '';
       for (const a of list) {
@@ -2363,13 +2473,18 @@ class Game {
     const acts: Parameters<Game['renderActions']>[0] = [];
     if (s.driving) {
       const rolling = Math.abs(s.field.vehicle.speed) > 0.5;
-      acts.push({ id: 'off', icon: 'i-tractor', label: 'İN', sub: rolling ? 'önce dur' : 'patpattan in', run: () => s.alight() });
+      acts.push({ id: 'off', icon: 'i-tractor', label: 'İN', sub: rolling ? 'önce dur' : s.field.tractor ? 'traktörden in' : 'patpattan in', run: () => s.alight() });
+      if (s.canOpenGate) acts.push({ id: 'gate', icon: 'i-lock', label: 'KAPIYI AÇ', sub: 'avlu kapısı', run: () => s.openGate() });
+      if (s.canShutGate) acts.push({ id: 'gate-shut', icon: 'i-lock', label: 'KAPIYI KAPAT', sub: 'avlu kapısı', run: () => s.shutGate() });
     } else if (s.intro === 'line') {
       acts.push({ id: 'line', icon: 'i-rethread', label: 'MİSİNA TAK', sub: s.rethread > 0 ? `sarılıyor %${Math.round(s.rethread * 100)}` : 'basılı tut', hold: true, progress: s.rethread });
     } else {
-      if (s.canTake) acts.push({ id: 'take', icon: 'i-hand', label: 'TIRPANI AL', sub: 'kasadan al', run: () => s.takeTrimmer() });
-      if (s.canBoard) acts.push({ id: 'board', icon: 'i-tractor', label: 'PATPATA BİN', sub: !s.vehicleAtField ? 'tarlaya sür' : 'bidonu yanına getir', run: () => s.board() });
+      // (Roaming there is no job to take the trimmer for.)
+      if (s.canTake && !s.roaming) acts.push({ id: 'take', icon: 'i-hand', label: 'TIRPANI AL', sub: 'kasadan al', run: () => s.takeTrimmer() });
+      if (s.canBoard) acts.push({ id: 'board', icon: 'i-tractor', label: s.field.tractor ? 'TRAKTÖRE BİN' : 'PATPATA BİN', sub: s.roaming ? 'köyü gez' : !s.vehicleAtField ? 'tarlaya sür' : 'bidonu yanına getir', run: () => s.board() });
       if (s.canDrop) acts.push({ id: 'drop', icon: 'i-hand', label: 'TIRPANI BIRAK', sub: 'kasaya koy', run: () => s.dropTrimmer() });
+      if (s.canOpenGate) acts.push({ id: 'gate', icon: 'i-lock', label: 'KAPIYI AÇ', sub: 'avlu kapısı', run: () => s.openGate() });
+      if (s.canShutGate) acts.push({ id: 'gate-shut', icon: 'i-lock', label: 'KAPIYI KAPAT', sub: 'avlu kapısı', run: () => s.shutGate() });
       if (s.atHouse) acts.push({ id: 'shop', icon: 'i-coins', label: 'DÜKKAN', sub: 'boya, avlu, alet', run: () => this.openShopInGame() });
     }
     // At a locked field's gate, on foot or driving.
@@ -2379,20 +2494,23 @@ class Game {
     if (gate?.kind === 'switch') acts.push({ id: 'switch', icon: 'i-map', label: 'BU İŞE GEÇ', sub: gate.lv.name, run: () => void this.switchJob(gate.lv) });
     this.renderActions(acts);
     let text = '';
+    // The vehicle by name (the pat pat carries the trimmer in its trailer; nothing rides on the tractor).
+    const tr = s.field.tractor;
+    const to = tr ? 'Traktöre' : 'Patpata';
     if (s.intro === 'take') {
       const v = s.field.vehicle;
       const near = s.nearVehicle;
       const d = Math.round(Math.hypot(v.x - s.x, v.z - s.z));
       const arrow = this.arrowTo(s, v.x, v.z);
       const name = s.field.level.name;
-      if (s.driving && s.vehicleAtField) text = "Tarlaya geldin: dur ve İN'e bas<small>Sonra tırpanı kasadan al</small>";
+      if (s.driving && s.vehicleAtField) text = `Tarlaya geldin: dur ve İN'e bas<small>Sonra tırpanı ${tr ? 'al' : 'kasadan al'}</small>`;
       else if (s.driving) {
         // Along the way: towards a point a little way on along the route, the distance still to go.
         const r = this.routeAhead(s);
         text = `${this.arrowTo(s, r.x, r.z)}${name}: ${r.left} m<small>Yolu takip et · HARİTA'da işin yeri işaretli</small>`;
       }
-      else if (!s.vehicleAtField) text = near ? 'Patpata bin, tarlaya sür<small>PATPATA BİN butonuna bas</small>' : `${arrow}Patpata git (${d} m)<small>Patpat yolun başında, tırpan kasasında</small>`;
-      else text = near ? 'Tırpan patpatın kasasında: al onu' : `${arrow}Patpata git (${d} m)<small>Sürükleyerek yürü, köyde istediğin yere gidebilirsin</small>`;
+      else if (!s.vehicleAtField) text = near ? `${to} bin, tarlaya sür<small>${to.toLocaleUpperCase('tr')} BİN butonuna bas</small>` : `${arrow}${to} git (${d} m)<small>${tr ? 'Traktör yolun başında' : 'Patpat yolun başında, tırpan kasasında'}</small>`;
+      else text = near ? (tr ? 'Tırpanını al' : 'Tırpan patpatın kasasında: al onu') : `${arrow}${to} git (${d} m)<small>Sürükleyerek yürü, köyde istediğin yere gidebilirsin</small>`;
     } else if (!s.intro && !s.vehicleAtField) {
       // Carrying on from the last job: to the pat pat, then on to this job's field.
       const v = s.field.vehicle;
@@ -2400,15 +2518,20 @@ class Game {
       if (s.driving) {
         const r = this.routeAhead(s);
         text = `${this.arrowTo(s, r.x, r.z)}${name}: ${r.left} m<small>Yolu takip et · HARİTA'da işin yeri işaretli</small>`;
-      } else if (s.nearVehicle) text = `Patpata bin, ${name} tarlasına sür<small>Binince tırpan kasaya konur</small>`;
-      else text = `${this.arrowTo(s, v.x, v.z)}Patpata git (${Math.round(Math.hypot(v.x - s.x, v.z - s.z))} m)<small>Sıradaki iş: ${name}</small>`;
+      } else if (s.nearVehicle) text = `${to} bin, ${name} tarlasına sür<small>${tr ? 'Tırpan seninle gelir' : 'Binince tırpan kasaya konur'}</small>`;
+      else text = `${this.arrowTo(s, v.x, v.z)}${to} git (${Math.round(Math.hypot(v.x - s.x, v.z - s.z))} m)<small>Sıradaki iş: ${name}</small>`;
     } else if (s.intro === 'line') {
       const p = Math.round(s.rethread * 100);
       text = p > 0 ? `Misina sarılıyor: %${p}<small>Bırakma, birazdan biter</small>` : 'Misina takılı değil<small>MİSİNA TAK butonuna basılı tut</small>';
       text += `<span class="obj-bar"><i style="width:${p}%"></i></span>`;
     }
+    // (Roaming: no job to point to.)
+    if (this.roaming) text = '';
     const el = $('objective');
-    if (el.innerHTML !== text) el.innerHTML = text;
+    if (el.innerHTML !== text) {
+      el.innerHTML = text;
+      this.placeToasts();
+    }
   }
 
   /** An arrow (inline SVG) pointing from the worker towards (x, z) as seen from the camera. */
@@ -2475,6 +2598,9 @@ class Game {
       if (!go) return;
     }
     this.lastJob = s.carryOver();
+    // (From Serbest gez: the job starts from here, a job like any other.)
+    this.roaming = false;
+    document.body.classList.remove('roam');
     void this.startWithLoader(lv);
   }
 

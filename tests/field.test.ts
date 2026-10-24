@@ -181,18 +181,19 @@ describe('Session', () => {
     // Not up here: the trimmer stays in the trailer until the pat pat is down at the field.
     expect(s.takeTrimmer()).toBe(false);
     expect(s.board()).toBe(true);
-    // Getting on by the yard gate starts it opening (the slow motor gate is open by the time the pat
-    // pat is driven up to it).
+    // Getting on in the garage, the gate stays shut and far off (no KAPIYI AÇ there yet).
     for (let i = 0; i < 60; i++) s.step({ moveX: 0, moveZ: 0, throttle: false, bump: false, drive: { throttle: 0, steer: 0 } });
-    expect(s.field.gateOpen).toBeGreaterThan(0);
-    // Down the lane, steering for a point a little way ahead on it; the gate is open before the pat pat
-    // gets to it (it never has to wait).
-    const yg = s.field.yardGate!;
-    let closest = Infinity;
+    expect(s.field.gateOpen).toBe(0);
+    expect(s.canOpenGate).toBe(false);
+    // Out of the garage and down the lane, steering for a point a little way ahead on it; KAPIYI AÇ
+    // pressed as soon as it shows by the gate.
     const lane = s.field.lane;
+    let opened = false;
     for (let i = 0; i < 60 * 90 && !s.vehicleAtField; i++) {
-      const h = s.field.head(v.x, v.z, v.yaw, v.art);
-      if (s.field.gateOpen < 0.95) closest = Math.min(closest, Math.hypot(h.x - (yg.ax + yg.bx) / 2, h.z - (yg.az + yg.bz) / 2));
+      if (!opened && s.canOpenGate) {
+        s.openGate();
+        opened = true;
+      }
       let k = 0;
       for (let j = 1; j < lane.length; j++) if (Math.hypot(lane[j].x - v.x, lane[j].z - v.z) < Math.hypot(lane[k].x - v.x, lane[k].z - v.z)) k = j;
       const t = lane[Math.min(lane.length - 1, k + 4)];
@@ -200,9 +201,9 @@ describe('Session', () => {
       err = Math.atan2(Math.sin(err), Math.cos(err));
       s.step({ moveX: 0, moveZ: 0, throttle: false, bump: false, drive: { throttle: Math.abs(err) > 0.5 ? 0.5 : 1, steer: Math.max(-1, Math.min(1, -err * 3)) } });
     }
+    expect(opened).toBe(true);
     expect(s.vehicleAtField).toBe(true);
-    expect(closest).toBeGreaterThan(1.2);
-    // Driven off down the lane: it has shut behind the pat pat.
+    // Driven well off down the lane: it has shut behind the pat pat by itself.
     expect(s.field.gateOpen).toBe(0);
     for (let i = 0; i < 60 * 3 && s.driving; i++) {
       s.step({ moveX: 0, moveZ: 0, throttle: false, bump: false, drive: { throttle: 0, steer: 0 } });
@@ -249,7 +250,7 @@ describe('Session', () => {
     expect(s.running).toBe(false);
   });
 
-  it('the yard gate opens for the pat pat coming from outside, stays open while it waits there, shuts when it drives off', () => {
+  it('the yard gate opens on KAPIYI AÇ, stays open while waited at, shuts on KAPIYI KAPAT', () => {
     const s = new Session(LEVELS[0], NO_UPGRADES, 1, undefined, 'home');
     const f = s.field;
     const g = f.yardGate!;
@@ -268,17 +269,27 @@ describe('Session', () => {
     s.z = v.z;
     expect(s.board()).toBe(true);
     const drive = (throttle: number) => s.step({ moveX: 0, moveZ: 0, throttle: false, bump: false, drive: { throttle, steer: 0 } });
-    for (let i = 0; i < 30; i++) drive(0);
-    expect(f.gateOpen).toBe(0);
-    // Towards it: it opens; stopped short of it, it stays open.
+    // Driving up to it, it stays shut (it is not opened by itself).
     for (let i = 0; i < 60 * 0.8; i++) drive(1);
     for (let i = 0; i < 60 * 3; i++) drive(0);
     const d = Math.hypot(v.x - mx, v.z - mz);
     expect(d).toBeGreaterThan(3);
+    expect(f.gateOpen).toBe(0);
+    expect(s.canShutGate).toBe(false);
+    // KAPIYI AÇ: it opens, and stays open.
+    expect(s.canOpenGate).toBe(true);
+    s.openGate();
+    for (let i = 0; i < 60 * 4; i++) drive(0);
     expect(f.gateOpen).toBe(1);
-    // Backing off: it shuts.
-    for (let i = 0; i < 60 * 2; i++) drive(-1);
+    expect(s.canOpenGate).toBe(false);
+    // Backing off a little: still open.
+    for (let i = 0; i < 60 * 1; i++) drive(-1);
     for (let i = 0; i < 60 * 3; i++) drive(0);
+    expect(f.gateOpen).toBe(1);
+    // KAPIYI KAPAT: it shuts.
+    expect(s.canShutGate).toBe(true);
+    s.shutGate();
+    for (let i = 0; i < 60 * 4.5; i++) drive(0);
     expect(f.gateOpen).toBe(0);
   });
 

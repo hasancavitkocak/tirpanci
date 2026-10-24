@@ -72,7 +72,8 @@ const noise2 = makeNoise(977);
 function home(hx: number, hz: number): Pick<Region, 'house' | 'harman' | 'plateau'> {
   const house = { x: hx, z: hz, rot: Math.PI / 2 };
   const harman = { x: hx + 9.5, z: hz, r: 4.6 };
-  return { house, harman, plateau: { x: (house.x + harman.x) / 2, z: hz, r: 10 } };
+  // (Wide enough for the garage behind, between the house and the harman.)
+  return { house, harman, plateau: { x: (house.x + harman.x) / 2, z: hz, r: 15 } };
 }
 
 export const REGIONS: Region[] = [

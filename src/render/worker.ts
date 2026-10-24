@@ -295,6 +295,8 @@ export class WorkerView {
   wheelGrips: [THREE.Vector3, THREE.Vector3] | null = null;
   /** The pat pat's chassis (its origin on the ground under the trailer's centre) while he drives. */
   seat: THREE.Object3D | null = null;
+  /** Where the seat is on it: ahead of the vehicle's position, and its cushion's height over the pat pat's. */
+  seatPlace = { z: PATPAT.seat, lift: 0 };
   private idleAction: THREE.AnimationAction | null = null;
   private walkPhase = 0;
   private twist = 0;
@@ -500,7 +502,7 @@ export class WorkerView {
     if (this.driving && this.seat) {
       // On the seat: placed and tilted with the pat pat's chassis (on a side slope he leans with it).
       this.seat.updateMatrixWorld();
-      this.root.position.set(0, SEAT_HEIGHT, PATPAT.seat).applyMatrix4(this.seat.matrixWorld);
+      this.root.position.set(0, SEAT_HEIGHT + this.seatPlace.lift, this.seatPlace.z).applyMatrix4(this.seat.matrixWorld);
       this.root.quaternion.setFromRotationMatrix(this.seat.matrixWorld);
     } else {
       const y = groundAt(s.x, s.z) + (this.driving ? SEAT_HEIGHT : 0);

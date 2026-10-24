@@ -241,11 +241,51 @@ export const SLOPE = { slipFrom: 0.42, slideAccel: 3.2, slideDecay: 3.5, fallAt:
  * tracks of the head and the trailer, and of the ruts they wear in the lane; the seat ahead of the
  * trailer centre. Driving over grass flattens it to `crushTo` (not mown).
  */
+/** A vehicle's measures (the pat pat's are PATPAT; the tractor's TRACTOR): see PATPAT. */
+export interface VehicleDims {
+  joint: number;
+  rearAxle: number;
+  headAxle: number;
+  headFront: number;
+  headTrack: number;
+  kasaTrack: number;
+  seat: number;
+  /** Seat cushion height over the pat pat's (0.89 m), metres. */
+  seatLift: number;
+  forward: number;
+}
+
 export const PATPAT = {
   forward: 4.2, reverse: 1.5, accel: 1.8, brake: 4.5, maxArt: 0.7, artRate: 1.3,
   joint: 1.26, rearAxle: 0.65, headAxle: 0.36, headFront: 0.46,
   headTrack: 0.58, kasaTrack: 0.74, track: 0.66, seat: 0.38, crushTo: 0.5,
 };
+
+/**
+ * The tractor (render/tractor.ts: measured from its model): rigid, steered by its front wheels. The
+ * vehicle's position is half way between its axles; no hitch (the front axle stands where the pin
+ * would, its "head" the front axle itself).
+ */
+export const TRACTOR: VehicleDims = {
+  joint: 0.933, rearAxle: 0.933, headAxle: 0, headFront: 0.65,
+  headTrack: 0.66, kasaTrack: 0.8, seat: -0.97, seatLift: 0.32, forward: 5.6,
+};
+/** The tractor's wheelbase and full lock of its front wheels (radians). */
+export const TRACTOR_WHEELBASE = 1.866;
+export const TRACTOR_LOCK = 0.6;
+/**
+ * The trailer (römork) behind the tractor (render/trailer.ts: measured from its model): its hitch that
+ * far behind the tractor's rear axle, its single axle `length` behind the hitch; wheels as the tractor's
+ * front ones; how far round it may swing from the tractor's heading (radians).
+ */
+/**
+ * The garage (render: garaj.glb, open at its front): at the back of the yard, between the house and the
+ * harman, its mouth towards the harman's edge. Width and depth, metres; the vehicle waits in it, its
+ * nose at the mouth (the tractor with the trailer fits).
+ */
+export const GARAGE = { w: 8, d: 7.5, back: 12.25 };
+export const TRAILER = { hitch: 0.6, length: 3.0, track: 0.98, wheel: 0.76, maxAngle: 1.3 };
+
 
 /** Rain: wet grass is heavier to cut. */
 export const WET_LOAD = 1.35;
@@ -325,8 +365,9 @@ export const TRIMMER = {
   radiusBase: 0.15,
   radiusPerCm: 0.022,
   /** Throttle spin-up / spin-down speed per second. */
-  spinUp: 3.5,
-  spinDown: 2.2,
+  // (Quick: a blip of throttle is heard and felt at once, as on a real two-stroke.)
+  spinUp: 15,
+  spinDown: 10,
   /** Minimum throttle at which the line cuts. */
   cutThrottle: 0.45,
 };
@@ -430,11 +471,13 @@ export const DAILY = [100, 150, 200, 250, 300, 400, 600];
 
 /**
  * Vehicles to drive to the jobs: bought once, then picked. `soon`: in the shop to look forward to,
- * not for sale yet (its 3D model is still being made).
+ * not for sale yet (its 3D model is still being made). `attach`: hitched behind the tractor (taken off
+ * and put back on), not driven.
  */
-export const VEHICLES: { id: string; name: string; desc: string; price: number; soon?: boolean }[] = [
+export const VEHICLES: { id: string; name: string; desc: string; price: number; soon?: boolean; attach?: boolean }[] = [
   { id: 'patpat', name: 'Patpat', desc: 'Köyün emektarı. Belinden kırma, her yola girer.', price: 0 },
-  { id: 'traktor', name: 'Traktör', desc: 'Daha hızlı, yokuşta daha güçlü. Uzak tarlalara çabuk gidersin.', price: 30000, soon: true },
+  { id: 'traktor', name: 'Traktör', desc: 'Daha hızlı, yokuşta daha güçlü. Uzak tarlalara çabuk gidersin.', price: 30000 },
+  { id: 'romork', name: 'Römork', desc: 'Traktörün arkasına takılır. Yakında odun taşıyacaksın.', price: 12000, attach: true },
 ];
 
 /** The village made nicer: paints for the pat pat (one at a time) and things for the yard (all bought stay). */

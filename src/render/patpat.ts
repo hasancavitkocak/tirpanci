@@ -177,6 +177,34 @@ export class PatpatRig {
       this.wheels.push({ spin: w.spin, r, dir: s < 0 ? -1 : 1 });
     }
 
+    // A short rubber boot lying across the hitch, from the trailer's front into the head's back (they
+    // meet at the pin, 0.45 m up and above): over the cut the mesh was split along; it turns with the head.
+    {
+      const len = 0.16;
+      const boot = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, len, 10, 4), new THREE.MeshLambertMaterial({ color: '#1a1b1d' }));
+      const bp = boot.geometry.getAttribute('position');
+      for (let i = 0; i < bp.count; i++) {
+        // Ribbed like a bellows.
+        const f = 1 + 0.15 * Math.cos((bp.getY(i) / len + 0.5) * Math.PI * 4);
+        bp.setX(i, bp.getX(i) * f);
+        bp.setZ(i, bp.getZ(i) * f);
+      }
+      boot.geometry.computeVertexNormals();
+      boot.rotation.x = Math.PI / 2;
+      boot.position.set(0, 0.55, 0);
+      this.head.add(boot);
+    }
+
+    // A shield across the front of the driver's floor, in the paint, up towards the steering wheel: over
+    // the torn edges where the model's own column was cut away.
+    {
+      const h = 0.32;
+      const shield = new THREE.Mesh(new THREE.BoxGeometry(0.6, h, 0.035), this.columnMat);
+      shield.position.set(0, this.floorY + h / 2 - 0.02, (BODY.refX - BODY.columnX) * k + 0.07);
+      shield.castShadow = true;
+      this.kasa.add(shield);
+    }
+
     // The steering column on the centre line: from the front of the floor up and back towards the
     // seat, the wheel on top where the seated driver's hands reach it.
     // (Its foot sunk into the floor, so from no angle does it stand in the air; the wheel a little
@@ -270,7 +298,7 @@ export class PatpatRig {
   }
 
   /** Roll the wheels by `distance` metres; the steering wheel follows the head's angle. */
-  update(distance: number, art: number): void {
+  update(distance: number, art: number, _steer = 0): void {
     for (const w of this.wheels) w.spin.rotation.x += (distance / w.r) * w.dir;
     this.steering.rotation.y = (art / PATPAT.maxArt) * 2.4;
   }

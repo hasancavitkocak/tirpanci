@@ -55,6 +55,8 @@ export interface SaveData {
   sfxVolume: number;
   vibration: boolean;
   tutorialSeen: boolean;
+  /** The player has looked round by dragging (the hint for it is not shown again). */
+  lookSeen?: boolean;
   /** The first job, started at home (take the trimmer, fit line), has been played. */
   introDone?: boolean;
   /** Fixed graphics quality; unset = automatic. */
@@ -92,6 +94,8 @@ export interface SaveData {
   /** Vehicles bought, and the one driven. */
   vehicles?: string[];
   vehicle?: string;
+  /** The trailer (bought) left off the tractor. */
+  trailerOff?: boolean;
 }
 
 export const DEFAULT_SAVE: SaveData = {

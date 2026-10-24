@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import { Field, STREAM } from '../game/field';
-import { PATPAT } from '../game/config';
 import { Models, fitted } from './models';
 import { backpackPart, cutTriangles, isBakedLine, isEngine, prepare } from './trimmerRig';
 import { PatpatRig } from './patpat';
+import { TractorRig } from './tractor';
+import { TrailerRig } from './trailer';
 import { brambleObject } from './bramble';
 import { shootBush } from './shootBush';
 import { hazelnutBush } from './hazelnut';
@@ -11,19 +12,62 @@ import { MEADOW_PATCHES, PAINTED_GROUND, groundTextures, hills, skyDome } from '
 import { boulderGeometry, graveGeometry, mosqueGroup, stoneWall, yaylaHutGroup } from './landmarks';
 import { WEATHER } from './weather';
 import { StreamView } from './stream';
-import { LaneView, harmanMesh, laneDip, puddleDip, puddleMeshes } from './lane';
+import { LANE_HALF, LaneView, harmanMesh, laneDip, puddleDip, puddleMeshes } from './lane';
 import { boardSpot, cobbleRoads, nameBoard, otherFields, villageBoard, villageTrees } from './villageView';
 import { clothesline, depotGroup, flowerPots, gazebo, haystackGroup, houseGroup, kennel, oldPostGroup, postGeometry, slidingGate, spoolGroup, stoneGeometry, paintedStoneGeometry, wireFence, woodpileGroup } from './props';
 
 /** How far the terrain extends beyond the village on each side. */
 const MARGIN = 45;
 
+/** The yard's bank round its levelled ground (a share of its radius), and the hill's lean left in it. */
+const PLATEAU_BANK = 1.6;
+const PLATEAU_TILT = 0.2;
+
 /** Height of the levelled ground the house and its harman stand on, per field. */
 const plateauHeight = new WeakMap<Field, number>();
 
 /** Terrain height anywhere in the village: the hill, the house's levelled ground, the tracks worn in. */
 export function worldHeight(f: Field, x: number, z: number): number {
-  return laneSurface(f, x, z, f.laneDistance(x, z), groundHeight(f, x, z));
+  return laneSurface(f, x, z, f.laneDistance(x, z), roadLevelled(f, x, z));
+}
+
+/**
+ * The ground with the roads made (nearly) level across: on a road, the height its middle line has
+ * nearby, weighed over every stretch of road in reach (so it never jumps where the nearest stretch
+ * changes, at a bend or where roads meet); taken in by ROAD_FLAT of the lean, easing back to the ground
+ * over ROAD_BANK beyond the road's edge (a bank, not a wall). Gentle enough for the terrain's 2 m
+ * triangles to follow: steeper, they missed the fine rutted ribbon's edge by up to 16 cm (it showed in
+ * notches and humps); now no more than on unlevelled ground (under 9 cm).
+ */
+const ROAD_BANK = 5;
+const ROAD_FLAT = 0.7;
+function roadLevelled(f: Field, x: number, z: number): number {
+  const h = groundHeight(f, x, z);
+  const R = LANE_HALF + ROAD_BANK;
+  const pts = f.roadPoints(x, z, R);
+  if (!pts.length) return h;
+  let ws = 0;
+  let hs = 0;
+  let dmin = R;
+  for (const p of pts) {
+    // Falling to nothing at the edge of reach, the nearer stretches counting most.
+    const q = 1 - (p.d / R) ** 2;
+    const w = (q * q) / (0.3 + p.d);
+    ws += w;
+    hs += w * groundHeight(f, p.x, p.z);
+    dmin = Math.min(dmin, p.d);
+  }
+  if (ws <= 0) return h;
+  const t = Math.min(1, Math.max(0, (dmin - LANE_HALF) / ROAD_BANK));
+  const k = (1 - t * t * (3 - 2 * t)) * ROAD_FLAT;
+  return h + (hs / ws - h) * k;
+}
+
+/** The lowest ground under a building's corners (half its width across x, half its depth along z), so none of it stands in the air. */
+function footing(f: Field, x: number, z: number, hw: number, hd: number): number {
+  let h = worldHeight(f, x, z);
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) h = Math.min(h, worldHeight(f, x + sx * hw, z + sz * hd));
+  return h;
 }
 
 /** The ground at a point (the hill and the house's levelled ground), before the tracks wear it down. */
@@ -32,13 +76,17 @@ export function groundHeight(f: Field, x: number, z: number): number {
   const p = f.plateau;
   if (p) {
     const d = Math.hypot(x - p.x, z - p.z);
-    if (d < p.r * 1.8) {
+    if (d < p.r * (1 + PLATEAU_BANK)) {
       let h0 = plateauHeight.get(f);
-      // Level with the slope at its downhill edge: cut into the hill behind, no drop-off in front.
-      if (h0 === undefined) plateauHeight.set(f, (h0 = f.height(p.x, p.z + p.r * 0.9)));
-      const t = Math.min(1, Math.max(0, (d - p.r) / (p.r * 0.8)));
-      // Only cut into the hill, never build up: below the level the slope runs on untouched.
-      if (h > h0) h = h0 + (h - h0) * t * t * (3 - 2 * t);
+      // Level with the hill at the yard's middle: cut into it behind, built up in front (half as deep
+      // each way as cut down to its downhill edge). Not quite level: a fifth of the hill's lean left
+      // in it, as in a mountain village; and back to the hill over a wide bank (the bigger yard's
+      // steep bank had the roads round it leaning and climbing it at 36 degrees: now about 25 where
+      // the hill is steepest).
+      if (h0 === undefined) plateauHeight.set(f, (h0 = f.height(p.x, p.z)));
+      const t = Math.min(1, Math.max(0, (d - p.r) / (p.r * PLATEAU_BANK)));
+      const k = PLATEAU_TILT + (1 - PLATEAU_TILT) * t * t * (3 - 2 * t);
+      h = h0 + (h - h0) * k;
     }
   }
   return h;
@@ -146,7 +194,8 @@ export class WorldView {
   trailerTrimmer: THREE.Object3D | null = null;
   /** The pat pat (it moves when driven): the trailer and the head, their wheels and the steering wheel. */
   /** The pat pat as drawn (its head carries the engine the exhaust smoke comes from). */
-  patRig: PatpatRig | null = null;
+  patRig: PatpatRig | TractorRig | null = null;
+  trailerRig: TrailerRig | null = null;
 
   /** A field opened (bought): its chain and padlock come off, its board loses the KİLİTLİ band. */
   unlockField(id: number, name: string): void {
@@ -167,10 +216,8 @@ export class WorldView {
   }
   /** The lane ribbon: its vertices follow the ruts the wheels press into it. */
   readonly lane: LaneView;
-  /** The yard's sliding gate leaf (it moves with the field's gateOpen). */
+  /** The yard's gate leaf (it swings with the field's gateOpen). */
   private gate: THREE.Object3D[] | null = null;
-  /** Which way the leaf slides open: towards the gap's b end (else past a). */
-  private gateToB = true;
   /** The height of the gate's rail (the gap's): it runs level, not up and down the ground beside it. */
   private gateY = 0;
 
@@ -180,7 +227,7 @@ export class WorldView {
     const r = this.patRig;
     if (!r) return false;
     r.kasa.updateMatrixWorld(true);
-    eye.set(0, r.seatY + 0.82, PATPAT.seat - 0.05).applyMatrix4(r.kasa.matrixWorld);
+    eye.set(0, r.seatY + 0.82, this.field.dims.seat - 0.05).applyMatrix4(r.kasa.matrixWorld);
     ahead.set(0, 0, 1).transformDirection(r.kasa.matrixWorld);
     return true;
   }
@@ -389,57 +436,7 @@ export class WorldView {
     wg.setAttribute('position', new THREE.Float32BufferAttribute(wire, 3));
     g.add(new THREE.LineSegments(wg, new THREE.LineBasicMaterial({ color: '#8d8a80' })));
 
-    // Depot: fuel can and spare line, with a ring on the ground showing where to stand.
-    const depot = models.fuelcan?.length || models.spool?.length ? depotModels(models) : models.depot?.length ? fitted(models.depot[0].scene, 0.6) : depotGroup();
-    const body = models.patpat?.[0];
-    const teker = models.patpatTeker?.[0];
-    if (body && teker) {
-      const rig = new PatpatRig({ body, teker, direksiyon: models.patpatDireksiyon?.[0] }, WorldView.paintHue);
-      this.patRig = rig;
-      // The fuel can and the spare line ride in the trailer, behind the seat.
-      depot.position.set(-0.3, rig.floorY, -0.5);
-      depot.rotation.y = Math.PI / 2;
-      depot.scale.setScalar(0.9);
-      rig.kasa.add(depot);
-      // The trimmer rides in the trailer whenever the worker hasn't got it (menu, first job, driving).
-      if (models.trimmer?.[0]) {
-        // Engine on the floor at the back, the shaft rising forward so the head stands up beside the seat.
-        const from = new THREE.Vector3(0.3, rig.floorY, -1.15);
-        const to = new THREE.Vector3(0.45, rig.floorY + 0.38, -0.05);
-        // Without the baked line strands: it gets line only when the worker fits it.
-        const t = cutTriangles(prepare(models.trimmer[0].scene), isBakedLine, true);
-        // (Its box is still the whole model's, so cutting the engine off keeps it in place.)
-        const tb = new THREE.Box3().setFromObject(t);
-        if (WorldView.backpack) cutTriangles(t, isEngine);
-        const tk = from.distanceTo(to) / (tb.max.x - tb.min.x);
-        t.scale.setScalar(tk);
-        // Model shaft runs along +X from the engine (-X) to the head (+X).
-        t.position.set(-tb.min.x * tk, -((tb.min.y + tb.max.y) / 2) * tk, -((tb.min.z + tb.max.z) / 2) * tk);
-        const lean = new THREE.Group();
-        lean.add(t);
-        lean.position.copy(from);
-        lean.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), to.clone().sub(from).normalize());
-        // Turn it on its axis so the guard faces outwards.
-        lean.rotateX(Math.PI / 2);
-        const load = new THREE.Group();
-        load.add(lean);
-        if (WorldView.backpack && models.backpack?.[0]) {
-          // The pack stands at the back of the trailer, the shaft's end beside it.
-          const pack = backpackPart(models.backpack[0], 0.5);
-          pack.position.set(0.25, rig.floorY, -1.05);
-          pack.rotation.y = Math.PI;
-          load.add(pack);
-        }
-        rig.kasa.add(load);
-        load.visible = trimmerInTrailer;
-        this.trailerTrimmer = load;
-      }
-      g.add(rig.kasa, rig.head);
-      rig.place(f, (x, z) => worldHeight(f, x, z));
-    } else {
-      depot.position.set(f.depot.x - 0.8, worldHeight(f, f.depot.x - 0.8, f.depot.z + 0.6), f.depot.z + 0.6);
-      g.add(depot);
-    }
+    this.buildVehicle(f, models, trimmerInTrailer);
     const ring = new THREE.Mesh(
       new THREE.RingGeometry(1.9, 2.2, 40),
       new THREE.MeshBasicMaterial({ color: '#ffd23a', transparent: true, opacity: 0.6, depthWrite: false }),
@@ -452,7 +449,8 @@ export class WorldView {
     // The village's buildings: the house, the mosque above the graveyard, the highland hut.
     const { x: hx, z: hz, rot } = f.house;
     const house = models.house?.length ? fitted(models.house[0].scene, 7) : houseGroup();
-    house.position.set(hx, worldHeight(f, hx, hz) - 0.3, hz);
+    // (On the lowest of the ground under it: the yard is not quite level.)
+    house.position.set(hx, footing(f, hx, hz, 3.2, 3.2) - 0.3, hz);
     house.rotation.y = rot;
     g.add(house);
     const mosque = models.mosque?.length ? fitted(models.mosque[0].scene, 12) : mosqueGroup();
@@ -494,8 +492,7 @@ export class WorldView {
     if (run.length > 1) g.add(wireFence(run));
     const yg = f.yardGate;
     if (yg) {
-      // One leaf across the whole gap, sliding along the fence to the right as seen from the yard
-      // (driving out of it), on a rail at the gap's height.
+      // One leaf across the whole gap, hung on the post at its a end; it swings out of the yard.
       const len = Math.hypot(yg.bx - yg.ax, yg.bz - yg.az);
       const leaf = slidingGate(len);
       leaf.rotation.y = -Math.atan2(yg.bz - yg.az, yg.bx - yg.ax);
@@ -503,13 +500,16 @@ export class WorldView {
       g.add(leaf);
       const mx = (yg.ax + yg.bx) / 2;
       const mz = (yg.az + yg.bz) / 2;
-      const fx = f.harman.x - mx;
-      const fz = f.harman.z - mz;
-      // Facing (fx, fz), the right is (-fz, fx).
-      // Facing out of the yard, (-fx, -fz): its right is (fz, -fx).
-      this.gateToB = (yg.bx - mx) * fz + (yg.bz - mz) * -fx > 0;
       this.gateY = worldHeight(f, mx, mz);
       this.placeGate();
+    }
+    // The garage (the artist's: 8 m wide, its stone walls are the field's garage walls).
+    const ga = f.garage;
+    if (ga && models.garage?.[0]) {
+      const o = fitted(models.garage[0].scene, (ga.w / 0.98) * 0.555);
+      o.position.set(ga.x, footing(f, ga.x, ga.z, ga.w / 2, ga.d / 2) - 0.05, ga.z);
+      o.rotation.y = ga.yaw;
+      g.add(o);
     }
     f.yardProps.forEach((y, i) => {
       const o = y.kind === 'hay' ? haystackGroup(y.r, f.level.seed + i) : y.kind === 'wood' ? woodpileGroup(y.r, f.level.seed + i) : oldPostGroup(f.level.seed + i);
@@ -531,7 +531,14 @@ export class WorldView {
       const toCentre = (at: { x: number; z: number }) => Math.atan2(p.x - at.x, p.z - at.z);
       if (WorldView.decor.includes('saksi')) put(flowerPots(3), { x: f.house.x + 3.4, z: f.house.z - 1.6 }, Math.PI / 2);
       if (WorldView.decor.includes('cardak')) {
-        const at = ring(-2.1, p.r - 3);
+        // On the lawn in front of the house, south of the harman (seen from the harman and the gate),
+        // facing the yard's middle; where a road runs too close there, the next lawn along.
+        const lawn = [
+          { x: p.x - 1.5, z: p.z + 8.5 },
+          { x: p.x + 11, z: p.z - 3 },
+          ring(2.75, p.r - 3.5),
+        ];
+        const at = lawn.find((q) => f.roadDistance(q.x, q.z) > 4) ?? lawn[lawn.length - 1];
         // The artist's gazebo (about 3 m to the roof top), or the drawn one.
         put(models.gazebo?.[0] ? fitted(models.gazebo[0].scene, 3) : gazebo(5), at, toCentre(at));
       }
@@ -631,8 +638,9 @@ export class WorldView {
 
     this.placeVehicle(dt, camera);
     const v = this.field.vehicle;
-    this.patRig?.update(v.speed * dt, v.art);
+    this.patRig?.update(v.speed * dt, v.art, v.steer);
     this.patRig?.kasa.updateMatrixWorld(true);
+    this.trailerRig?.update(v.speed * dt);
     for (let i = this.bushShake.length - 1; i >= 0; i--) {
       const s = this.bushShake[i];
       s.t += dt;
@@ -645,16 +653,94 @@ export class WorldView {
     }
   }
 
-  /** The gate slid along the fence line by how far it is open. */
+  /** The vehicle (pat pat, or tractor and its trailer when hitched), with what rides on it. */
+  private buildVehicle(f: Field, models: Models, trimmerInTrailer: boolean): void {
+    const g = this.group;
+    // Depot: fuel can and spare line, with a ring on the ground showing where to stand.
+    const depot = models.fuelcan?.length || models.spool?.length ? depotModels(models) : models.depot?.length ? fitted(models.depot[0].scene, 0.6) : depotGroup();
+    const body = models.patpat?.[0];
+    const teker = models.patpatTeker?.[0];
+    const tractor = f.tractor && models.tractor?.[0] && models.tractorRear?.[0] && models.tractorFront?.[0];
+    if (tractor || (body && teker)) {
+      // The tractor bought and driven, or the pat pat. (No trimmer rides on the tractor: the worker keeps it.)
+      const rig = tractor
+        ? new TractorRig({ body: models.tractor![0], rear: models.tractorRear![0], front: models.tractorFront![0] })
+        : new PatpatRig({ body: body!, teker: teker!, direksiyon: models.patpatDireksiyon?.[0] }, WorldView.paintHue);
+      this.patRig = rig;
+      // The trailer, when hitched behind the tractor.
+      this.trailerRig = null;
+      if (tractor && f.trailer && models.trailer?.[0]) {
+        this.trailerRig = new TrailerRig({ body: models.trailer[0], tyre: models.tractorFront![0] });
+        g.add(this.trailerRig.group);
+      }
+      // The fuel can and the spare line ride in the trailer, behind the seat.
+      depot.position.set(-0.3, rig.floorY, -0.5);
+      depot.rotation.y = Math.PI / 2;
+      depot.scale.setScalar(0.9);
+      // (Nothing rides on the tractor.)
+      if (!tractor) rig.kasa.add(depot);
+      // The trimmer rides in the trailer whenever the worker hasn't got it (menu, first job, driving).
+      if (models.trimmer?.[0] && !tractor) {
+        // Engine on the floor at the back, the shaft rising forward so the head stands up beside the seat.
+        const from = new THREE.Vector3(0.3, rig.floorY, -1.15);
+        const to = new THREE.Vector3(0.45, rig.floorY + 0.38, -0.05);
+        // Without the baked line strands: it gets line only when the worker fits it.
+        const t = cutTriangles(prepare(models.trimmer[0].scene), isBakedLine, true);
+        // (Its box is still the whole model's, so cutting the engine off keeps it in place.)
+        const tb = new THREE.Box3().setFromObject(t);
+        if (WorldView.backpack) cutTriangles(t, isEngine);
+        const tk = from.distanceTo(to) / (tb.max.x - tb.min.x);
+        t.scale.setScalar(tk);
+        // Model shaft runs along +X from the engine (-X) to the head (+X).
+        t.position.set(-tb.min.x * tk, -((tb.min.y + tb.max.y) / 2) * tk, -((tb.min.z + tb.max.z) / 2) * tk);
+        const lean = new THREE.Group();
+        lean.add(t);
+        lean.position.copy(from);
+        lean.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), to.clone().sub(from).normalize());
+        // Turn it on its axis so the guard faces outwards.
+        lean.rotateX(Math.PI / 2);
+        const load = new THREE.Group();
+        load.add(lean);
+        if (WorldView.backpack && models.backpack?.[0]) {
+          // The pack stands at the back of the trailer, the shaft's end beside it.
+          const pack = backpackPart(models.backpack[0], 0.5);
+          pack.position.set(0.25, rig.floorY, -1.05);
+          pack.rotation.y = Math.PI;
+          load.add(pack);
+        }
+        rig.kasa.add(load);
+        load.visible = trimmerInTrailer;
+        this.trailerTrimmer = load;
+      }
+      g.add(rig.kasa, rig.head);
+      rig.place(f, (x, z) => worldHeight(f, x, z));
+    } else {
+      depot.position.set(f.depot.x - 0.8, worldHeight(f, f.depot.x - 0.8, f.depot.z + 0.6), f.depot.z + 0.6);
+      g.add(depot);
+    }
+  }
+
+  /** The vehicle chosen again (in the shop, during a job): the old one taken away, the new one built where it stands. */
+  swapVehicle(models: Models): void {
+    const old = this.patRig;
+    const trimmer = this.trailerTrimmer?.visible ?? false;
+    if (old) this.group.remove(old.kasa, old.head);
+    if (this.trailerRig) this.group.remove(this.trailerRig.group);
+    this.trailerTrimmer = null;
+    this.patRig = null;
+    this.trailerRig = null;
+    this.buildVehicle(this.field, models, trimmer);
+  }
+
+  /** The gate swung out by how far it is open. */
   private placeGate(): void {
     const f = this.field;
     const g = f.yardGate;
     if (!g || !this.gate) return;
-    // The leaf runs from a to b when shut; open, it has slid its whole length past one end post.
-    const s = (this.gateToB ? 1 : -1) * f.gateOpen;
-    const x = g.ax + (g.bx - g.ax) * s;
-    const z = g.az + (g.bz - g.az) * s;
-    this.gate[0].position.set(x, this.gateY, z);
+    // Hung on its post at a, swung out by how far it is open.
+    const d = f.gateDir;
+    this.gate[0].position.set(g.ax, this.gateY, g.az);
+    this.gate[0].rotation.y = -Math.atan2(d.z, d.x);
   }
 
   /** The pat pat on the ground where it is: pitched and rolled to the terrain under its wheels. */
@@ -664,6 +750,11 @@ export class WorldView {
     this.placeGate();
     this.depotRing.position.set(f.depot.x, worldHeight(f, f.depot.x, f.depot.z) + 0.06, f.depot.z);
     this.patRig?.place(f, (x, z) => worldHeight(f, x, z));
+    const r = this.patRig;
+    if (this.trailerRig && r && 'hitch' in r) {
+      r.kasa.updateMatrixWorld(true);
+      this.trailerRig.place(f, (x, z) => worldHeight(f, x, z), r.hitch.getWorldPosition(new THREE.Vector3()).y);
+    }
   }
 
   /** Fade bushes that stand between the camera and the worker. */

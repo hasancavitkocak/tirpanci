@@ -171,6 +171,11 @@ export class View {
 
   /** Build the scene for a session (also used for the menu background). */
   /** `menu`: the worker stands empty-handed, the trimmer leans in the pat pat's trailer. */
+  /** The vehicle chosen again during a job: rebuilt where it stands (the rest of the scene stays). */
+  swapVehicle(models: Models): void {
+    this.world?.swapVehicle(models);
+  }
+
   load(session: Session, models: Models, menu = false): void {
     this.unload();
     this.session = session;
@@ -324,13 +329,15 @@ export class View {
     this.worker.headTurn = this.headTurn;
     this.worker.carrying = !this.menu && s.hasTrimmer && !s.driving;
     if (this.world.trailerTrimmer) this.world.trailerTrimmer.visible = !this.worker.carrying;
-    // The yellow refill ring (beside the pat pat) only when fuel or line is running out, and not while driving.
-    this.world.depotRing.visible = !this.menu && !s.driving && (s.fuel < s.gear.tank * 0.25 || s.spool < TRIMMER.rethreadUse || (s.broken && !s.intro));
+    // The yellow refill ring (beside the vehicle) only when fuel or line is running out, on foot with the
+    // trimmer (not with it left in the vehicle, nor roaming without a job).
+    this.world.depotRing.visible = !this.menu && !s.driving && s.hasTrimmer && !s.roaming && (s.fuel < s.gear.tank * 0.25 || s.spool < TRIMMER.rethreadUse || (s.broken && !s.intro));
     this.tyreMarks(s, dt);
     // The world first: the pat pat moves, and the driver's hands go to its steering wheel.
     this.world.update(dt, this.time, s.x, s.z, this.mode === 'orbit' ? null : this.camera.position, fpv);
     this.worker.wheelGrips = s.driving ? this.world.steeringGrips() : null;
     this.worker.seat = this.world.chassis;
+    this.worker.seatPlace = { z: s.field.dims.seat, lift: s.field.dims.seatLift };
     this.worker.update(dt, s, ground);
     this.grass.sync(this.time, s.headX, s.headZ, s.throttle);
     this.exhaustSmoke(dt, s);
@@ -369,6 +376,23 @@ export class View {
     // A lifted head is drawn no higher than well below the eyes.
     const lifted = ground(s.headX, s.headZ) + 0.05 + s.lift * HEAD_LIFT;
     const target = new THREE.Vector3(s.headX, Math.min(lifted, this.camera.position.y - 0.75), s.headZ);
+    // On a slope the head, on the ground, comes up towards the eyes going uphill (filling the view) and
+    // drops away going downhill (the shaft swinging the engine up in front of the face). Drawn, its
+    // angle below the eyes is held near what it is on the level, moving it in or out along the ground.
+    {
+      const eye = this.camera.position;
+      const dx = target.x - eye.x;
+      const dz = target.z - eye.z;
+      const far = Math.hypot(dx, dz);
+      const level = Math.atan2(eye.y - (ground(eye.x, eye.z) + 0.05 + s.lift * HEAD_LIFT), far);
+      const now = Math.atan2(eye.y - target.y, far);
+      const want = Math.max(level - 0.1, Math.min(level + 0.1, now));
+      if (far > 0.2 && want !== now) {
+        const k = Math.max(0.55, Math.min(1.4, (eye.y - target.y) / Math.tan(want) / far));
+        target.x = eye.x + dx * k;
+        target.z = eye.z + dz * k;
+      }
+    }
     const headCam = this.fpvBody.worldToLocal(target.clone());
     rig.update(headCam, Math.atan2(headCam.x, -headCam.z));
     rig.root.updateMatrixWorld(true);
@@ -487,6 +511,14 @@ export class View {
     const n = Math.floor(this.patSmokeAcc);
     this.patSmokeAcc -= n;
     const pop = fired.reduce((m, f) => Math.max(m, f.k), 0);
+    // The tractor's own stack: straight up out of it.
+    const stack = (this.world?.patRig as { pipe?: THREE.Object3D } | null)?.pipe;
+    if (stack) {
+      const q = stack.getWorldPosition(this.tmp);
+      if (n) this.particles.emit(q.x, q.y, q.z, n, 'smoke', 0, 0, 1.5, 1.2 + work * 0.4, 1.4 + work * 0.5);
+      if (pop) this.particles.emit(q.x, q.y, q.z, Math.round(5 + 14 * pop), 'smoke', 0, 0, 1.5, 1.3 + pop * 0.7, 1.8);
+      return;
+    }
     const p = head.localToWorld(this.tmp.copy(this.patPipe));
     // Blown out to the right (the pipe points that way; the head, turned by the articulation, has its
     // own right) and rising; leaving the pipe with some of the pat pat's speed.

@@ -1,7 +1,7 @@
 // Emulator test 3: in the field with the trimmer: start the engine by touch following the hints
 // (POMPA, JİKLE, a quick pull on the cord), mow by holding and dragging, and the stone warning
 // (the tick before a stone, the red "!" after hitting one).
-import { alive, allOk, at, check, connect, dragAsync, game, inJob, shot, sleep, tap } from './lib.mjs';
+import { adb, alive, allOk, at, check, connect, dragAsync, game, inJob, shot, sleep, tap } from './lib.mjs';
 
 const { browser, page } = await connect();
 await inJob(page);
@@ -53,10 +53,29 @@ for (let i = 0; i < 30 && !(await game(page, () => window.__game.session.running
 const running = await game(page, () => window.__game.session.running);
 check('engine started by touch', running, `${pulls} pulls`);
 
-// Mow: hold and drag up (walk forward with the throttle open) for 6 s.
+// The throttle trigger shows with the engine running.
+check('the GAZ trigger shows', await page.waitFor(() => getComputedStyle(document.getElementById('gas-btn')).display !== 'none', 3000));
+const g = await at(page, '#gas-btn');
+// Like a pedal: held (a finger kept on it), the throttle rises gradually; let go, back to idle.
+await game(page, () => (window.__game.session.temp = 0.5));
+const hold = dragAsync(g.x, g.y, g.x, g.y, 3000);
+await sleep(700);
+const early = await game(page, () => window.__game.input.throttleLevel);
+await sleep(1300);
+const late = await game(page, () => window.__game.input.throttleLevel);
+check('held, the throttle rises gradually', early > 0.05 && early < late && late > 0.7, `after 0.7 s ${early.toFixed(2)}, after 2.0 s ${late.toFixed(2)}`);
+await hold;
+await sleep(500);
+check('let go: back to idle', await game(page, () => window.__game.input.throttleLevel === 0));
+shot('emu-mow-gas');
+
+// Mow: the stick dragged up (walk forward) for 6 s with the trigger held (adb gives one finger: the
+// held trigger is put down here as the page's own pointer).
+await game(page, () => { const b = document.getElementById('gas-btn'); b.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 77, bubbles: true, pointerType: 'touch' })); });
 const cov0 = await game(page, () => window.__game.session.field.coverage);
-await dragAsync(540, 1750, 540, 1500, 6000);
+await dragAsync(250, 1750, 250, 1500, 6000);
 const cov1 = await game(page, () => window.__game.session.field.coverage);
+await game(page, () => document.getElementById('gas-btn').dispatchEvent(new PointerEvent('pointerup', { pointerId: 77, bubbles: true, pointerType: 'touch' })));
 check('holding and dragging mows', cov1 > cov0 + 0.005, `coverage ${(cov0 * 100).toFixed(1)}% -> ${(cov1 * 100).toFixed(1)}%`);
 shot('emu-mow-cut');
 
@@ -74,7 +93,7 @@ await game(page, () => {
   s.broken = false;
   window.__stone = st;
 });
-await dragAsync(540, 1750, 540, 1690, 5000);
+await dragAsync(250, 1750, 250, 1690, 5000);
 const st = await game(page, () => ({ ticks: window.__ticks, hits: window.__hits, marks: window.__game.view.stoneMarks.size }));
 check('the line ticks near a stone (warning)', st.ticks > 0, `${st.ticks} ticks`);
 check('a stone hit leaves the red "!"', st.hits === 0 || st.marks > 0, `${st.hits} hits, ${st.marks} marks`);

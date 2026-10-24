@@ -6,8 +6,12 @@
   --cream: #fff7e6;
   --ink: #2a2418;
   --card: rgba(255, 249, 236, 0.97);
-  --safe-t: env(safe-area-inset-top, 0px);
-  --safe-b: env(safe-area-inset-bottom, 0px);
+  /* The system bars' room: the browser's own value, or (Android WebView, which often gives 0 though
+     the app draws under the status and navigation bars) the one Capacitor's SystemBars sets. */
+  --safe-t: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
+  --safe-b: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
+  --safe-l: max(env(safe-area-inset-left, 0px), var(--safe-area-inset-left, 0px));
+  --safe-r: max(env(safe-area-inset-right, 0px), var(--safe-area-inset-right, 0px));
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: #7fb24a; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; color: var(--ink); user-select: none; -webkit-user-select: none; touch-action: none; }
@@ -60,8 +64,23 @@ body.playing #touch { display: block; }
 #menu { justify-content: space-between; }
 .menu-top { margin-top: 6vh; }
 .menu-bottom { display: flex; flex-direction: column; align-items: center; gap: 12px; width: min(360px, 100%); }
+/* BAHÇEYE GİT and SERBEST GEZ side by side (one above the other they did not fit a phone held sideways):
+   twin pictures (public/harita/btn-oyna2.webp, btn-gez.webp, 760 x 275), the same size. */
+.menu-go { --h: min(100px, calc((100vw - 48px) / 5.65)); display: flex; justify-content: center; align-items: center; gap: 8px; width: 100%; }
+#menu .menu-go .btn.art-go { flex: none; height: var(--h); width: auto; max-width: none; margin: 0; aspect-ratio: 760 / 275; }
+#menu .menu-go .btn.art-go span { font-size: clamp(12px, 3.4vw, 16px); }
+/* The money in the top right corner (where games keep it), the no-ads offer under it; the starter pack
+   under the tasks on the left. */
+#menu .menu-bottom .wallet { position: absolute; top: calc(12px + var(--safe-t)); right: calc(12px + var(--safe-r)); z-index: 2; font-size: 15px; padding: 6px 14px 6px 8px; background: rgba(20, 40, 10, 0.6); border: 2px solid rgba(255, 215, 90, 0.8); box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3); }
+#menu #btn-noads { top: calc(56px + var(--safe-t)); right: calc(12px + var(--safe-r)); }
+#menu .corner-btn.starter-pack { top: calc(56px + var(--safe-t)); left: calc(12px + var(--safe-l)); right: auto; }
+#menu .corner-btn.tasks-btn { left: calc(12px + var(--safe-l)); }
 .row { display: flex; gap: 10px; width: 100%; }
-.row .btn { flex: 1; }
+.row .btn { flex: 1; min-width: 0; }
+/* The menu's bottom row: four buttons must fit a 360 px wide phone (the gear was pushed off it). */
+.menu-bottom .row { gap: 6px; }
+.menu-bottom .row .btn { padding: 12px 6px; font-size: clamp(13px, 4vw, 17px); white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
+.menu-bottom .row .btn.icon { flex: 0 0 46px; padding: 0; }
 .wallet { background: rgba(0,0,0,0.45); color: #fff; padding: 6px 14px; border-radius: 20px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
 .card .wallet { background: var(--green); margin-bottom: 8px; }
 .coin { width: 18px; height: 18px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #ffe78a, #e0a520); box-shadow: inset 0 0 0 2px #b8860b; }
@@ -103,7 +122,8 @@ body.playing #touch { display: block; }
 .level .lv-pay { font-weight: 800; font-size: 13px; color: var(--green-d); }
 .level.locked { opacity: 0.55; }
 .tabs { display: flex; gap: 4px; background: #ece2cc; border-radius: 12px; padding: 4px; }
-.tabs button { flex: 1; font: inherit; font-size: 13px; font-weight: 800; border: 0; border-radius: 9px; padding: 8px 2px; background: transparent; color: #7a6e55; cursor: pointer; }
+/* (Shrinking to fit: six shop tabs on a 360 px phone pushed the last off the card.) */
+.tabs button { flex: 1 1 0; min-width: 0; font: inherit; font-size: clamp(11px, 3.3vw, 13px); font-weight: 800; border: 0; border-radius: 9px; padding: 8px 1px; background: transparent; color: #7a6e55; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tabs button.on { background: #fff; color: var(--green-d); box-shadow: 0 2px 0 #d8c9a6; }
 .shop-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .shop-card { display: flex; flex-direction: column; gap: 3px; background: #fff; border-radius: 14px; padding: 8px; box-shadow: 0 2px 0 #e6dcc4; border: 2px solid transparent; min-width: 0; }
@@ -152,8 +172,6 @@ body.playing #touch { display: block; }
 
 .card { background: var(--card); border-radius: 20px; padding: 18px; width: min(420px, 100%); max-height: 100%; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 10px 40px rgba(0,0,0,0.3); }
 .card h2 { margin: 0 0 4px; text-align: center; color: var(--green-d); }
-.howto { margin: 0; padding-left: 18px; line-height: 1.45; font-size: 15px; }
-.howto li { margin-bottom: 6px; }
 .keys { font-size: 12px; color: #6b604a; text-align: center; margin: 0; }
 .list { display: flex; flex-direction: column; gap: 8px; }
 .item { display: flex; align-items: center; gap: 10px; background: #fff; border-radius: 14px; padding: 10px 12px; box-shadow: 0 2px 0 #e6dcc4; border: 0; font: inherit; text-align: left; color: inherit; width: 100%; }
@@ -170,6 +188,9 @@ button.item { cursor: pointer; }
 .pips i { width: 14px; height: 6px; border-radius: 3px; background: #e2d8c0; }
 .pips i.on { background: var(--orange); }
 
+.settings .howto { background: rgba(0, 0, 0, 0.05); border-radius: 12px; padding: 8px 12px; font-size: 13px; }
+.settings .howto summary { font-weight: 800; cursor: pointer; }
+.settings .howto ul { margin: 8px 0 2px; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
 .settings .setting { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-weight: 600; }
 .setting.column { flex-direction: column; align-items: stretch; }
 .setting small { color: #7a6e55; font-weight: 400; }
@@ -195,7 +216,7 @@ input[type=range] { width: 55%; accent-color: var(--orange); }
 @keyframes blink { to { opacity: 0.35; } }
 
 #toasts { position: absolute; top: calc(130px + var(--safe-t)); left: 0; right: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; }
-.toast { background: rgba(0,0,0,0.6); color: #fff; padding: 8px 14px; border-radius: 12px; font-weight: 700; font-size: 15px; animation: toast 2.2s forwards; }
+.toast { background: rgba(0,0,0,0.6); color: #fff; padding: 8px 14px; border-radius: 12px; font-weight: 700; font-size: 15px; max-width: 100%; box-sizing: border-box; text-align: center; animation: toast 2.2s forwards; }
 .toast.warn { background: rgba(190, 40, 20, 0.85); }
 .toast.good { background: rgba(50, 120, 30, 0.9); }
 @keyframes toast { 0% { opacity: 0; transform: translateY(-8px); } 10% { opacity: 1; transform: none; } 80% { opacity: 1; } 100% { opacity: 0; } }
@@ -207,6 +228,19 @@ input[type=range] { width: 55%; accent-color: var(--orange); }
 
 #stick { position: fixed; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; background: rgba(255,255,255,0.18); border: 2px solid rgba(255,255,255,0.5); display: none; pointer-events: none; }
 #stick.show { display: block; }
+/* Easy controls: the stick rests, faint, so it is clear where to walk or drive from: at the bottom
+   right on foot and on the pat pat, at the bottom left with the trimmer (the right thumb is on the
+   trigger). */
+body.playing.easy:not(.freecam) #stick { display: block; opacity: 0.55; }
+body.playing.easy:not(.freecam) #stick:not(.show) { left: calc(100% - 96px - var(--safe-r, 0px)); top: calc(100% - 300px - var(--safe-b, 0px)); }
+body.playing.easy.trimmer-hand:not(.driving):not(.freecam) #stick:not(.show) { left: calc(96px + var(--safe-l, 0px)); }
+#stick.show { opacity: 1 !important; }
+#look-hint { display: none; position: fixed; left: 18%; top: 46%; flex-direction: column; align-items: center; gap: 6px; color: #fff; font-weight: 800; font-size: 14px; text-shadow: 0 2px 4px #000; pointer-events: none; z-index: 3; }
+body.look-hint.playing:not(.driving):not(.freecam) #look-hint { display: flex; }
+.lh-finger { width: 56px; height: 56px; border-radius: 50%; background: rgba(255, 255, 255, 0.22); border: 2px solid rgba(255, 255, 255, 0.7); display: grid; place-items: center; animation: lh-swipe 3.2s ease-in-out infinite; }
+.lh-finger .ic { width: 30px; height: 30px; }
+/* Left, right, up, down: the finger traces a cross. */
+@keyframes lh-swipe { 0%, 100% { translate: 0 0; } 15% { translate: -46px 0; } 35% { translate: 46px 0; } 50% { translate: 0 0; } 65% { translate: 0 -40px; } 85% { translate: 0 40px; } }
 #knob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; border-radius: 50%; background: rgba(255,255,255,0.75); transform: translate(-50%, -50%); }
 
 .tutorial { position: absolute; bottom: calc(150px + var(--safe-b)); left: 0; right: 0; display: none; justify-content: space-between; padding: 0 22px; color: #fff; font-weight: 800; text-shadow: 0 2px 4px #000; pointer-events: none; }

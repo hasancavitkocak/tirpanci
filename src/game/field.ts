@@ -1,4 +1,4 @@
-import { BRAMBLE, BUSH_KINDS, BushKind, CELL, CUT_HEIGHT, HIVE, HOSE, LevelDef, MOWN_AT, PATPAT, SLOPE } from './config';
+import { BRAMBLE, BUSH_KINDS, BushKind, CELL, CUT_HEIGHT, HIVE, HOSE, LevelDef, MOWN_AT, PATPAT, SLOPE, TRACTOR, VehicleDims, TRAILER, GARAGE } from './config';
 import { makeNoise, makeRng } from './rng';
 import { ASPHALT_X, Pt, Region, RoadKind, entryX, fieldRect, placement, regionLevels, regionOf, streamX as villageStreamX, village } from './village';
 
@@ -139,6 +139,9 @@ function segDist(px: number, pz: number, ax: number, az: number, bx: number, bz:
  * boulders), stones, brambles and the living things (hives, snakes, hens), and the hose.
  * Field is centred at the origin: x in [-width/2, width/2], z in [-depth/2, depth/2]; it climbs towards -z.
  */
+/** The pat pat's measures as a VehicleDims. */
+const PATPAT_DIMS: VehicleDims = { ...PATPAT, seatLift: 0 };
+
 export class Field {
   readonly width: number;
   readonly depth: number;
@@ -211,6 +214,9 @@ export class Field {
   readonly yardWalls: { ax: number; az: number; bx: number; bz: number }[] = [];
   /** The sliding iron gate across the fence's gap (two leaves, parting from the middle), and how far it is open 0..1. */
   yardGate: { ax: number; az: number; bx: number; bz: number } | null = null;
+  /** The garage (centre, facing its open front, width and depth) and its walls. */
+  garage: { x: number; z: number; yaw: number; w: number; d: number } | null = null;
+  readonly garageWalls: { ax: number; az: number; bx: number; bz: number }[] = [];
   gateOpen = 0;
   readonly yardProps: { x: number; z: number; r: number; kind: 'hay' | 'wood' | 'post' }[] = [];
   /** Where the way comes up to the field (x of the way in, at its bottom edge). */
@@ -227,6 +233,14 @@ export class Field {
   sinkDirty: { minX: number; maxX: number; minZ: number; maxZ: number } | null = null;
   /** The pat pat: centre, heading (yaw, model +Z forward), size, speed (m/s, + forward), steering -1..1. Solid for the worker. */
   readonly vehicle: { x: number; z: number; yaw: number; length: number; width: number; speed: number; steer: number; art: number };
+  /** The vehicle driven: the pat pat (articulated) or the tractor (steered by its front wheels). */
+  tractor = false;
+  /** The trailer hitched behind the tractor: its heading (NaN: lined up behind it at the start). */
+  trailer: { yaw: number } | null = null;
+  /** Its measures. */
+  get dims(): VehicleDims {
+    return this.tractor ? TRACTOR : PATPAT_DIMS;
+  }
   readonly total: number;
   private mownCount = 0;
   private dirty: DirtyRect | null = null;
@@ -449,6 +463,19 @@ export class Field {
   }
 
   /** How much the terrain is lowered at (x, z) for the stream bed (0 away from it). */
+  /** How high a wheel here stands on a stream boulder (0 off them): a dome over each big stone. */
+  stoneLift(x: number, z: number): number {
+    if (Math.abs(x - this.streamX(z)) > STREAM.width) return 0;
+    let h = 0;
+    for (const s of this.streamStones) {
+      if (s.s <= 0.3) continue;
+      const r = s.s * 1.3 + 0.15;
+      const d = Math.hypot(s.x - x, s.z - z);
+      if (d < r) h = Math.max(h, s.s * 0.9 * Math.sqrt(1 - (d / r) ** 2));
+    }
+    return h;
+  }
+
   streamCarve(x: number, z: number): number {
     const d = Math.abs(x - this.streamX(z));
     // Flat out to the water's edge (the stream's view draws it STREAM.width * 0.62 each side), so the
@@ -480,7 +507,13 @@ export class Field {
    * only the segments listed in the grid cells round the point are looked at.
    */
   private roadDist(x: number, z: number, kind: RoadKind | null): number {
+    return this.roadNearest(x, z, kind).d;
+  }
+
+  /** The nearest point on a road's middle line (any kind, or that kind) and how far it is (Infinity: none near). */
+  roadNearest(x: number, z: number, kind: RoadKind | null = null): { d: number; x: number; z: number } {
     const grid = (this.roadGrid ??= this.buildRoadGrid());
+    const near = { d: Infinity, x, z };
     const ci = Math.floor(x / ROAD_CELL);
     const cj = Math.floor(z / ROAD_CELL);
     // The cells next to it first (exact up to one cell); the ring round them only if nothing is that close.
@@ -497,13 +530,63 @@ export class Field {
             const az = list[k + 2];
             const r = this.roads[list[k]].pts;
             const b = r[list[k + 3] + 1];
-            d = Math.min(d, segDist(x, z, ax, az, b.x, b.z));
+            const dx = b.x - ax;
+            const dz = b.z - az;
+            const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
+            const px = ax + dx * t;
+            const pz = az + dz * t;
+            const dd = Math.hypot(x - px, z - pz);
+            if (dd < d) {
+              d = dd;
+              near.x = px;
+              near.z = pz;
+            }
           }
         }
       }
-      if (d <= ROAD_CELL * ring) return d;
+      if (d <= ROAD_CELL * ring) {
+        near.d = d;
+        return near;
+      }
     }
-    return d <= ROAD_GRID ? d : Infinity;
+    near.d = d <= ROAD_GRID ? d : Infinity;
+    return near;
+  }
+
+  /**
+   * Every road segment within `radius` (up to ROAD_GRID) of a point: the nearest point on each, and how
+   * far it is.
+   */
+  roadPoints(x: number, z: number, radius: number): { d: number; x: number; z: number }[] {
+    const grid = (this.roadGrid ??= this.buildRoadGrid());
+    const out: { d: number; x: number; z: number }[] = [];
+    const ci = Math.floor(x / ROAD_CELL);
+    const cj = Math.floor(z / ROAD_CELL);
+    const reach = Math.ceil(Math.min(radius, ROAD_GRID) / ROAD_CELL);
+    // (A segment is listed in every cell it crosses: each counted once.)
+    const seen = new Set<number>();
+    for (let j = cj - reach; j <= cj + reach; j++) {
+      for (let i = ci - reach; i <= ci + reach; i++) {
+        const list = grid.get(i * 65536 + j);
+        if (!list) continue;
+        for (let k = 0; k < list.length; k += 4) {
+          const key = list[k] * 100000 + list[k + 3];
+          if (seen.has(key)) continue;
+          seen.add(key);
+          const ax = list[k + 1];
+          const az = list[k + 2];
+          const b = this.roads[list[k]].pts[list[k + 3] + 1];
+          const dx = b.x - ax;
+          const dz = b.z - az;
+          const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
+          const px = ax + dx * t;
+          const pz = az + dz * t;
+          const d = Math.hypot(x - px, z - pz);
+          if (d < radius) out.push({ d, x: px, z: pz });
+        }
+      }
+    }
+    return out;
   }
 
   /** Every road segment listed in each grid cell it passes through (road, start x, start z, segment). */
@@ -527,10 +610,21 @@ export class Field {
   }
 
   /**
-   * Where the pat pat waits at the start of a job: on the harman, on its far side from the gate,
-   * facing the gate (so the gate stays shut until it drives up to it).
+   * Where the vehicle waits at the start of a job: in the garage, its nose at the mouth (or, without
+   * one, on the harman).
    */
   get laneStart(): { x: number; z: number; yaw: number } | null {
+    const g = this.garage;
+    if (!g || this.lane.length < 2) return this.harmanSpot;
+    const out = g.d / 2 - 1.4;
+    return { x: g.x + Math.sin(g.yaw) * out, z: g.z + Math.cos(g.yaw) * out, yaw: g.yaw };
+  }
+
+  /**
+   * On the harman, on its far side from the gate, facing the gate (where the vehicle stands in the menu's
+   * view of the yard).
+   */
+  get harmanSpot(): { x: number; z: number; yaw: number } | null {
     const h = this.harman;
     const g = this.yardGate;
     if (this.lane.length < 2 || !g) return null;
@@ -571,6 +665,15 @@ export class Field {
     const first = this.yardWalls[0];
     const last = this.yardWalls[this.yardWalls.length - 1];
     this.yardGate = { ax: last.bx, az: last.bz, bx: first.ax, bz: first.az };
+    // The garage at the back, between the house and the harman, its mouth towards the harman; its
+    // stone back and sides are walls.
+    const gz = p.z - GARAGE.back + GARAGE.d / 2;
+    this.garage = { x: p.x, z: gz, yaw: 0, w: GARAGE.w, d: GARAGE.d };
+    const L = p.x - GARAGE.w / 2;
+    const Rx = p.x + GARAGE.w / 2;
+    const B = gz - GARAGE.d / 2;
+    const F = gz + GARAGE.d / 2;
+    this.garageWalls.push({ ax: L, az: F, bx: L, bz: B }, { ax: L, az: B, bx: Rx, bz: B }, { ax: Rx, az: B, bx: Rx, bz: F });
     // The woodpile against the house's side (no haystacks: they stood in the house).
     this.yardProps.push({ x: this.house.x + 0.6, z: this.house.z + 3.7, r: 0.8, kind: 'wood' });
     // Two old posts either side of the way into this field.
@@ -750,10 +853,10 @@ export class Field {
    * and heading, and the hitch pin.
    */
   head(x: number, z: number, yaw: number, art: number): { x: number; z: number; yaw: number; jx: number; jz: number } {
-    const jx = x + Math.sin(yaw) * PATPAT.joint;
-    const jz = z + Math.cos(yaw) * PATPAT.joint;
+    const jx = x + Math.sin(yaw) * this.dims.joint;
+    const jz = z + Math.cos(yaw) * this.dims.joint;
     const hy = yaw + art;
-    return { x: jx + Math.sin(hy) * PATPAT.headAxle, z: jz + Math.cos(hy) * PATPAT.headAxle, yaw: hy, jx, jz };
+    return { x: jx + Math.sin(hy) * this.dims.headAxle, z: jz + Math.cos(hy) * this.dims.headAxle, yaw: hy, jx, jz };
   }
 
   /** Where the pat pat's four wheels touch the ground (the head's two first). */
@@ -761,10 +864,10 @@ export class Field {
     const v = this.vehicle;
     const h = this.head(v.x, v.z, v.yaw, v.art);
     const out: { x: number; z: number; head: boolean }[] = [];
-    const ax = v.x - Math.sin(v.yaw) * PATPAT.rearAxle;
-    const az = v.z - Math.cos(v.yaw) * PATPAT.rearAxle;
-    for (const s of [-1, 1]) out.push({ x: h.x + Math.cos(h.yaw) * s * PATPAT.headTrack, z: h.z - Math.sin(h.yaw) * s * PATPAT.headTrack, head: true });
-    for (const s of [-1, 1]) out.push({ x: ax + Math.cos(v.yaw) * s * PATPAT.kasaTrack, z: az - Math.sin(v.yaw) * s * PATPAT.kasaTrack, head: false });
+    const ax = v.x - Math.sin(v.yaw) * this.dims.rearAxle;
+    const az = v.z - Math.cos(v.yaw) * this.dims.rearAxle;
+    for (const s of [-1, 1]) out.push({ x: h.x + Math.cos(h.yaw) * s * this.dims.headTrack, z: h.z - Math.sin(h.yaw) * s * this.dims.headTrack, head: true });
+    for (const s of [-1, 1]) out.push({ x: ax + Math.cos(v.yaw) * s * this.dims.kasaTrack, z: az - Math.sin(v.yaw) * s * this.dims.kasaTrack, head: false });
     return out;
   }
 
@@ -777,8 +880,8 @@ export class Field {
     const v = this.vehicle;
     const h = this.head(x, z, yaw, art);
     // The trailer, and the head from its pin to its nose (centred a little ahead of its axle).
-    const hl = PATPAT.headAxle + PATPAT.headFront;
-    const hc = PATPAT.headFront - hl / 2;
+    const hl = this.dims.headAxle + this.dims.headFront;
+    const hc = this.dims.headFront - hl / 2;
     const bodies = [
       { x, z, yaw, length: v.length, width: v.width },
       { x: h.x + Math.sin(h.yaw) * hc, z: h.z + Math.cos(h.yaw) * hc, yaw: h.yaw, length: hl, width: 1.4 },
@@ -799,20 +902,76 @@ export class Field {
   private pointFree(px: number, pz: number): boolean {
     if (this.bushes.some((b) => Math.hypot(b.x - px, b.z - pz) < BUSH_KINDS[b.kind].block * (b.kind === 'ocak' ? 0.8 : b.scale))) return false;
     if (this.hives.some((h) => Math.hypot(h.x - px, h.z - pz) < HIVE.block)) return false;
-    // The stream's boulders.
-    if (Math.abs(px - this.streamX(pz)) < STREAM.width && this.streamStones.some((s) => s.s > 0.3 && Math.hypot(s.x - px, s.z - pz) < s.s * 1.3 + 0.15)) return false;
+    // The stream's boulders (the tractor's big wheels climb over them).
+    if (!this.tractor && Math.abs(px - this.streamX(pz)) < STREAM.width && this.streamStones.some((s) => s.s > 0.3 && Math.hypot(s.x - px, s.z - pz) < s.s * 1.3 + 0.15)) return false;
     const c = this.clampWalk(px, pz);
     if (Math.hypot(c.x - px, c.z - pz) > 0.01) return false;
     if (Math.hypot(px - this.house.x, pz - this.house.z) < 3.4) return false;
     if (Math.hypot(px - this.mosque.x, pz - this.mosque.z) < 6.5 || (this.hut && Math.hypot(px - this.hut.x, pz - this.hut.z) < 3)) return false;
     if (this.fences.some((w) => segDist(px, pz, w.ax, w.az, w.bx, w.bz) < 0.3)) return false;
     if (this.yardWalls.length && this.yardWallDistance(px, pz) < 0.35) return false;
-    const g = this.yardGate;
-    if (g && this.gateOpen < 0.95 && segDist(px, pz, g.ax, g.az, g.bx, g.bz) < 0.35) return false;
+    if (this.garageWalls.some((w) => segDist(px, pz, w.ax, w.az, w.bx, w.bz) < 0.45)) return false;
+    const gl = this.gateLeaf;
+    if (gl && segDist(px, pz, gl.ax, gl.az, gl.bx, gl.bz) < 0.35) return false;
     // The thin posts at a field's way in don't stop the pat pat (it brushes past them).
     if (this.yardProps.some((y) => y.kind !== 'post' && Math.hypot(y.x - px, y.z - pz) < y.r + 0.1)) return false;
     // Not into the walled mosque yard (it stays outside, at the gate).
     return !(this.walls.length && Math.abs(px) < this.wallX + 0.3 && pz > this.wallTop - 0.3 && pz < this.wallBottom + 0.3);
+  }
+
+  /** The tractor's hitch pin (behind its rear axle). */
+  get hitch(): { x: number; z: number } {
+    const v = this.vehicle;
+    const d = this.dims.rearAxle + TRAILER.hitch;
+    return { x: v.x - Math.sin(v.yaw) * d, z: v.z - Math.cos(v.yaw) * d };
+  }
+
+  /** The trailer's axle centre and heading (null: no trailer). */
+  trailerAxle(): { x: number; z: number; yaw: number } | null {
+    const t = this.trailer;
+    if (!t || !this.tractor) return null;
+    if (!Number.isFinite(t.yaw)) t.yaw = this.vehicle.yaw;
+    const h = this.hitch;
+    return { x: h.x - Math.sin(t.yaw) * TRAILER.length, z: h.z - Math.cos(t.yaw) * TRAILER.length, yaw: t.yaw };
+  }
+
+  /** The trailer's two wheels (where they touch the ground): [right, left]. */
+  trailerWheels(): { x: number; z: number }[] {
+    const a = this.trailerAxle();
+    if (!a) return [];
+    const rx = -Math.cos(a.yaw) * TRAILER.track;
+    const rz = Math.sin(a.yaw) * TRAILER.track;
+    return [{ x: a.x + rx, z: a.z + rz }, { x: a.x - rx, z: a.z - rz }];
+  }
+
+  /**
+   * The yard gate is one leaf hung on its post at a, swinging open out of the yard (a quarter turn when
+   * fully open): the way the leaf points from its hinge.
+   */
+  get gateDir(): { x: number; z: number } {
+    const g = this.yardGate;
+    if (!g) return { x: 1, z: 0 };
+    const len = Math.hypot(g.bx - g.ax, g.bz - g.az) || 1;
+    const ux = (g.bx - g.ax) / len;
+    const uz = (g.bz - g.az) / len;
+    // Out of the yard: away from the side of the gate line the yard's middle is on.
+    const p = this.plateau;
+    const side = -(Math.sign((p.x - g.ax) * -uz + (p.z - g.az) * ux) || 1);
+    const nx = -uz * side;
+    const nz = ux * side;
+    const a = this.gateOpen * (Math.PI / 2) * 0.95;
+    return { x: ux * Math.cos(a) + nx * Math.sin(a), z: uz * Math.cos(a) + nz * Math.sin(a) };
+  }
+
+  /**
+   * What of the gateway the leaf still stands across (null: open): from the hinge along the gate line
+   * as far as the swinging leaf still reaches over it (swung out, it is out of the way).
+   */
+  get gateLeaf(): { ax: number; az: number; bx: number; bz: number } | null {
+    const g = this.yardGate;
+    if (!g || this.gateOpen >= 0.97) return null;
+    const c = Math.cos(this.gateOpen * (Math.PI / 2) * 0.95);
+    return { ax: g.ax, az: g.az, bx: g.ax + (g.bx - g.ax) * c, bz: g.az + (g.bz - g.az) * c };
   }
 
   /** Where the worker comes out of the house at the start of the very first job. */

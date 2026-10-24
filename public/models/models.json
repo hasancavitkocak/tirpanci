@@ -6,6 +6,10 @@
   "patpat": "patpat_tum.glb",
   "patpatTeker": "patpat_kafa_teker.glb",
   "patpatDireksiyon": "patpat_direksiyon.glb",
+  "tractor": "traktor.glb",
+  "tractorRear": "traktor_teker_arka.glb",
+  "tractorFront": "traktor_teker_on.glb",
+  "trailer": "romork.glb",
   "shoot": "surgun.glb",
   "house": "ev.glb",
   "hut": "yayla.glb",
@@ -20,6 +24,7 @@
   "fuelcan": "bidon.glb",
   "gazebo": "cardak.glb",
   "kennel": "kulube.glb",
+  "garage": "garaj.glb",
   "panorama": "gokyuzu.jpg",
   "panoramaTurn": 0
 }

@@ -28,8 +28,8 @@ await game(page, () => {
   }
 });
 await sleep(1000);
-const gas = await at(page, '#pedal-gas');
-const going = dragAsync(gas.x, gas.y, gas.x, gas.y, 4000);
+// Driven up to it: the stick pushed up on the right half.
+const going = dragAsync(800, 1700, 800, 1520, 4000);
 const seen = await W(() => !!document.querySelector('[data-id="unlock"]'), 6000);
 await going;
 check('BÖLÜMÜ AÇ shows driving up to the locked gate', seen);

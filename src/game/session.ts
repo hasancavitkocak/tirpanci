@@ -1,4 +1,4 @@
-import { BRAMBLE, BUSH_KINDS, BushKind, DEFAULT_EQUIPMENT, ENGINE, Equipment, FINISH_AT, HEN, HIVE, HOSE, LevelDef, PATPAT, PLAYER, PRICES, SLOPE, SNAKE, STARS_AT, STONE_SNAP, TRIMMER, Upgrades, WET_LOAD, gearStats } from './config';
+import { BRAMBLE, BUSH_KINDS, BushKind, DEFAULT_EQUIPMENT, ENGINE, Equipment, FINISH_AT, HEN, HIVE, HOSE, LevelDef, PATPAT, PLAYER, PRICES, SLOPE, SNAKE, STARS_AT, STONE_SNAP, TRIMMER, Upgrades, WET_LOAD, gearStats, TRACTOR_LOCK, TRACTOR_WHEELBASE, TRAILER } from './config';
 import { Field } from './field';
 import { PullResult, Starter } from './starter';
 
@@ -13,7 +13,8 @@ export interface SessionInput {
   /** Desired movement in world space (x, z), length 0..1. */
   moveX: number;
   moveZ: number;
-  throttle: boolean;
+  /** On / off, or how far open (0..1, the throttle lever). */
+  throttle: boolean | number;
   /** True on the step the bump-feed button was pressed. */
   bump: boolean;
   /** First-person: the facing is set by the player, not by the walking direction. */
@@ -189,6 +190,8 @@ export class Session {
   intro: 'take' | 'line' | null = null;
   /** The trimmer is in the worker's hands (not while it lies in the trailer). */
   hasTrimmer = true;
+  /** Serbest gez: no job, the trimmer stays put (getting off leaves it where it is, it cannot be taken). */
+  roaming = false;
   private requestBroken = false;
   /** How heavy the grass is to cut here: wet in the rain, soft in the first gardens. */
   private readonly grassWeight: number;
@@ -326,8 +329,9 @@ export class Session {
     const v = this.field.vehicle;
     if (!this.driving || Math.abs(v.speed) > 0.5) return false;
     this.driving = false;
-    // At the start of a job it still has no line: take it out and fit line first (the intro).
-    if (!this.intro) this.hasTrimmer = true;
+    // At the start of a job it still has no line: take it out and fit line first (the intro). Roaming
+    // he gets off empty-handed.
+    if (!this.intro && !this.roaming) this.hasTrimmer = true;
     v.speed = 0;
     const fx = Math.sin(v.yaw);
     const fz = Math.cos(v.yaw);
@@ -343,10 +347,52 @@ export class Session {
   /** The worker on the seat follows the pat pat. */
   private seat(): void {
     const v = this.field.vehicle;
-    this.x = v.x + Math.sin(v.yaw) * PATPAT.seat;
-    this.z = v.z + Math.cos(v.yaw) * PATPAT.seat;
+    this.x = v.x + Math.sin(v.yaw) * this.field.dims.seat;
+    this.z = v.z + Math.cos(v.yaw) * this.field.dims.seat;
     this.yaw = v.yaw;
     this.updateHead();
+  }
+
+  /**
+   * The tractor: rigid, its front wheels steered (a bicycle about the rear axle). Speed, the wheels'
+   * crushing and prints are as the pat pat's.
+   */
+  private tractorStep(dt: number): void {
+    const v = this.field.vehicle;
+    const f = this.field;
+    const D = f.dims;
+    v.art = 0;
+    // Turning right is the heading decreasing.
+    // The trailer's axle before the move: it is dragged (or pushed) after the hitch.
+    const axle = f.trailerAxle();
+    const yaw = v.yaw - (v.speed * Math.tan(v.steer * TRACTOR_LOCK) * dt) / TRACTOR_WHEELBASE;
+    const rx = v.x - Math.sin(v.yaw) * D.rearAxle + Math.sin(yaw) * v.speed * dt;
+    const rz = v.z - Math.cos(v.yaw) * D.rearAxle + Math.cos(yaw) * v.speed * dt;
+    const nx = rx + Math.sin(yaw) * D.rearAxle;
+    const nz = rz + Math.cos(yaw) * D.rearAxle;
+    if (f.vehicleFits(nx, nz, yaw, 0)) {
+      v.x = nx;
+      v.z = nz;
+      v.yaw = yaw;
+    } else {
+      if (Math.abs(v.speed) > 1.2) this.events.push({ type: 'bump-vehicle' });
+      v.speed = 0;
+    }
+    if (axle && f.trailer) {
+      const h = f.hitch;
+      let ty = Math.atan2(h.x - axle.x, h.z - axle.z);
+      // Not further round than its drawbar lets it.
+      const rel = Math.atan2(Math.sin(ty - v.yaw), Math.cos(ty - v.yaw));
+      ty = v.yaw + Math.max(-TRAILER.maxAngle, Math.min(TRAILER.maxAngle, rel));
+      f.trailer.yaw = ty;
+    }
+    f.placeDepot();
+    if (Math.abs(v.speed) > 0.05) {
+      for (const w of [...f.patpatWheels(), ...f.trailerWheels()]) {
+        f.crush(w.x, w.z, 0.2, PATPAT.crushTo);
+        f.press(w.x, w.z, Math.abs(v.speed) * dt);
+      }
+    }
   }
 
   /** Drive the pat pat: throttle and brake along its heading, steering turns it as it rolls. */
@@ -357,14 +403,12 @@ export class Session {
     // as on the road: crawling there only made the trips longer).
     const deep = this.field.patpatWheels().some((w) => (this.field.puddleAt(w.x, w.z)?.r ?? 0) > 0.8);
     const ford = deep ? 0.6 : 1;
-    const want = (d.throttle >= 0 ? d.throttle * PATPAT.forward : d.throttle * PATPAT.reverse) * ford;
+    const want = (d.throttle >= 0 ? d.throttle * this.field.dims.forward : d.throttle * PATPAT.reverse) * ford;
     const braking = Math.sign(want) !== Math.sign(v.speed) && Math.abs(v.speed) > 0.05;
-    // Pulling hardest in the low gears: it gathers speed more slowly as it goes up through them.
-    const sp = Math.abs(v.speed);
-    const gearPull = sp < 1.7 ? 1 : sp < 3.1 ? 0.7 : 0.45;
-    const rate = (braking ? PATPAT.brake : PATPAT.accel * gearPull) * dt;
+    const rate = (braking ? PATPAT.brake : PATPAT.accel) * dt;
     v.speed += Math.max(-rate, Math.min(rate, want - v.speed));
     v.steer += (d.steer - v.steer) * Math.min(1, dt * 5);
+    if (this.field.tractor) return this.tractorStep(dt);
     // The steering wheel turns the head about the hitch pin (at a finite rate, up to full lock).
     // Standing with the wheel let go, the head stays as it was left (getting back on, the wheel
     // springing back would otherwise swing the head, and the view with it, round on its own).
@@ -376,11 +420,11 @@ export class Session {
     const h = this.field.head(v.x, v.z, v.yaw, art);
     const jx = h.jx + Math.sin(h.yaw) * v.speed * dt;
     const jz = h.jz + Math.cos(h.yaw) * v.speed * dt;
-    const rx = v.x - Math.sin(v.yaw) * PATPAT.rearAxle;
-    const rz = v.z - Math.cos(v.yaw) * PATPAT.rearAxle;
+    const rx = v.x - Math.sin(v.yaw) * this.field.dims.rearAxle;
+    const rz = v.z - Math.cos(v.yaw) * this.field.dims.rearAxle;
     const yaw = Math.atan2(jx - rx, jz - rz);
-    const nx = jx - Math.sin(yaw) * PATPAT.joint;
-    const nz = jz - Math.cos(yaw) * PATPAT.joint;
+    const nx = jx - Math.sin(yaw) * this.field.dims.joint;
+    const nz = jz - Math.cos(yaw) * this.field.dims.joint;
     if (this.field.vehicleFits(nx, nz, yaw, art)) {
       v.x = nx;
       v.z = nz;
@@ -410,49 +454,58 @@ export class Session {
     this.wading = this.field.inWater(v.x, v.z);
   }
 
-  /** The pat pat's distance from the yard gate a frame ago (is it coming towards it?). */
-  private gateDist = Infinity;
-  /** Held open for the pat pat (it came towards the gate and has not driven off from it yet). */
-  private gateHeld = false;
-  /** On the pat pat at the last gate check (to see getting on). */
-  private gateDriving = false;
+  /** The yard gate is wanted open (KAPIYI AÇ pressed); it stays so until KAPIYI KAPAT, or until all have gone off from it. */
+  private gateWanted = false;
 
-  /** The yard's gate slides open when the worker or the pat pat comes up to it, and shuts after them. */
-  private moveGate(dt: number): void {
+  /**
+   * How near the gate the worker is (on foot) or the vehicle (driving), metres; each of them on its own;
+   * and whether any of the vehicle stands in the gateway.
+   */
+  private gateNear(): { d: number; walker: number; vehicle: number; inGateway: boolean } {
     const f = this.field;
     const g = f.yardGate;
-    if (!g) return;
+    if (!g) return { d: Infinity, walker: Infinity, vehicle: Infinity, inGateway: false };
     const mx = (g.ax + g.bx) / 2;
     const mz = (g.az + g.bz) / 2;
-    const h = f.head(f.vehicle.x, f.vehicle.z, f.vehicle.yaw, f.vehicle.art);
-    // On foot it opens as he comes up. Driving (from inside or out), it opens as the pat pat comes
-    // towards it and shuts once it drives away; stopped, it stays as it was; with any of the pat pat
-    // in or by the gateway it stays open.
-    const walker = !this.driving && Math.hypot(this.x - mx, this.z - mz) < 4.5;
     const v = f.vehicle;
-    const rx = v.x - Math.sin(v.yaw) * PATPAT.rearAxle;
-    const rz = v.z - Math.cos(v.yaw) * PATPAT.rearAxle;
-    const d = Math.min(Math.hypot(h.x - mx, h.z - mz), Math.hypot(v.x - mx, v.z - mz), Math.hypot(rx - mx, rz - mz));
-    const moving = Math.abs(v.speed) > 0.2;
-    const coming = moving && d < this.gateDist - 1e-4;
-    const going = moving && d > this.gateDist + 1e-4;
-    this.gateDist = d;
-    // Getting on in the yard, the gate starts to open as the engine starts (as if by a remote): the
-    // slow motor gate is open by the time the pat pat is driven up to it.
-    const gotOn = this.driving && !this.gateDriving;
-    this.gateDriving = this.driving;
-    const inYard = Math.hypot(v.x - f.plateau.x, v.z - f.plateau.z) < f.plateau.r;
-    if (gotOn && inYard && d < 16) this.gateHeld = true;
-    else if (!this.driving) this.gateHeld = false;
-    else if (d < 3.5) this.gateHeld = true;
-    // (Far enough off that the slow gate is open by the time the pat pat gets there.)
-    else if (d < 16) {
-      if (coming) this.gateHeld = true;
-      else if (going) this.gateHeld = false;
-    } else this.gateHeld = false;
-    const want = walker || this.gateHeld || d < 2.5 ? 1 : 0;
+    const h = f.head(v.x, v.z, v.yaw, v.art);
+    const rx = v.x - Math.sin(v.yaw) * f.dims.rearAxle;
+    const rz = v.z - Math.cos(v.yaw) * f.dims.rearAxle;
+    const dv = Math.min(Math.hypot(h.x - mx, h.z - mz), Math.hypot(v.x - mx, v.z - mz), Math.hypot(rx - mx, rz - mz));
+    const walker = Math.hypot(this.x - mx, this.z - mz);
+    return { d: this.driving ? dv : walker, walker, vehicle: dv, inGateway: dv < 2.5 };
+  }
+
+  /** By the shut (or shutting) yard gate: KAPIYI AÇ. */
+  get canOpenGate(): boolean {
+    return !!this.field.yardGate && !this.gateWanted && this.gateNear().d < (this.driving ? 14 : 5);
+  }
+
+  /** By the open yard gate, nothing in the gateway: KAPIYI KAPAT. */
+  get canShutGate(): boolean {
+    const n = this.gateNear();
+    return !!this.field.yardGate && this.gateWanted && this.field.gateOpen > 0.5 && n.d < (this.driving ? 14 : 5) && !n.inGateway;
+  }
+
+  openGate(): void {
+    this.gateWanted = true;
+  }
+
+  shutGate(): void {
+    if (!this.gateNear().inGateway) this.gateWanted = false;
+  }
+
+  /**
+   * The yard's motor-driven gate (swinging out): opens when KAPIYI AÇ is pressed by it, shuts on KAPIYI KAPAT
+   * or by itself once everyone has gone well off from it (never on the vehicle in the gateway).
+   */
+  private moveGate(dt: number): void {
+    const f = this.field;
+    if (!f.yardGate) return;
+    const n = this.gateNear();
+    if (this.gateWanted && !n.inGateway && n.vehicle > 18 && n.walker > 18) this.gateWanted = false;
+    const want = this.gateWanted || n.inGateway ? 1 : 0;
     const was = f.gateOpen;
-    // A motor-driven iron sliding gate.
     f.gateOpen = Math.max(0, Math.min(1, f.gateOpen + Math.sign(want - f.gateOpen) * dt * (want ? GATE_OPEN_RATE : GATE_SHUT_RATE)));
     if (was === 0 && f.gateOpen > 0) this.events.push({ type: 'gate', open: true });
     if (was === 1 && f.gateOpen < 1) this.events.push({ type: 'gate', open: false });
@@ -466,7 +519,7 @@ export class Session {
 
   /** Take the trimmer out of the trailer (at the start of a job: then fit line). */
   takeTrimmer(): boolean {
-    if (!this.canTake) return false;
+    if (!this.canTake || this.roaming) return false;
     this.hasTrimmer = true;
     if (this.intro === 'take') {
       this.intro = 'line';
@@ -580,7 +633,8 @@ export class Session {
 
     // --- Throttle, fuel and temperature
     const maxThrottle = this.cold ? 0.6 : 1;
-    const want = input.throttle && this.running ? maxThrottle : 0;
+    const open = typeof input.throttle === 'number' ? Math.max(0, Math.min(1, input.throttle)) : input.throttle ? 1 : 0;
+    const want = this.running ? open * maxThrottle : 0;
     this.throttle += (want - this.throttle) * Math.min(1, (want > this.throttle ? TRIMMER.spinUp : TRIMMER.spinDown) * dt);
     if (!this.running) this.throttle = Math.max(0, this.throttle - dt * 3);
     if (this.running) {
@@ -1050,7 +1104,7 @@ export class Session {
     const over = ratio - ENGINE.strainFrom;
     // Under load the rpm sags: a little near capacity, a lot when overloaded.
     const sag = Math.min(0.45, Math.max(0, ratio - 0.75) * 0.5);
-    this.rpm += (this.throttle * (1 - sag) - this.rpm) * Math.min(1, dt * 6);
+    this.rpm += (this.throttle * (1 - sag) - this.rpm) * Math.min(1, dt * 20);
     this.strain = Math.max(0, this.strain + (over > 0 ? over * ENGINE.strainGain : -ENGINE.strainLoss) * dt);
     if (!this.strainAnnounced && this.strain > ENGINE.strainWarn) {
       this.strainAnnounced = true;
@@ -1133,9 +1187,9 @@ export class Session {
     for (const h of f.hives) solid(h.x, h.z, HIVE.block);
     // Walls: pushed off each segment (half the wall's thickness plus the body).
     for (const y of f.yardProps) solid(y.x, y.z, y.r);
-    const g = f.yardGate;
-    const gate = g && f.gateOpen < 0.95 ? [g] : [];
-    for (const w of [...f.walls, ...f.fences, ...f.yardWalls, ...gate]) {
+    const gl = f.gateLeaf;
+    const gate = gl ? [gl] : [];
+    for (const w of [...f.walls, ...f.fences, ...f.yardWalls, ...f.garageWalls, ...gate]) {
       const dx = w.bx - w.ax;
       const dz = w.bz - w.az;
       const t = Math.max(0, Math.min(1, ((this.x - w.ax) * dx + (this.z - w.az) * dz) / (dx * dx + dz * dz)));

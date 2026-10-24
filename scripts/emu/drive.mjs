@@ -1,5 +1,5 @@
-// Emulator test 1: into a job from the menu by touch, on the pat pat, GAZ, the steering wheel, FREN,
-// and the yard gate (opens as the pat pat comes, stays open while it waits, shuts as it backs off).
+// Emulator test 1: into a job from the menu by touch, on the pat pat, driven by the stick (gas, steer, brake),
+// and the yard gate (KAPIYI AÇ by it opens it, it stays open while waited at, KAPIYI KAPAT shuts it).
 import { alive, allOk, at, check, connect, dragAsync, game, shot, sleep, tap } from './lib.mjs';
 
 const { browser, page } = await connect();
@@ -35,8 +35,14 @@ await game(page, () => {
 check('PATPATA BİN shows', await W(() => !!document.querySelector('[data-id="board"]'), 8000));
 await tap(page, '[data-id="board"]');
 check('on the pat pat', await W(() => window.__game.session.driving, 5000));
-check('wheel and pedals on screen', await game(page, () => getComputedStyle(document.getElementById('drive-ui')).display !== 'none'));
+check('no wheel or pedals on screen: the stick drives', await game(page, () => !document.getElementById('drive-ui') && getComputedStyle(document.getElementById('stick')).display !== 'none'));
 await sleep(1000);
+// (The stick's test on the open harman: out of the garage it starts in, backing would meet its wall.)
+await game(page, () => {
+  const f = window.__game.session.field;
+  Object.assign(f.vehicle, f.harmanSpot, { speed: 0, art: 0 });
+});
+// The gate no longer opens by itself: only its button does.
 check('getting on does not open the gate', (await game(page, () => window.__game.session.field.gateOpen)) === 0);
 
 const pos = () => game(page, () => {
@@ -46,44 +52,37 @@ const pos = () => game(page, () => {
   return { x: v.x, z: v.z, yaw: v.yaw, speed: v.speed, gate: s.field.gateOpen, gd: g ? Math.hypot(v.x - (g.ax + g.bx) / 2, v.z - (g.az + g.bz) / 2) : -1 };
 });
 
-// GAZ: a finger on the pedal for 3 s.
+// GAZ: the stick pushed up (a finger on the right half) for 3 s.
 const p0 = await pos();
-const gas = await at(page, '#pedal-gas');
-await dragAsync(gas.x, gas.y, gas.x, gas.y, 3000);
+await dragAsync(800, 1700, 800, 1520, 3000);
 const p1 = await pos();
-check('GAZ moves it', Math.hypot(p1.x - p0.x, p1.z - p0.z) > 1, `${Math.hypot(p1.x - p0.x, p1.z - p0.z).toFixed(2)} m`);
+check('stick up drives it', Math.hypot(p1.x - p0.x, p1.z - p0.z) > 1, `${Math.hypot(p1.x - p0.x, p1.z - p0.z).toFixed(2)} m`);
 
-// The wheel: the gas held (a second finger, from the page: adb has one finger), the real finger turns
-// the wheel from 12 o'clock round to 3.
-await game(page, () => document.getElementById('pedal-gas').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 9 })));
-const wh = await at(page, '#drive-wheel');
-const r = wh.w * 0.38;
-const turning = dragAsync(wh.x, wh.y - r, wh.x + r, wh.y - r * 0.1, 3000);
+// Steering: the stick up and to the right.
+const turning = dragAsync(800, 1700, 960, 1560, 3000);
 let maxSteer = 0;
 for (let i = 0; i < 10; i++) {
   await sleep(250);
-  maxSteer = Math.max(maxSteer, await game(page, () => window.__game.driveUi.steer));
+  maxSteer = Math.max(maxSteer, await game(page, () => window.__game.session.field.vehicle.steer));
 }
 await turning;
 const p2 = await pos();
-await game(page, () => document.getElementById('pedal-gas').dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 9 })));
-check('turning the wheel by touch steers right', maxSteer > 0.3, `steer up to ${maxSteer.toFixed(2)}`);
+check('stick right steers right', maxSteer > 0.3, `steer up to ${maxSteer.toFixed(2)}`);
 const dyaw = Math.atan2(Math.sin(p2.yaw - p1.yaw), Math.cos(p2.yaw - p1.yaw));
 check('the pat pat turns', Math.abs(dyaw) > 0.15, `${dyaw.toFixed(2)} rad`);
 await sleep(1500);
-check('the wheel springs back', Math.abs(await game(page, () => window.__game.driveUi.steer)) < 0.15);
+check('let go, it goes straight again', Math.abs(await game(page, () => window.__game.session.field.vehicle.steer)) < 0.15);
 shot('emu-drive-turn');
 
-// FREN: a finger on it for 4 s: stops, then backs up.
-const br = await at(page, '#pedal-brake');
-const braking = dragAsync(br.x, br.y, br.x, br.y, 4000);
+// Stick down for 4 s: stops, then backs up.
+const braking = dragAsync(800, 1600, 800, 1780, 4000);
 let minSpeed = 9;
 for (let i = 0; i < 14; i++) {
   await sleep(250);
   minSpeed = Math.min(minSpeed, (await pos()).speed);
 }
 await braking;
-check('FREN stops it and backs up', minSpeed < -0.2, `speed down to ${minSpeed.toFixed(2)}`);
+check('stick down stops it and backs up', minSpeed < -0.2, `speed down to ${minSpeed.toFixed(2)}`);
 
 // The yard gate, from outside: the pat pat 9 m out, facing it, gate shut.
 await game(page, () => {
@@ -102,29 +101,28 @@ await game(page, () => {
   v.art = 0;
   v.speed = 0;
   f.gateOpen = 0;
-  s.gateHeld = false;
-  s.gateDist = Infinity;
+  s.gateWanted = false;
 });
 await sleep(1500);
 check('gate shut while the pat pat stands outside', (await pos()).gate === 0);
-const driving = dragAsync(gas.x, gas.y, gas.x, gas.y, 2200);
-let closestShut = 99;
-for (let i = 0; i < 9; i++) {
-  await sleep(250);
-  const p = await pos();
-  if (p.gate < 0.95) closestShut = Math.min(closestShut, p.gd);
-}
-await driving;
-const near = await pos();
-check('the gate opens as it comes (fully open before it gets there)', closestShut > 2, `gate below full only farther than ${closestShut.toFixed(1)} m; now ${near.gd.toFixed(1)} m away, open ${near.gate.toFixed(2)}`);
+check('KAPIYI AÇ shows by the gate', await W(() => !!document.querySelector('[data-id="gate"]'), 3000));
+shot('emu-drive-gate-button');
+await tap(page, '[data-id="gate"]');
+await sleep(4500);
+check('pressed: the gate opens', (await pos()).gate === 1);
+check('open: KAPIYI KAPAT shows instead', await game(page, () => !!document.querySelector('[data-id="gate-shut"]') && !document.querySelector('[data-id="gate"]')));
+await dragAsync(800, 1700, 800, 1520, 2200);
 await sleep(2500);
-check('stopped by it: stays open', (await pos()).gate === 1);
+const near = await pos();
+check('driven up to it: stays open', near.gate === 1, `${near.gd.toFixed(1)} m away`);
 shot('emu-drive-gate');
-const backing = dragAsync(br.x, br.y, br.x, br.y, 5000);
-await backing;
-await sleep(3000);
-const away = await pos();
-check('backed off: the gate shuts', away.gate < 0.5, `open ${away.gate.toFixed(2)} at ${away.gd.toFixed(1)} m`);
+await dragAsync(800, 1600, 800, 1780, 5000);
+await sleep(1500);
+const back = await pos();
+check('backed off: still open (only the button shuts it)', back.gate === 1, `open ${back.gate.toFixed(2)} at ${back.gd.toFixed(1)} m`);
+if (await game(page, () => !!document.querySelector('[data-id="gate-shut"]'))) await tap(page, '[data-id="gate-shut"]');
+await sleep(4500);
+check('KAPIYI KAPAT: the gate shuts', (await pos()).gate === 0);
 check('app still running', alive());
 browser.disconnect();
 process.exit(allOk() ? 0 : 1);
