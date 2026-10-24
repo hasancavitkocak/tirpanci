@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Field, STREAM } from '../game/field';
+import { PAINTED_GROUND } from './scenery';
 
 /**
  * The village's mountain stream (dere) running down the hill along its east side.
@@ -48,8 +49,9 @@ const fragment = /* glsl */ `
     float n = noise(p * 2.0) * 0.6 + noise(p * 5.0 + 3.0) * 0.4;
     float n2 = noise(vec2(vUv.x * 9.0, vUv.y * 4.0 - uTime * speed * 1.6));
     // Linear colours (the colorspace include turns them into sRGB): dark teal in the middle, greener by the banks.
-    vec3 deep = vec3(0.012, 0.05, 0.055);
-    vec3 shallow = vec3(0.045, 0.12, 0.09);
+    // (Painted look: clear water, a light green-brown tint, the pebbled bed showing through.)
+    vec3 deep = ${PAINTED_GROUND ? 'vec3(0.03, 0.07, 0.05)' : 'vec3(0.012, 0.05, 0.055)'};
+    vec3 shallow = ${PAINTED_GROUND ? 'vec3(0.1, 0.14, 0.08)' : 'vec3(0.045, 0.12, 0.09)'};
     vec3 col = mix(deep, shallow, abs(across) * 0.8 + n * 0.25);
     // Sky reflection and sun glints on the ripples.
     vec3 vdir = normalize(cameraPosition - vW);
@@ -60,8 +62,10 @@ const fragment = /* glsl */ `
     col += vec3(1.0, 0.95, 0.85) * spec * 0.6;
     // Foam where the water runs over stones / along the banks.
     float foam = smoothstep(0.72, 0.9, n2) * (0.35 + 0.65 * smoothstep(0.6, 1.0, abs(across)));
-    col = mix(col, vec3(0.6, 0.68, 0.66), foam * 0.3);
-    float alpha = 0.88 + fres * 0.1;
+    col = mix(col, ${PAINTED_GROUND ? 'vec3(0.85, 0.93, 0.95), foam * 0.6' : 'vec3(0.6, 0.68, 0.66), foam * 0.3'});
+    // (Painted look, clear: little of the tint in the middle, more by the banks and where the sky
+    // shows in it; white water opaque.)
+    ${PAINTED_GROUND ? 'float alpha = 0.5 - 0.18 * abs(across) + n * 0.12 + fres * 0.35 + spec * 0.5 + foam * 0.55;' : 'float alpha = 0.88 + fres * 0.1;'}
     gl_FragColor = vec4(col, alpha);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
@@ -119,16 +123,12 @@ export class StreamView {
     const water = new THREE.Mesh(g, this.mat);
     water.renderOrder = 1;
     this.group.add(water);
+    // The painted look: the stream's pebbled bed under the clear water, out to the foot of the banks.
+    if (PAINTED_GROUND) this.group.add(streamBed(f, heightAt, z0, z1));
 
     // Stones in and along the bed.
-    const stones: THREE.Matrix4[] = [];
-    let seed = 7;
-    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    for (let z = z0 + 2; z < z1; z += 1.1 + rnd() * 1.8) {
-      const cx = f.streamX(z) + (rnd() - 0.5) * WIDTH * 1.6;
-      const s = 0.12 + rnd() * 0.25;
-      stones.push(new THREE.Matrix4().compose(new THREE.Vector3(cx, heightAt(cx, z) + s * 0.1, z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rnd() * 6), new THREE.Vector3(s * 1.3, s, s)));
-    }
+    // (Where they lie is the field's: the big boulders stop the pat pat.)
+    const stones = f.streamStones.map((st) => new THREE.Matrix4().compose(new THREE.Vector3(st.x, heightAt(st.x, st.z) + st.s * 0.1, st.z), new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), st.rot), new THREE.Vector3(st.s * 1.3, st.s, st.s)));
     const sm = new THREE.InstancedMesh(stoneGeo, stoneMat, stones.length);
     stones.forEach((m, i) => sm.setMatrixAt(i, m));
     sm.castShadow = true;
@@ -139,4 +139,92 @@ export class StreamView {
   update(time: number): void {
     this.mat.uniforms.uTime.value = time;
   }
+}
+
+/**
+ * The stream bed: a ribbon on the carved ground, the artist's pebble picture (textures/zemin-dere-boya.jpg)
+ * or, until there is one, pebbles drawn here; fading out up the banks.
+ */
+function streamBed(f: Field, heightAt: (x: number, z: number) => number, z0: number, z1: number): THREE.Mesh {
+  // As wide as the water (WIDTH * 0.62 each side) and a little up the banks.
+  const water = WIDTH * 0.62;
+  const half = water + 0.8;
+  const across = 11;
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const col: number[] = [];
+  const idx: number[] = [];
+  let row = 0;
+  for (let z = z0; z <= z1; z += 0.8, row++) {
+    const cx = f.streamX(z);
+    for (let k = 0; k < across; k++) {
+      const s = -half + (2 * half * k) / (across - 1);
+      const x = cx + s;
+      pos.push(x, heightAt(x, z) + 0.03, z);
+      uv.push(x / 2.4, z / 2.4);
+      const edge = Math.min(1, (half - Math.abs(s)) / (half - water));
+      col.push(1, 1, 1, edge * edge * (3 - 2 * edge));
+    }
+    if (z + 0.8 <= z1) for (let k = 0; k < across - 1; k++) {
+      const q = row * across + k;
+      idx.push(q, q + across, q + 1, q + 1, q + across, q + across + 1);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 4));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  const map = new THREE.TextureLoader().load('./textures/zemin-dere-boya.jpg', undefined, undefined, () => {
+    m.material.map = pebbleTexture();
+    m.material.needsUpdate = true;
+  });
+  map.wrapS = map.wrapT = THREE.RepeatWrapping;
+  map.colorSpace = THREE.SRGBColorSpace;
+  map.anisotropy = 4;
+  const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map, vertexColors: true, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -200 }));
+  m.receiveShadow = true;
+  m.renderOrder = 0;
+  return m;
+}
+
+/** Pebbles drawn on a canvas (warm browns, greys, rust), wrapping round its edges so it tiles. */
+function pebbleTexture(): THREE.CanvasTexture {
+  const n = 512;
+  const c = document.createElement('canvas');
+  c.width = c.height = n;
+  const g = c.getContext('2d')!;
+  let seed = 11;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  g.fillStyle = '#9b8466';
+  g.fillRect(0, 0, n, n);
+  for (let i = 0; i < 520; i++) {
+    const x = rnd() * n;
+    const y = rnd() * n;
+    const r = 6 + rnd() * rnd() * 30;
+    const hue = [28, 35, 20, 40, 15][Math.floor(rnd() * 5)];
+    const sat = rnd() < 0.3 ? 8 : 22 + rnd() * 25;
+    const light = 30 + rnd() * 30;
+    const a = rnd() * Math.PI;
+    for (const ox of [-n, 0, n]) for (const oy of [-n, 0, n]) {
+      if (x + ox < -40 || x + ox > n + 40 || y + oy < -40 || y + oy > n + 40) continue;
+      g.fillStyle = 'rgba(40, 28, 16, 0.45)';
+      g.beginPath();
+      g.ellipse(x + ox + r * 0.12, y + oy + r * 0.15, r, r * 0.72, a, 0, Math.PI * 2);
+      g.fill();
+      const grad = g.createRadialGradient(x + ox - r * 0.3, y + oy - r * 0.3, r * 0.1, x + ox, y + oy, r);
+      grad.addColorStop(0, `hsl(${hue}, ${sat}%, ${light + 14}%)`);
+      grad.addColorStop(1, `hsl(${hue}, ${sat}%, ${light - 6}%)`);
+      g.fillStyle = grad;
+      g.beginPath();
+      g.ellipse(x + ox, y + oy, r, r * 0.72, a, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
 }

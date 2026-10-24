@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { makeRng } from '../game/rng';
+import { PAINTED_GROUND } from './scenery';
 
 /**
  * Hazelnut bush (fındık ocağı) built the way games build trees: real stems with a bark texture, and
@@ -16,6 +17,25 @@ let barkTex: THREE.Texture | null = null;
 /** Load the bush textures before the first field is shown (call during the loading screen). */
 export async function preloadBushTextures(): Promise<void> {
   [leafTex, barkTex] = await Promise.all([loader.loadAsync('./textures/ocak-yaprak.png'), loader.loadAsync('./textures/ocak-kabuk.png')]);
+  if (PAINTED_GROUND) {
+    // With the painted ground: the photo leaves brighter and yellower, the bark a warm light brown.
+    leafTex = regraded(leafTex, 'brightness(1.45) saturate(1.3) hue-rotate(-10deg)');
+    barkTex = regraded(barkTex, 'brightness(2) sepia(0.4) saturate(1.1)');
+  }
+}
+
+/** A texture's picture redrawn through a CSS filter (alpha kept). */
+function regraded(t: THREE.Texture, filter: string): THREE.Texture {
+  const img = t.image as HTMLImageElement;
+  const c = document.createElement('canvas');
+  c.width = img.width;
+  c.height = img.height;
+  const g = c.getContext('2d')!;
+  g.filter = filter;
+  g.drawImage(img, 0, 0);
+  const out = new THREE.CanvasTexture(c);
+  t.dispose();
+  return out;
 }
 
 function materials(): { leaf: THREE.MeshLambertMaterial; bark: THREE.MeshLambertMaterial } {
@@ -33,7 +53,8 @@ function materials(): { leaf: THREE.MeshLambertMaterial; bark: THREE.MeshLambert
     bark.wrapS = bark.wrapT = THREE.RepeatWrapping;
     barkMat = new THREE.MeshLambertMaterial({ map: bark, color: '#ffffff', emissive: '#3a352c' });
     // Leaves let light through: lift the shaded side so the crown doesn't go black.
-    leafMat.emissive = new THREE.Color('#1c2a10');
+    leafMat.emissive = new THREE.Color(PAINTED_GROUND ? '#2c4512' : '#1c2a10');
+    if (PAINTED_GROUND) barkMat.emissive = new THREE.Color('#5c4832');
   }
   return { leaf: leafMat, bark: barkMat };
 }

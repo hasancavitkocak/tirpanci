@@ -398,7 +398,8 @@ export function cobbleRoads(f: Field, heightAt: Height): THREE.Group {
         pos.push(x, heightAt(x, z) + 0.06, z);
         uv.push((s + half) / 1.5, along / 1.5);
         // Out of the track: muddy at first (darker), the setts showing more and more, ragged at the edge.
-        const t = Math.min(1, Math.max(0, (along - 2.5 - Math.abs(Math.sin(s * 3.1 + along)) * 1.2) / 3));
+        // (Within the dirt track's width, so no half-clear setts lie out on the grass beside it.)
+        const t = Math.min(1, Math.max(0, (along - 0.6 - Math.abs(Math.sin(s * 3.1 + along)) * 0.8) / 1.6));
         const mud = 0.55 + 0.45 * t;
         col.push(mud, mud * 0.95, mud * 0.88, t);
       }

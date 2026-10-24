@@ -5,12 +5,21 @@ import { Models } from './models';
 import { FpvRig } from './fpvRig';
 import { Particles } from './particles';
 import { HEAD_LIFT, TRIMMER_RIG } from './trimmerRig';
-import { SLOPE, TRIMMER } from '../game/config';
+import { PATPAT, SLOPE, TRIMMER } from '../game/config';
 import { SKY_HORIZON, WorldView, worldHeight } from './world';
 import { WorkerView } from './worker';
 import { CrittersView } from './critters';
 import { Rain, WEATHER } from './weather';
 import { MARK_LENGTH, TrackView } from './tracks';
+
+/**
+ * The firings in the pat pat's start recording (public/audio/patpat_start.wav: seconds in, and how
+ * loud each bang is, 0..1), found from its loudness: the starter's first slow beats, then it catching.
+ */
+const PATPAT_START_POPS = [
+  { t: 0.62, k: 0.5 }, { t: 1.43, k: 0.48 }, { t: 2.16, k: 0.68 }, { t: 2.75, k: 0.85 }, { t: 2.89, k: 0.8 },
+  { t: 3.02, k: 0.8 }, { t: 3.13, k: 0.85 }, { t: 3.31, k: 1 }, { t: 3.46, k: 0.85 }, { t: 3.53, k: 0.75 },
+];
 
 export type Quality = 'low' | 'medium' | 'high';
 
@@ -113,9 +122,17 @@ export class View {
    * the pat pat's head is going, a little ahead of it while steering.
    */
   private headTurn = 0;
+  private wasDriving = false;
   private shake = 0;
   private smokeAcc = 0;
   private lastThrottle = 0;
+  /** The pat pat's exhaust: smoke owed, last speed, and where on its head the pipe is (found once). */
+  private patSmokeAcc = 0;
+  private patLastSpeed = 0;
+  private patWasDriving = false;
+  /** Seconds since the pat pat's engine was started (getting on); Infinity off it. */
+  private patStartT = Infinity;
+  private patPipe: THREE.Vector3 | null = null;
   private readonly tmp = new THREE.Vector3();
 
   constructor(canvas: HTMLCanvasElement, quality: Quality) {
@@ -300,8 +317,10 @@ export class View {
     if (s.driving) {
       const v = s.field.vehicle;
       const want = Math.max(-0.9, Math.min(0.9, v.art * 0.8 - v.steer * 0.25 * Math.min(1, Math.abs(v.speed))));
-      this.headTurn += (want - this.headTurn) * Math.min(1, dt * 4);
+      // Just got on: looking that way at once (easing round to it from straight read as the view leaning).
+      this.headTurn = this.wasDriving ? this.headTurn + (want - this.headTurn) * Math.min(1, dt * 4) : want;
     } else this.headTurn = 0;
+    this.wasDriving = s.driving;
     this.worker.headTurn = this.headTurn;
     this.worker.carrying = !this.menu && s.hasTrimmer && !s.driving;
     if (this.world.trailerTrimmer) this.world.trailerTrimmer.visible = !this.worker.carrying;
@@ -315,6 +334,7 @@ export class View {
     this.worker.update(dt, s, ground);
     this.grass.sync(this.time, s.headX, s.headZ, s.throttle);
     this.exhaustSmoke(dt, s);
+    this.patpatSmoke(dt, s);
     this.critters?.update(dt, this.time, s.x, s.z);
     this.rain?.update(this.time, this.camera.position);
     // A cut hose sprays water for the rest of the job.
@@ -412,6 +432,72 @@ export class View {
     const fx = Math.sin(s.yaw);
     const fz = Math.cos(s.yaw);
     this.particles.emit(p.x, p.y, p.z, n, 'smoke', -fx * 0.4 - fz * 0.3, -fz * 0.4 + fx * 0.3, shade);
+  }
+
+  /**
+   * The pat pat's diesel smoke while it is driven, from the pipe on the right of its head: a thick
+   * black burst as the engine starts (getting on), black while it speeds up or labours (throttle open
+   * but the speed not coming: up a bank, in mud, against something), a thin grey trail ticking over
+   * or cruising.
+   */
+  private patpatSmoke(dt: number, s: Session): void {
+    const head = this.world?.patRig?.head;
+    const v = s.field.vehicle;
+    const accel = (Math.abs(v.speed) - Math.abs(this.patLastSpeed)) / Math.max(dt, 1e-3);
+    this.patLastSpeed = v.speed;
+    // Getting on starts the engine: time since then (the start recording plays from it).
+    const was = this.patStartT;
+    if (s.driving && !this.patWasDriving) this.patStartT = 0;
+    else this.patStartT = s.driving ? this.patStartT + dt : Infinity;
+    this.patWasDriving = s.driving;
+    // A puff of black smoke with each firing in the start recording that falls in this frame.
+    const fired = s.driving && was !== Infinity ? PATPAT_START_POPS.filter((p) => p.t > was && p.t <= this.patStartT) : [];
+    if (!s.driving || !head) return;
+    if (!this.patPipe) {
+      // The pipe on the engine's right-hand side (the driver's right: -x of the head, which faces +z),
+      // at the engine block's outer face behind the bonnet, near its top: from the head's box in its
+      // own frame.
+      head.updateMatrixWorld(true);
+      const inv = head.matrixWorld.clone().invert();
+      const box = new THREE.Box3();
+      const m = new THREE.Matrix4();
+      head.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        mesh.geometry.computeBoundingBox();
+        box.union(mesh.geometry.boundingBox!.clone().applyMatrix4(m.multiplyMatrices(inv, mesh.matrixWorld)));
+      });
+      this.patPipe = new THREE.Vector3(box.min.x + (box.max.x - box.min.x) * 0.43, box.min.y + (box.max.y - box.min.y) * 0.62, box.min.z + (box.max.z - box.min.z) * 0.8);
+    }
+    // Black smoke only when the engine is worked: pulling away from standing, climbing a slope,
+    // labouring (throttle open, the speed not coming); none ticking over or cruising on the level.
+    const thr = Math.max(0, s.patThrottle);
+    const pull = Math.abs(v.speed) < 1.6 ? Math.min(1, Math.max(0, accel) / 1.2) * thr : 0;
+    const labour = thr > 0.3 && Math.abs(v.speed) < 0.5 * thr * PATPAT.forward ? thr : 0;
+    const fx = Math.sin(v.yaw);
+    const fz = Math.cos(v.yaw);
+    const grade = (s.field.height(v.x + fx, v.z + fz) - s.field.height(v.x - fx, v.z - fz)) / 2;
+    const climb = Math.min(1, Math.max(0, (grade - 0.05) / 0.15)) * thr;
+    const work = Math.min(1, Math.max(pull, labour, climb));
+    if (!fired.length && work < 0.15) {
+      this.patSmokeAcc = 0;
+      return;
+    }
+    this.patSmokeAcc += dt * 130 * work;
+    const n = Math.floor(this.patSmokeAcc);
+    this.patSmokeAcc -= n;
+    const pop = fired.reduce((m, f) => Math.max(m, f.k), 0);
+    const p = head.localToWorld(this.tmp.copy(this.patPipe));
+    // Blown out to the right (the pipe points that way; the head, turned by the articulation, has its
+    // own right) and rising; leaving the pipe with some of the pat pat's speed.
+    const yaw = v.yaw + v.art;
+    const carry = 0.4 * v.speed;
+    const out = 0.9;
+    const dx = -Math.cos(yaw) * out + fx * carry;
+    const dz = Math.sin(yaw) * out + fz * carry;
+    if (n) this.particles.emit(p.x, p.y, p.z, n, 'smoke', dx, dz, 1.5, 1.2 + work * 0.4, 1.1 + work * 0.5);
+    // A firing: a burst, as big as the bang, shot out of the pipe.
+    if (pop) this.particles.emit(p.x, p.y, p.z, Math.round(5 + 14 * pop), 'smoke', dx * 1.8, dz * 1.8, 1.5, 1.3 + pop * 0.7, 1.4);
   }
 
   get stats(): { calls: number; triangles: number } {

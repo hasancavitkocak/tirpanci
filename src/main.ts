@@ -116,7 +116,38 @@ class Game {
   /** Where the job just finished ended, while the day goes on (next job); null from the menu. */
   private lastJob: CarryOver | null = null;
   /** The pat pat's gear: 1 forward, -1 reverse, 0 neutral. */
+  /** The pat pat's gear: 0 neutral, -1 reverse, 1..3 forward. */
   private patGear = 0;
+
+  /**
+   * The pat pat's gearbox, like a car's: into first (or reverse) pulling away, up through the gears as
+   * it gathers speed and down again as it slows, each with the lever's clunk. In each gear the revs
+   * climb with the speed and fall as the next goes in. Gives the revs, 0 (idle) .. 1.
+   */
+  private patpatRevs(throttle: number, speed: number): number {
+    // Each gear's speed band, m/s (they overlap, so it does not hunt between two).
+    const BAND = [[0, 0], [0, 1.7], [1.3, 3.1], [2.6, PATPAT.forward]];
+    const sp = Math.abs(speed);
+    const dir = throttle > 0.15 ? 1 : throttle < -0.15 ? -1 : 0;
+    const g = this.patGear;
+    if (sp < 0.15 && dir && Math.sign(g) !== dir) {
+      this.patGear = dir;
+      this.audio.patpatGear();
+    } else if (g > 0 && g < 3 && sp > BAND[g][1] - 0.1 && throttle > 0.15) {
+      this.patGear = g + 1;
+      this.audio.patpatGear(false);
+    } else if (g > 1 && sp < BAND[g][0]) {
+      this.patGear = g - 1;
+      this.audio.patpatGear();
+    } else if (!dir && sp < 0.1) this.patGear = 0;
+    const gear = this.patGear;
+    // Standing in neutral: the revs follow the throttle alone.
+    if (gear === 0) return 0.35 * Math.abs(throttle);
+    const [lo, hi] = gear < 0 ? [0, PATPAT.reverse] : BAND[gear];
+    const inGear = 0.15 + 0.85 * Math.min(1, Math.max(0, (sp - lo) / (hi - lo)));
+    // Labouring (throttle open, the speed not coming): the revs held up.
+    return Math.max(inGear, Math.abs(throttle) * (sp < 0.4 ? 0.55 : 0.3));
+  }
   private lastCutHaptic = 0;
   private visor!: Visor;
   private visorHinted = false;
@@ -683,7 +714,7 @@ class Game {
     let road = '';
     if (art) {
       map.style.aspectRatio = `${art.w} / ${art.h}`;
-      map.style.setProperty('--bg', `url(./harita/bolge${tab}.webp)`);
+      map.style.setProperty('--bg', `url(/harita/bolge${tab}.webp)`);
       pts = jobs.map((_, i) => art.spots[i] ?? art.spots[art.spots.length - 1]);
     } else {
       // No picture yet: swinging left and right up a green hill, a road drawn between the jobs.
@@ -803,6 +834,8 @@ class Game {
   /** The village as the player has made it: the pat pat's paint, the yard decorations (for the next world built). */
   private applyLook(): void {
     WorldView.paintHue = PAINTS.find((p) => p.id === this.save.paint)?.hue ?? null;
+    // The gas pedal's rim (painted green, hue 0.33) in the pat pat's colour (factory blue about 0.6).
+    document.documentElement.style.setProperty('--paint-turn', `${Math.round(((WorldView.paintHue ?? 0.6) - 0.33) * 360)}deg`);
     WorldView.decor = (this.save.decor ?? []).filter((d) => !this.save.decorOff?.includes(d));
   }
 
@@ -1047,6 +1080,7 @@ class Game {
           this.koyLook.boya = null;
           // In the yard during a job: the pat pat out there takes the paint at once.
           this.view.repaintPatpat(p.hue);
+          this.applyLook();
         }, on);
         preview(c, p.id);
       }
@@ -1552,11 +1586,23 @@ class Game {
     this.applyLook();
     WorldView.waitText = Object.fromEntries(LEVELS.map((l) => [l.id, this.readyIn(l) ? `Ot uzuyor: ${formatWait(this.readyIn(l))}` : 'Hazır']));
     this.view.load(this.session, this.models);
+    // Every job starts in first person, at the worker's eyes on the harman (the eye button still
+    // switches to the camera behind him for the job).
+    this.save.camera = 'fpv';
+    this.input.fpv = true;
+    this.updateTutorialText();
     this.view.mode = this.cameraMode;
     this.lookYaw = this.session.yaw;
-    this.view.pitch = -0.55;
+    this.pitchHands = this.session.hasTrimmer;
+    this.pitchEase = null;
+    this.view.pitch = this.session.hasTrimmer ? -0.55 : -0.06;
     this.view.resize();
     this.view.snapCamera();
+    // One frame drawn now, behind the loading screen, so the first one seen is the job's own view (the
+    // worker hidden in first person, the camera at his eyes), not a frame from the menu's camera.
+    this.view.frame(0);
+    this.view.snapCamera();
+    this.view.frame(0);
     this.input.reset();
     this.visor.clear();
     this.visorHinted = false;
@@ -1825,6 +1871,7 @@ class Game {
           break;
         case 'board':
           this.view.driveOrbit = 0;
+          this.patGear = 0;
           this.audio.patpat(true);
           haptic('medium');
           this.updateStarterUi();
@@ -1834,6 +1881,9 @@ class Game {
           this.audio.patpat(false);
           this.lookYaw = s.yaw;
           this.updateStarterUi();
+          break;
+        case 'gate':
+          this.audio.gate(e.open);
           break;
         case 'bump-vehicle':
           haptic('heavy');
@@ -2057,12 +2107,18 @@ class Game {
 
   /**
    * Free camera, for looking round the scene: C toggles it while playing (the game stops, the HUD
-   * hides). WASD move, Q / E down / up, Shift faster, dragging the mouse looks round.
+   * hides) or on the menu (round the village behind it, the menu hidden); Esc leaves it too. WASD move,
+   * Q / E down / up, Shift faster, dragging the mouse looks round.
    */
   private bindFreeCam(): void {
     window.addEventListener('keydown', (e) => {
-      if (e.code !== 'KeyC' || e.repeat || this.mode !== 'playing') return;
       const v = this.view;
+      if (e.code === 'Escape' && v.freeCam) {
+        v.freeCam = null;
+        document.body.classList.remove('freecam');
+        return;
+      }
+      if (e.code !== 'KeyC' || e.repeat || !this.freeCamMode) return;
       if (v.freeCam) v.freeCam = null;
       else {
         const p = v.camera.position;
@@ -2084,7 +2140,15 @@ class Game {
     });
   }
 
+  /** Where the free camera may be used: in a job, or on the menu with nothing open over it. */
+  private get freeCamMode(): boolean {
+    return this.mode === 'playing' || (this.mode === 'menu' && !document.querySelector('.screen.show:not(#menu)'));
+  }
+
   private mapOpen = false;
+  /** First person: whether the view's pitch was last set for the trimmer in hand, and where it is easing to. */
+  private pitchHands = false;
+  private pitchEase: number | null = null;
 
   private toggleMap(open: boolean): void {
     this.mapOpen = open && this.mode === 'playing';
@@ -2129,7 +2193,7 @@ class Game {
     requestAnimationFrame((n) => this.loop(n));
     const dt = Math.min(0.05, (t - this.last) / 1000);
     this.last = t;
-    if (this.view.freeCam && this.mode === 'playing') {
+    if (this.view.freeCam && (this.mode === 'playing' || this.mode === 'menu')) {
       this.flyFreeCam(dt);
       this.view.frame(0);
       return;
@@ -2152,6 +2216,17 @@ class Game {
         // Stick: up/down walks, left/right turns. Dragging on the right half looks around.
         // Turning right = yaw decreasing (facing (sin yaw, cos yaw), right = (-cos yaw, sin yaw)).
         this.lookYaw -= look.dx * 0.0065 + m.x * PLAYER.turnSpeed * dt;
+        // Trimmer in hand the view looks down at the line; empty-handed, at eye level. Taking it up or
+        // putting it away eases the view over (until then it stays where the player put it).
+        const hands = this.session!.hasTrimmer;
+        if (hands !== this.pitchHands) {
+          this.pitchHands = hands;
+          this.pitchEase = hands ? -0.55 : -0.06;
+        }
+        if (this.pitchEase !== null) {
+          this.view.pitch += (this.pitchEase - this.view.pitch) * Math.min(1, dt * 3);
+          if (Math.abs(this.pitchEase - this.view.pitch) < 0.01 || look.dy) this.pitchEase = null;
+        }
         this.view.pitch = Math.max(-1.25, Math.min(0.55, this.view.pitch - look.dy * 0.004));
         moveX = Math.sin(this.lookYaw) * -m.y;
         moveZ = Math.cos(this.lookYaw) * -m.y;
@@ -2184,14 +2259,7 @@ class Game {
         this.view.driveOrbit -= look.dx * 0.006;
         if (look.dx === 0) this.view.driveOrbit *= Math.exp(-dt * 0.8);
         this.view.driveOrbit = Math.max(-Math.PI, Math.min(Math.PI, this.view.driveOrbit));
-        this.audio.patpat(true, Math.min(1, Math.abs(s.field.vehicle.speed) / 4 + Math.max(0, -m.y) * 0.3));
-        // The gear: into first or reverse as the stick is pushed from standing, or across from one to
-        // the other; back to neutral once stopped with the stick let go.
-        const dir = Math.abs(m.y) > 0.15 ? (m.y < 0 ? 1 : -1) : 0;
-        if (dir && dir !== this.patGear) {
-          this.audio.patpatGear();
-          this.patGear = dir;
-        } else if (!dir && Math.abs(s.field.vehicle.speed) < 0.1) this.patGear = 0;
+        this.audio.patpat(true, this.patpatRevs(drive!.throttle, s.field.vehicle.speed));
       }
       s.advance(dt, {
         drive,
@@ -2211,7 +2279,7 @@ class Game {
       this.cutAcc = 0;
       this.audio.update(dt, s.rpm, s.cutting ? s.loadRatio : 0, true, s.temp, s.cutting ? this.cutRate : 0, s.strain, this.cutTall);
       this.input.renderPad(s.sweep / PLAYER.sweepMax, s.rpm);
-      this.audio.setWater(Math.max(0, 1 - streamDistance(s.field, s.x, s.z) / 14));
+      this.audio.setWater(Math.max(0, 1 - streamDistance(s.field, s.x, s.z) / 24));
       this.ambientSounds(s, dt);
       // Face shield: dirtied by the cut grass in first person.
       this.visor.visible = this.view.mode === 'fpv';

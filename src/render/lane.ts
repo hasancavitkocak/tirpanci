@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Field } from '../game/field';
 import { PATPAT } from '../game/config';
 import { makeRng } from '../game/rng';
+import { PAINTED_GROUND, groundTextures } from './scenery';
 
 /** Half the width of the dirt lane, metres (its texture fades into the grass at the edges). */
 export const LANE_HALF = 1.9;
@@ -36,6 +37,9 @@ function laneTexture(seed: number): THREE.CanvasTexture {
   const g = c.getContext('2d')!;
   const rnd = makeRng(seed);
   const px = (m: number) => ((m + LANE_HALF) / (2 * LANE_HALF)) * w;
+  // The painted earth (the ground's own, about 2.4 m to a tile), its edges faded below.
+  const soil = PAINTED_GROUND ? (groundTextures()?.soil.image as CanvasImageSource | undefined) : undefined;
+  if (soil) return paintedLane(g, c, soil, rnd, px);
   // Packed earth, fading into the grass at both edges.
   const base = g.createLinearGradient(0, 0, w, 0);
   base.addColorStop(0, 'rgba(92, 72, 48, 0)');
@@ -158,6 +162,100 @@ function laneTexture(seed: number): THREE.CanvasTexture {
   return t;
 }
 
+/**
+ * The lane on the painted earth: the earth tiled (about 2.4 m to a tile), warm wet ruts with faint tread
+ * prints and squeezed-out mud, damp patches in them, and ragged grassy edges.
+ */
+function paintedLane(g: CanvasRenderingContext2D, c: HTMLCanvasElement, soil: CanvasImageSource, rnd: () => number, px: (m: number) => number): THREE.CanvasTexture {
+  const w = c.width;
+  const h = c.height;
+  const perM = w / (2 * LANE_HALF);
+  const tile = Math.round(2.4 * perM);
+  // The texture repeats every TILE metres along: the earth's tile is fitted to divide it evenly.
+  const along = h / Math.max(1, Math.round(TILE / 2.4));
+  for (let y = 0; y < h; y += along) for (let x = -tile / 3; x < w; x += tile) g.drawImage(soil, x, y, tile, along);
+  // The painted earth is sandy yellow: a calmer, browner Black Sea soil (some colour taken out, then
+  // a light brown laid over).
+  g.globalCompositeOperation = 'saturation';
+  g.fillStyle = 'rgba(128, 128, 128, 0.55)';
+  g.fillRect(0, 0, w, h);
+  g.globalCompositeOperation = 'multiply';
+  g.fillStyle = '#cdb193';
+  g.fillRect(0, 0, w, h);
+  g.globalCompositeOperation = 'source-over';
+  for (const side of [-1, 1]) {
+    const cx = px(side * PATPAT.track);
+    const rw = (0.36 / (2 * LANE_HALF)) * w;
+    const rut = g.createLinearGradient(cx - rw, 0, cx + rw, 0);
+    rut.addColorStop(0, 'rgba(120, 72, 30, 0)');
+    rut.addColorStop(0.3, 'rgba(110, 70, 36, 0.22)');
+    rut.addColorStop(0.5, 'rgba(96, 60, 30, 0.32)');
+    rut.addColorStop(0.7, 'rgba(110, 70, 36, 0.22)');
+    rut.addColorStop(1, 'rgba(120, 72, 30, 0)');
+    g.fillStyle = rut;
+    g.fillRect(cx - rw, 0, rw * 2, h);
+    for (let y = 0; y < h; y += 14) {
+      g.fillStyle = `rgba(90, 58, 30, ${0.03 + 0.07 * Math.max(0, Math.sin(y * 0.031 + side))})`;
+      for (const s of [-1, 1]) {
+        g.beginPath();
+        g.moveTo(cx, y);
+        g.lineTo(cx + s * rw * 0.6, y + 6);
+        g.lineTo(cx + s * rw * 0.6, y + 10);
+        g.lineTo(cx, y + 4);
+        g.closePath();
+        g.fill();
+      }
+    }
+    for (let i = 0; i < 70; i++) {
+      const x = cx + (rnd() < 0.5 ? -1 : 1) * rw * (0.8 + rnd() * 0.5);
+      const y = rnd() * h;
+      g.fillStyle = `rgba(${110 + rnd() * 25}, ${66 + rnd() * 14}, 28, ${0.18 + rnd() * 0.25})`;
+      g.beginPath();
+      g.ellipse(x, y, 1.5 + rnd() * 3, 3 + rnd() * 6, 0, 0, Math.PI * 2);
+      g.fill();
+    }
+    if (rnd() < 0.6) {
+      const y = rnd() * h;
+      const ph = 25 + rnd() * 35;
+      const m = g.createRadialGradient(cx, y, 0, cx, y, ph / 2);
+      m.addColorStop(0, 'rgba(96, 62, 32, 0.32)');
+      m.addColorStop(1, 'rgba(96, 62, 32, 0)');
+      g.fillStyle = m;
+      g.beginPath();
+      g.ellipse(cx, y, rw * 0.9, ph / 2, 0, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+  // Faded into the grass at both edges, raggedly.
+  g.globalCompositeOperation = 'destination-in';
+  const fade = g.createLinearGradient(0, 0, w, 0);
+  fade.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  fade.addColorStop(0.06, 'rgba(0, 0, 0, 0.7)');
+  fade.addColorStop(0.11, 'rgba(0, 0, 0, 1)');
+  fade.addColorStop(0.89, 'rgba(0, 0, 0, 1)');
+  fade.addColorStop(0.94, 'rgba(0, 0, 0, 0.7)');
+  fade.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  g.fillStyle = fade;
+  g.fillRect(0, 0, w, h);
+  g.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < 260; i++) {
+    const left = rnd() < 0.5;
+    const y = rnd() * h;
+    const reach = (0.04 + rnd() * 0.035 * (1 + Math.sin(y * 0.02 + (left ? 0 : 2)))) * w;
+    g.fillStyle = `rgba(0, 0, 0, ${0.3 + rnd() * 0.5})`;
+    g.beginPath();
+    g.ellipse(left ? 0 : w, y, reach, 6 + rnd() * 18, 0, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.globalCompositeOperation = 'source-over';
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = THREE.ClampToEdgeWrapping;
+  t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
 /** How far a puddle's bowl is pressed into the lane at a point (the water stands in it). */
 export function puddleDip(f: Field, x: number, z: number): number {
   let d = 0;
@@ -264,6 +362,8 @@ interface LanePoint {
   nx: number;
   nz: number;
   along: number;
+  /** On a round cap past an end that runs into another track: how far past the end, metres. */
+  cap?: number;
 }
 
 interface Chunk {
@@ -353,6 +453,20 @@ class LaneStrip {
         p[i].nz = nz / ln;
       }
     }
+    // An end running into another track gets a round cap past it: two tracks meeting at a corner
+    // otherwise leave a square notch on its outside, where neither reaches.
+    for (const k of [0, 1] as const) {
+      if (loose[k] || this.pts.length < 2) continue;
+      const end = k ? this.pts[this.pts.length - 1] : this.pts[0];
+      const prev = k ? this.pts[this.pts.length - 2] : this.pts[1];
+      const len = Math.hypot(end.x - prev.x, end.z - prev.z) || 1;
+      const dx = (end.x - prev.x) / len;
+      const dz = (end.z - prev.z) / len;
+      const cap: LanePoint[] = [];
+      for (let d = LANE_ROW; d <= LANE_HALF + 1e-6; d += LANE_ROW) cap.push({ x: end.x + dx * d, z: end.z + dz * d, nx: end.nx, nz: end.nz, along: end.along + (k ? d : -d), cap: d });
+      if (k) this.pts.push(...cap);
+      else this.pts.unshift(...cap.reverse());
+    }
     for (const q of this.pts) {
       this.box.minX = Math.min(this.box.minX, q.x);
       this.box.maxX = Math.max(this.box.maxX, q.x);
@@ -403,7 +517,7 @@ class LaneStrip {
         pos[v * 3 + 2] = z;
         uv.set([k / (n - 1), p.along / TILE], v * 2);
         uvPrint.set([k / (n - 1), r / CHUNK_ROWS], v * 2);
-        const e = Math.min(this.loose[0] ? p.along : Infinity, this.loose[1] ? total - p.along : Infinity) / 3.5;
+        const e = Math.min(this.loose[0] ? p.along : Infinity, this.loose[1] ? total - p.along : Infinity) / (PAINTED_GROUND ? 6 : 3.5);
         let alpha = e >= 1 ? 1 : e * e * (3 - 2 * e);
         if (this.ragged && p.along > total / 2) {
           // Into the field only the two wheel tracks run on, ragged, right up to its edge.
@@ -412,6 +526,8 @@ class LaneStrip {
           const end = Math.min(1, (total - p.along) / 0.6);
           alpha = Math.max(alpha, rut * ragged * end);
         }
+        // The round cap: clear outside the half disc, softly at its rim.
+        if (p.cap !== undefined) alpha *= Math.min(1, Math.max(0, (LANE_HALF - Math.hypot(s, p.cap)) / 0.5));
         col[v * 4 + 3] = alpha;
         box.minX = Math.min(box.minX, x);
         box.maxX = Math.max(box.maxX, x);
@@ -447,6 +563,8 @@ class LaneStrip {
     }
     const coarse = new THREE.BufferAttribute(new Uint32Array(cidx), 1);
     const tex = { value: NO_PRINTS as THREE.Texture };
+    // (The coarse terrain under it is pushed back in depth instead, world.ts: pulling the track forward
+    // drew it over the pat pat's low parts too.)
     const mat = new THREE.MeshStandardMaterial({ map, normalMap, normalScale: new THREE.Vector2(0.8, 0.8), roughnessMap, roughness: 1, metalness: 0, vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide });
     // The prints: darker where the tyres ran (and more so where they ran again), and wet there.
     mat.onBeforeCompile = (sh) => {
@@ -606,7 +724,8 @@ export class LaneView {
       if (r.kind !== 'dirt') continue;
       // A track ending in a loose end at the bottom of a field runs into it as two ragged ruts.
       const end = r.pts[r.pts.length - 1];
-      const ragged = f.roadEnds.some((e) => e === end) && (f.inField(end.x, end.z - 1) || f.others.some((o) => end.x > o.minX && end.x < o.maxX && Math.abs(end.z - o.maxZ) < 2));
+      // (Not on the painted ground: there the track just fades softly into the grass.)
+      const ragged = !PAINTED_GROUND && f.roadEnds.some((e) => e === end) && (f.inField(end.x, end.z - 1) || f.others.some((o) => end.x > o.minX && end.x < o.maxX && Math.abs(end.z - o.maxZ) < 2));
       const loose: [boolean, boolean] = [f.roadEnds.includes(r.pts[0]), f.roadEnds.includes(end)];
       this.strips.push(new LaneStrip(r.pts, ragged, loose, looks, this.group, ground, f.roadJoints));
     }
@@ -658,9 +777,10 @@ export class LaneView {
     g.lineJoin = 'round';
     for (const s of strips) {
       const p = s.pts;
-      // Not where the track fades out at its ends: the ground shows through there.
+      // Not where the track fades out at its ends (as long as the fade in chunk()): the ground shows through there.
       const total = p[p.length - 1].along;
-      const solid = p.filter((q) => (!s.loose[0] || q.along > 3.5) && (!s.loose[1] || q.along < total - 3.5));
+      const fade = PAINTED_GROUND ? 6 : 3.5;
+      const solid = p.filter((q) => q.cap === undefined && (!s.loose[0] || q.along > fade) && (!s.loose[1] || q.along < total - fade));
       g.beginPath();
       solid.forEach((q, i) => (i ? g.lineTo((q.x - minX) * ppm, (q.z - minZ) * ppm) : g.moveTo((q.x - minX) * ppm, (q.z - minZ) * ppm)));
       g.stroke();
@@ -688,7 +808,8 @@ export function puddleMeshes(f: Field, heightAt: (x: number, z: number) => numbe
     puddleTex.anisotropy = 4;
   }
   // Darkened to sit with the wet mud round it (the picture is lit brighter than the scene).
-  const mat = new THREE.MeshStandardMaterial({ map: puddleTex, color: '#8f8173', roughness: 0.3, metalness: 0, transparent: true, depthWrite: false });
+  // (On the painted ground, lighter: the dark mud read as a black hole in the light earth.)
+  const mat = new THREE.MeshStandardMaterial({ map: puddleTex, color: PAINTED_GROUND ? '#d6cbb8' : '#8f8173', roughness: 0.3, metalness: 0, transparent: true, depthWrite: false, opacity: PAINTED_GROUND ? 0.85 : 1 });
   for (const p of f.puddles) {
     // The picture is twice as long as wide; its long side runs along the lane.
     const len = p.r * 1.6 * 2.6;
@@ -705,6 +826,60 @@ export function puddleMeshes(f: Field, heightAt: (x: number, z: number) => numbe
     grp.add(w);
   }
   return grp;
+}
+
+/**
+ * The hazelnut drying floor (harman) of old village concrete, about 3 m to a tile, `len` by `wid`
+ * metres: a rounded slab, its rim softening into the grass and broken unevenly.
+ */
+function concreteHarman(seed: number, len: number, wid: number, concrete: CanvasImageSource): THREE.CanvasTexture {
+  const ppm = 48;
+  const w = Math.round(len * ppm);
+  const h = Math.round(wid * ppm);
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const g = c.getContext('2d')!;
+  const rnd = makeRng(seed + 17);
+  const tile = 3 * ppm;
+  for (let y = 0; y < h; y += tile) for (let x = 0; x < w; x += tile) g.drawImage(concrete, x, y, tile, tile);
+  // The moss painted in the picture read as grass growing on the concrete: its colour taken out.
+  g.globalCompositeOperation = 'saturation';
+  g.fillStyle = 'rgba(128, 128, 128, 0.85)';
+  g.fillRect(0, 0, w, h);
+  g.globalCompositeOperation = 'source-over';
+  // Lighter, sun-bleached, a touch warm.
+  g.fillStyle = 'rgba(255, 248, 232, 0.3)';
+  g.fillRect(0, 0, w, h);
+  // The slab: a rounded rectangle a little inside the canvas, its edge blurred into the grass.
+  const pad = 0.5 * ppm;
+  const mask = document.createElement('canvas');
+  mask.width = w;
+  mask.height = h;
+  const mg = mask.getContext('2d')!;
+  mg.filter = `blur(${0.25 * ppm}px)`;
+  mg.fillStyle = '#000';
+  mg.beginPath();
+  mg.roundRect(pad, pad, w - 2 * pad, h - 2 * pad, 2.2 * ppm);
+  mg.fill();
+  g.globalCompositeOperation = 'destination-in';
+  g.drawImage(mask, 0, 0);
+  // Broken bits along the rim.
+  g.globalCompositeOperation = 'destination-out';
+  const rim = 2 * (w + h);
+  for (let i = 0; i < rim / 14; i++) {
+    const t = rnd() * rim;
+    const [x, y] = t < w ? [t, pad] : t < w + h ? [w - pad, t - w] : t < 2 * w + h ? [t - w - h, h - pad] : [pad, t - 2 * w - h];
+    g.fillStyle = `rgba(0, 0, 0, ${0.3 + rnd() * 0.5})`;
+    g.beginPath();
+    g.arc(x, y, (0.1 + rnd() * 0.3) * ppm, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.globalCompositeOperation = 'source-over';
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
 }
 
 /** Packed earth of the threshing floor with straw ground into it, fading into the grass at the rim. */
@@ -762,22 +937,54 @@ function harmanTexture(seed: number): THREE.CanvasTexture {
   return t;
 }
 
-/** The harman in front of the house: a round patch laid on the levelled ground. */
+/**
+ * The harman in front of the house: a round patch laid on the levelled ground; on the painted ground a
+ * concrete slab instead, from the front of the house out over the harman (as village yards are poured).
+ */
 export function harmanMesh(f: Field, heightAt: (x: number, z: number) => number): THREE.Mesh | null {
   const h = f.harman;
   if (!h) return null;
-  const r = h.r * 1.15;
-  // A fine grid (the texture makes it round), every vertex on the ground, so nothing pokes through.
-  const g = new THREE.PlaneGeometry(r * 2, r * 2, 32, 32);
-  g.rotateX(-Math.PI / 2);
+  const concrete = groundTextures()?.concrete?.image as CanvasImageSource | undefined;
+  let g: THREE.PlaneGeometry;
+  let cx = h.x;
+  let cz = h.z;
+  let map: THREE.CanvasTexture;
+  let span: [number, number];
+  if (concrete) {
+    // Along the line from the house to the harman: from just off the house's front to past the harman.
+    const dx = h.x - f.house.x;
+    const dz = h.z - f.house.z;
+    const d = Math.hypot(dx, dz) || 1;
+    const ux = dx / d;
+    const uz = dz / d;
+    const from = 0.5;
+    const to = d + h.r * 1.15;
+    const len = to - from;
+    const wid = h.r * 2.3;
+    cx = f.house.x + ux * (from + len / 2);
+    cz = f.house.z + uz * (from + len / 2);
+    g = new THREE.PlaneGeometry(len, wid, Math.round(len * 2), Math.round(wid * 2));
+    g.rotateX(-Math.PI / 2);
+    g.rotateY(-Math.atan2(uz, ux));
+    map = concreteHarman(f.level.seed, len, wid, concrete);
+    span = [len, wid];
+  } else {
+    const r = h.r * 1.15;
+    // A fine grid (the texture makes it round), every vertex on the ground, so nothing pokes through.
+    g = new THREE.PlaneGeometry(r * 2, r * 2, 32, 32);
+    g.rotateX(-Math.PI / 2);
+    map = harmanTexture(f.level.seed);
+    span = [r * 2, r * 2];
+  }
   const p = g.getAttribute('position');
-  for (let i = 0; i < p.count; i++) p.setY(i, heightAt(h.x + p.getX(i), h.z + p.getZ(i)) + 0.04);
+  for (let i = 0; i < p.count; i++) p.setY(i, heightAt(cx + p.getX(i), cz + p.getZ(i)) + 0.04);
   g.computeVertexNormals();
-  // The same lumpy mud as the lane, so the one runs into the other.
+  // The same lumpy mud as the lane, so the one runs into the other (concrete: nearly flat).
   const normalMap = mudNormals(f.level.seed);
-  normalMap.repeat.set((r * 2) / 0.8, (r * 2) / 0.8);
-  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: harmanTexture(f.level.seed), normalMap, normalScale: new THREE.Vector2(0.7, 0.7), roughness: 0.95, metalness: 0, transparent: true, depthWrite: false }));
-  m.position.set(h.x, 0, h.z);
+  normalMap.repeat.set(span[0] / 0.8, span[1] / 0.8);
+  const bump = concrete ? 0.2 : 0.7;
+  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map, normalMap, normalScale: new THREE.Vector2(bump, bump), roughness: 0.95, metalness: 0, transparent: true, depthWrite: false }));
+  m.position.set(cx, 0, cz);
   m.receiveShadow = true;
   m.renderOrder = 1;
   return m;

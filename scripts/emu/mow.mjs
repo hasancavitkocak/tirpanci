@@ -25,6 +25,8 @@ await game(page, () => {
   g.lookYaw = Math.PI;
   g.view.mode = 'fpv';
   g.view.pitch = -0.5;
+  // The starter panel follows events (taking the trimmer, getting off): set by hand here, so refresh it.
+  g.updateStarterUi();
   // Count the stone ticks and hits.
   window.__ticks = 0;
   window.__hits = 0;

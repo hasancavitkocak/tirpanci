@@ -15,7 +15,7 @@ await game(page, () => {
   window.__game.levelTab = 1;
   window.__game.openLevels();
 });
-await tap(page, '#level-list button.level');
+await tap(page, '#level-list .saga-node');
 check('the call comes', await W(() => document.getElementById('call').classList.contains('show'), 5000));
 await tap(page, '#btn-call-ok');
 const loader = await W(() => document.getElementById('loading').classList.contains('show') || window.__game.mode === 'playing', 3000);

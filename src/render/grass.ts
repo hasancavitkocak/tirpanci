@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { LANE_HALF } from './lane';
+import { PAINTED_GROUND } from './scenery';
 import { CLUMP, GrassStyle } from '../game/config';
 import { Field, GRASS_RANGE } from '../game/field';
 import { makeRng } from '../game/rng';
@@ -128,12 +129,22 @@ const BELL = 2;
 const POPPY = 3;
 
 /** Grass colours (base, tip, dry seed heads) and wild flowers (per square metre, which kinds) for each sward. */
-const STYLES: Record<GrassStyle, { base: string; tip: string; dry: string; flowers: number; kinds: number[] }> = {
+const PHOTO_STYLES: Record<GrassStyle, { base: string; tip: string; dry: string; flowers: number; kinds: number[] }> = {
   taze: { base: '#2f5a1c', tip: '#8fc44a', dry: '#c9c26a', flowers: 0.3, kinds: [DAISY, DAISY, BUTTERCUP] },
   cayir: { base: '#2b5a26', tip: '#7fc25e', dry: '#d4cf86', flowers: 0.8, kinds: [DAISY, BUTTERCUP, BELL, POPPY, BELL] },
   kuru: { base: '#4d5a26', tip: '#b3ad58', dry: '#dcc77a', flowers: 0.12, kinds: [BUTTERCUP, POPPY] },
   koyu: { base: '#203f17', tip: '#5f9a36', dry: '#a9a253', flowers: 0.15, kinds: [DAISY, BELL] },
 };
+
+/** On the painted ground: the bright, warm greens of the job maps (dark only right at the root). */
+const PAINTED_STYLES: typeof PHOTO_STYLES = {
+  taze: { base: '#1c4e0e', tip: '#64a024', dry: '#a8b250', flowers: 0.3, kinds: [DAISY, DAISY, BUTTERCUP] },
+  cayir: { base: '#1a4a12', tip: '#5e9a2e', dry: '#b0ae62', flowers: 0.8, kinds: [DAISY, BUTTERCUP, BELL, POPPY, BELL] },
+  kuru: { base: '#4a5e1a', tip: '#a29e46', dry: '#ccb666', flowers: 0.12, kinds: [BUTTERCUP, POPPY] },
+  koyu: { base: '#143e0c', tip: '#4e8820', dry: '#949444', flowers: 0.15, kinds: [DAISY, BELL] },
+};
+
+const STYLES = PAINTED_GROUND ? PAINTED_STYLES : PHOTO_STYLES;
 
 let atlas: THREE.CanvasTexture | null = null;
 

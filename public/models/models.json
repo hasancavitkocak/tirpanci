@@ -17,5 +17,9 @@
   "hose": "hortum.glb",
   "backpack": "sirt_motoru.glb",
   "earmuffs": "kulaklik.glb",
-  "fuelcan": "bidon.glb"
+  "fuelcan": "bidon.glb",
+  "gazebo": "cardak.glb",
+  "kennel": "kulube.glb",
+  "panorama": "gokyuzu.jpg",
+  "panoramaTurn": 0
 }

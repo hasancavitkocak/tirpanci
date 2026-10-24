@@ -11,6 +11,9 @@ export class PatpatEngine {
   private blipUntil = 0;
   private nodes: { idle: AudioBufferSourceNode; rev: AudioBufferSourceNode; gIdle: GainNode; gRev: GainNode; out: GainNode } | null = null;
   private rpm = 0;
+  /** Going up a gear: the clutch dips the sound until this time, and the revs drop at once. */
+  private clutchUntil = 0;
+  private snap = false;
 
   constructor(
     private readonly ctx: AudioContext,
@@ -75,28 +78,43 @@ export class PatpatEngine {
     if (!n) return;
     const t = this.ctx.currentTime;
     if (t < this.blipUntil) rpm = Math.max(rpm, 0.65);
+    // A gear going in up: the revs fall at once (the next gear takes them), not slide down.
+    if (this.snap && t >= this.clutchUntil) {
+      this.snap = false;
+      this.rpm = rpm;
+    }
+    if (t < this.clutchUntil) rpm = this.rpm;
     this.rpm += (rpm - this.rpm) * 0.08;
     const r = this.rpm;
-    // Equal-power crossfade from the idle loop to the revving one; both speed up with the revs.
-    n.gIdle.gain.setTargetAtTime(Math.cos((r * Math.PI) / 2), t, 0.08);
-    n.gRev.gain.setTargetAtTime(Math.sin((r * Math.PI) / 2), t, 0.08);
-    n.idle.playbackRate.setTargetAtTime(1 + r * 0.4, t, 0.1);
-    n.rev.playbackRate.setTargetAtTime(0.85 + r * 0.35, t, 0.1);
-    n.out.gain.setTargetAtTime(0.45 + r * 0.2, t, 0.1);
+    // Equal-power crossfade from the idle loop to the revving one; both pitch up with the revs (wide,
+    // so each gear is heard winding up).
+    n.gIdle.gain.setTargetAtTime(Math.cos((r * Math.PI) / 2), t, 0.06);
+    n.gRev.gain.setTargetAtTime(Math.sin((r * Math.PI) / 2), t, 0.06);
+    n.idle.playbackRate.setTargetAtTime(1 + r * 0.5, t, 0.06);
+    n.rev.playbackRate.setTargetAtTime(0.8 + r * 0.6, t, 0.06);
+    // The clutch down for a moment: the engine note drops away.
+    n.out.gain.setTargetAtTime((0.55 + r * 0.25) * (t < this.clutchUntil ? 0.45 : 1), t, 0.04);
   }
 
-  /** The gear lever thrown (into gear, or from forward to reverse): its clunk and a blip of throttle (ara gaz). */
-  gear(): void {
+  /**
+   * The gear lever thrown: its clunk, and (`blip`: going into gear or down a gear) a blip of throttle
+   * (ara gaz); going up a gear the revs just fall, as the next gear takes them down.
+   */
+  gear(blip = true): void {
     const b = this.buffers;
     if (!b || !this.nodes) return;
     const t = this.ctx.currentTime;
     const s = this.ctx.createBufferSource();
     s.buffer = b.gear;
     const g = this.ctx.createGain();
-    g.gain.value = 0.4;
+    g.gain.value = 0.7;
     s.connect(g).connect(this.dest);
     s.start(t);
-    this.blipUntil = t + 0.35;
+    if (blip) this.blipUntil = t + 0.35;
+    else {
+      this.clutchUntil = t + 0.22;
+      this.snap = true;
+    }
   }
 
   stop(): void {

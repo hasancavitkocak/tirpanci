@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { PATPAT } from '../game/config';
-import { Models } from './models';
+import { Models, fitted } from './models';
 import { PatpatRig } from './patpat';
 import { clothesline, flowerPots, gazebo, kennel } from './props';
 
@@ -55,7 +55,7 @@ export class ShopPreview {
 
   /** A yard decoration by its id (saksi, cardak, kulube, camasir). */
   showDecor(id: string): void {
-    const make: Record<string, () => THREE.Object3D> = { saksi: () => flowerPots(3), cardak: () => gazebo(5), kulube: () => kennel(7), camasir: () => clothesline(9) };
+    const make: Record<string, () => THREE.Object3D> = { saksi: () => flowerPots(3), cardak: () => (this.models.gazebo?.[0] ? fitted(this.models.gazebo[0].scene, 3) : gazebo(5)), kulube: () => (this.models.kennel?.[0] ? fitted(this.models.kennel[0].scene, 1.1) : kennel(7)), camasir: () => clothesline(9) };
     if (make[id]) this.put(`decor-${id}`, make[id]);
   }
 

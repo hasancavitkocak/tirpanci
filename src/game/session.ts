@@ -2,6 +2,13 @@ import { BRAMBLE, BUSH_KINDS, BushKind, DEFAULT_EQUIPMENT, ENGINE, Equipment, FI
 import { Field } from './field';
 import { PullResult, Starter } from './starter';
 
+/**
+ * How fast the yard gate opens and shuts (its whole width per second): as long as its recordings
+ * (public/audio/kapi_ac.wav, and kapi_kapa.wav to its end clank).
+ */
+export const GATE_OPEN_RATE = 1 / 3.5;
+export const GATE_SHUT_RATE = 1 / 3.8;
+
 export interface SessionInput {
   /** Desired movement in world space (x, z), length 0..1. */
   moveX: number;
@@ -300,6 +307,9 @@ export class Session {
     return true;
   }
 
+  /** The pat pat's throttle (-1 reverse .. 1) as last driven: its smoke follows how hard it is worked. */
+  patThrottle = 0;
+
   /** Get on the pat pat (the trimmer goes in the trailer). */
   board(): boolean {
     if (!this.canBoard) return false;
@@ -342,23 +352,24 @@ export class Session {
   /** Drive the pat pat: throttle and brake along its heading, steering turns it as it rolls. */
   private driveStep(dt: number, d: { throttle: number; steer: number }): void {
     const v = this.field.vehicle;
-    // Through the stream it crawls.
-    // Through the stream it crawls; a wheel in a big puddle's deep mud holds it back.
+    this.patThrottle = d.throttle;
+    // A wheel in a big puddle's deep mud holds it back (off the roads and through the stream it runs
+    // as on the road: crawling there only made the trips longer).
     const deep = this.field.patpatWheels().some((w) => (this.field.puddleAt(w.x, w.z)?.r ?? 0) > 0.8);
-    const ford = this.field.inWater(v.x, v.z) ? 0.45 : deep ? 0.6 : 1;
-    // Off the roads across the village's rough grass it crawls (keep to the roads); in and round the
-    // field and on the harman it runs freely.
-    const f = this.field;
-    const nearField = Math.abs(v.x) < f.width / 2 + 5 && Math.abs(v.z) < f.depth / 2 + 6;
-    const onHarman = Math.hypot(v.x - f.plateau.x, v.z - f.plateau.z) < f.plateau.r;
-    const rough = !nearField && !onHarman && f.roadDistance(v.x, v.z) > 2.6 ? 0.4 : 1;
-    const want = (d.throttle >= 0 ? d.throttle * PATPAT.forward : d.throttle * PATPAT.reverse) * ford * rough;
+    const ford = deep ? 0.6 : 1;
+    const want = (d.throttle >= 0 ? d.throttle * PATPAT.forward : d.throttle * PATPAT.reverse) * ford;
     const braking = Math.sign(want) !== Math.sign(v.speed) && Math.abs(v.speed) > 0.05;
-    const rate = (braking ? PATPAT.brake : PATPAT.accel) * dt;
+    // Pulling hardest in the low gears: it gathers speed more slowly as it goes up through them.
+    const sp = Math.abs(v.speed);
+    const gearPull = sp < 1.7 ? 1 : sp < 3.1 ? 0.7 : 0.45;
+    const rate = (braking ? PATPAT.brake : PATPAT.accel * gearPull) * dt;
     v.speed += Math.max(-rate, Math.min(rate, want - v.speed));
     v.steer += (d.steer - v.steer) * Math.min(1, dt * 5);
     // The steering wheel turns the head about the hitch pin (at a finite rate, up to full lock).
-    const turn = PATPAT.artRate * dt;
+    // Standing with the wheel let go, the head stays as it was left (getting back on, the wheel
+    // springing back would otherwise swing the head, and the view with it, round on its own).
+    const held = Math.abs(v.speed) < 0.05 && Math.abs(d.steer) < 0.05;
+    const turn = held ? 0 : PATPAT.artRate * dt;
     const art = v.art + Math.max(-turn, Math.min(turn, -v.steer * PATPAT.maxArt - v.art));
     // The head's axle rolls along its heading; the trailer is dragged after the pin (its wheels don't
     // slip sideways), and the head keeps its angle to the trailer.
@@ -403,6 +414,8 @@ export class Session {
   private gateDist = Infinity;
   /** Held open for the pat pat (it came towards the gate and has not driven off from it yet). */
   private gateHeld = false;
+  /** On the pat pat at the last gate check (to see getting on). */
+  private gateDriving = false;
 
   /** The yard's gate slides open when the worker or the pat pat comes up to it, and shuts after them. */
   private moveGate(dt: number): void {
@@ -424,15 +437,23 @@ export class Session {
     const coming = moving && d < this.gateDist - 1e-4;
     const going = moving && d > this.gateDist + 1e-4;
     this.gateDist = d;
-    if (!this.driving) this.gateHeld = false;
+    // Getting on in the yard, the gate starts to open as the engine starts (as if by a remote): the
+    // slow motor gate is open by the time the pat pat is driven up to it.
+    const gotOn = this.driving && !this.gateDriving;
+    this.gateDriving = this.driving;
+    const inYard = Math.hypot(v.x - f.plateau.x, v.z - f.plateau.z) < f.plateau.r;
+    if (gotOn && inYard && d < 16) this.gateHeld = true;
+    else if (!this.driving) this.gateHeld = false;
     else if (d < 3.5) this.gateHeld = true;
-    else if (d < 9) {
+    // (Far enough off that the slow gate is open by the time the pat pat gets there.)
+    else if (d < 16) {
       if (coming) this.gateHeld = true;
       else if (going) this.gateHeld = false;
     } else this.gateHeld = false;
     const want = walker || this.gateHeld || d < 2.5 ? 1 : 0;
     const was = f.gateOpen;
-    f.gateOpen = Math.max(0, Math.min(1, f.gateOpen + Math.sign(want - f.gateOpen) * dt * (want ? 1.6 : 0.7)));
+    // A motor-driven iron sliding gate.
+    f.gateOpen = Math.max(0, Math.min(1, f.gateOpen + Math.sign(want - f.gateOpen) * dt * (want ? GATE_OPEN_RATE : GATE_SHUT_RATE)));
     if (was === 0 && f.gateOpen > 0) this.events.push({ type: 'gate', open: true });
     if (was === 1 && f.gateOpen < 1) this.events.push({ type: 'gate', open: false });
   }

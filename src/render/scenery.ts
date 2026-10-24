@@ -67,9 +67,10 @@ export function hills(seed: number, inner: number, panorama: boolean, base: (x: 
   const col: number[] = [];
   const idx: number[] = [];
   const c = new THREE.Color();
-  const orchard = new THREE.Color('#5d8a3a');
-  const wood = new THREE.Color('#2f5a2c');
-  const meadow = new THREE.Color('#86a64e');
+  // With the painted ground: the deep greens of the painted sky's forests.
+  const orchard = new THREE.Color(PAINTED_GROUND ? '#4a7a2a' : '#5d8a3a');
+  const wood = new THREE.Color(PAINTED_GROUND ? '#2c5622' : '#2f5a2c');
+  const meadow = new THREE.Color(PAINTED_GROUND ? '#6a9636' : '#86a64e');
   for (let r = 0; r <= rings; r++) {
     const t = r / rings;
     for (let s = 0; s <= segs; s++) {
@@ -107,7 +108,26 @@ export function hills(seed: number, inner: number, panorama: boolean, base: (x: 
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.setIndex(idx);
   g.computeVertexNormals();
-  grp.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true })));
+  const hillMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  const grassTex = PAINTED_GROUND ? groundTex?.grass : undefined;
+  if (grassTex) {
+    // The painted grass on the hills too, tiled larger than in the field and toned by the hill colours.
+    hillMat.onBeforeCompile = (sh) => {
+      sh.uniforms.uGrass = { value: grassTex };
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec2 vHXZ;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvHXZ = (modelMatrix * vec4(transformed, 1.0)).xz;');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying vec2 vHXZ;\nuniform sampler2D uGrass;\n' + MEADOW_PATCHES)
+        .replace(
+          '#include <color_fragment>',
+          `#include <color_fragment>
+          vec3 t = texture2D(uGrass, vHXZ / 5.0).rgb * 0.6 + texture2D(uGrass, vHXZ / 13.0 + 0.4).rgb * 0.4;
+          diffuseColor.rgb *= t / vec3(0.36, 0.62, 0.2) * 0.82 * meadowPatches(vHXZ * 0.35);`,
+        );
+    };
+  }
+  grp.add(new THREE.Mesh(g, hillMat));
 
   if (!panorama) {
     // The Black Sea below the coast, and a blue-grey mountain line far inland.
@@ -138,19 +158,43 @@ export function hills(seed: number, inner: number, panorama: boolean, base: (x: 
 }
 
 const texLoader = new THREE.TextureLoader();
-let groundTex: { grass: THREE.Texture; soil: THREE.Texture } | null = null;
+let groundTex: { grass: THREE.Texture; soil: THREE.Texture; concrete?: THREE.Texture } | null = null;
 
-/** Tiling ground photos (ambientCG, CC0). */
+/**
+ * The ground: hand-painted grass and earth in the style of the job maps (zemin-*-boya.jpg), or with
+ * PAINTED_GROUND off the tiling photos (ambientCG, CC0).
+ */
+export const PAINTED_GROUND = true;
+
+/**
+ * GLSL: broad patches of lighter, yellower meadow and darker grass over the painted ground (metres),
+ * as in the painted maps; far off the small grass texture alone averages to one flat green.
+ */
+export const MEADOW_PATCHES = /* glsl */ `
+  vec3 meadowPatches(vec2 p) {
+    float a = sin(p.x * 0.21 + sin(p.y * 0.17) * 1.7) * sin(p.y * 0.19 + sin(p.x * 0.11) * 2.1);
+    float b = sin(p.x * 0.047 - p.y * 0.031 + sin(p.y * 0.05) * 2.0);
+    float c = sin(p.x * 0.6 + sin(p.y * 0.45) * 2.3) * sin(p.y * 0.55 - p.x * 0.2);
+    float t = smoothstep(-0.7, 0.7, a * 0.55 + b * 0.5 + c * 0.2);
+    // Dark, lush hollows; middling green; sunny, yellower meadow on the rises.
+    vec3 lo = mix(vec3(0.62, 0.76, 0.6), vec3(0.98, 1.0, 0.92), smoothstep(0.0, 0.45, t));
+    return mix(lo, vec3(1.32, 1.24, 0.8), smoothstep(0.55, 1.0, t));
+  }
+`;
+
 export async function preloadGround(): Promise<void> {
-  const [grass, soil] = await Promise.all([texLoader.loadAsync('./textures/zemin-cim.jpg'), texLoader.loadAsync('./textures/zemin-toprak.jpg')]);
+  const k = PAINTED_GROUND ? '-boya' : '';
+  const [grass, soil] = await Promise.all([texLoader.loadAsync(`./textures/zemin-cim${k}.jpg`), texLoader.loadAsync(`./textures/zemin-toprak${k}.jpg`)]);
   for (const t of [grass, soil]) {
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.colorSpace = THREE.SRGBColorSpace;
     t.anisotropy = 4;
   }
-  groundTex = { grass, soil };
+  // The harman's old village concrete (the painted look only).
+  const concrete = PAINTED_GROUND ? await texLoader.loadAsync('./textures/zemin-beton-boya.jpg').catch(() => undefined) : undefined;
+  groundTex = { grass, soil, concrete };
 }
 
-export function groundTextures(): { grass: THREE.Texture; soil: THREE.Texture } | null {
+export function groundTextures(): { grass: THREE.Texture; soil: THREE.Texture; concrete?: THREE.Texture } | null {
   return groundTex;
 }

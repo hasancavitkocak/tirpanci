@@ -97,7 +97,8 @@ export const GIANT_GRASS = 2.4;
 export const GRASS_RANGE = 3;
 
 /** The stream: width of the water, depth of the bed below the banks, water surface below the banks. */
-export const STREAM = { width: 1.5, depth: 0.6, water: 0.38 };
+/** The stream: 4.5 m across (a real mountain dere; 1.5 read as a dark line), its bed and water level. */
+export const STREAM = { width: 4.5, depth: 0.6, water: 0.38 };
 
 /** Distance from a point to a segment. */
 /** Grid cell of the lane's sink map, metres; how deep the wheels can press the soft earth, and how far out from the lane's middle. */
@@ -424,6 +425,24 @@ export class Field {
     return Math.abs(x - this.streamX(z));
   }
 
+  private stonesCache: { x: number; z: number; s: number; rot: number }[] | null = null;
+  /**
+   * The stones in and along the stream bed, end to end of the village (the view draws them); the big
+   * ones (s > 0.3) are boulders the pat pat cannot drive over.
+   */
+  get streamStones(): { x: number; z: number; s: number; rot: number }[] {
+    if (this.stonesCache) return this.stonesCache;
+    const out: { x: number; z: number; s: number; rot: number }[] = [];
+    let seed = 7;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let z = this.map.minZ - 38; z < this.map.maxZ + 40; z += 0.6 + rnd() * 1.1) {
+      const x = this.streamX(z) + (rnd() - 0.5) * STREAM.width * 1.6;
+      const s = rnd() < 0.18 ? 0.35 + rnd() * 0.4 : 0.12 + rnd() * 0.25;
+      out.push({ x, z, s, rot: rnd() * 6 });
+    }
+    return (this.stonesCache = out);
+  }
+
   /** Standing in the water. */
   inWater(x: number, z: number): boolean {
     return this.streamDistance(x, z) < STREAM.width / 2;
@@ -432,7 +451,9 @@ export class Field {
   /** How much the terrain is lowered at (x, z) for the stream bed (0 away from it). */
   streamCarve(x: number, z: number): number {
     const d = Math.abs(x - this.streamX(z));
-    const half = STREAM.width / 2 + 0.5;
+    // Flat out to the water's edge (the stream's view draws it STREAM.width * 0.62 each side), so the
+    // pebbled bed under the clear water is not covered by the bank's grass.
+    const half = STREAM.width * 0.62 + 0.5;
     if (d > half + 0.6) return 0;
     // Flat bottom, sloping banks.
     const t = Math.min(1, Math.max(0, (half + 0.6 - d) / 1.1));
@@ -441,7 +462,7 @@ export class Field {
 
   /** How far the worker may go: the village's ends, its west edge and the stream's far bank. */
   bounds(z: number): { minX: number; maxX: number; minZ: number; maxZ: number } {
-    return { minX: this.map.minX, maxX: this.streamX(z) + 1.6, minZ: this.map.minZ, maxZ: this.map.maxZ };
+    return { minX: this.map.minX, maxX: this.streamX(z) + STREAM.width / 2 + 0.85, minZ: this.map.minZ, maxZ: this.map.maxZ };
   }
 
   /** Distance from a point to the middle of the nearest dirt track (Infinity far from them all). */
@@ -778,6 +799,8 @@ export class Field {
   private pointFree(px: number, pz: number): boolean {
     if (this.bushes.some((b) => Math.hypot(b.x - px, b.z - pz) < BUSH_KINDS[b.kind].block * (b.kind === 'ocak' ? 0.8 : b.scale))) return false;
     if (this.hives.some((h) => Math.hypot(h.x - px, h.z - pz) < HIVE.block)) return false;
+    // The stream's boulders.
+    if (Math.abs(px - this.streamX(pz)) < STREAM.width && this.streamStones.some((s) => s.s > 0.3 && Math.hypot(s.x - px, s.z - pz) < s.s * 1.3 + 0.15)) return false;
     const c = this.clampWalk(px, pz);
     if (Math.hypot(c.x - px, c.z - pz) > 0.01) return false;
     if (Math.hypot(px - this.house.x, pz - this.house.z) < 3.4) return false;

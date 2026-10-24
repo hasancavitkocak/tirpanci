@@ -20,9 +20,11 @@ export interface WeatherLook {
 }
 
 export const WEATHER: Record<Weather, WeatherLook> = {
+  // Like the painted maps: warm sun, bright greens; far off a light misty green, like the forest
+  // along the painted sky's horizon (a blue haze looked like a sheet of fog over the ground).
   sunny: {
-    skyTop: '#6fa7dc', haze: '#d9dfd6', sunColor: '#ffe0b0', sun: 2.6, sunDir: new THREE.Vector3(-0.55, 0.62, 0.35).normalize(),
-    hemiSky: '#cfe0f5', hemiGround: '#5b6b35', hemi: 1.25, fogNear: 40, fogFar: 260, exposure: 1.12, glow: 1,
+    skyTop: '#3f8fe0', haze: '#8fb48c', sunColor: '#fff0c8', sun: 2.7, sunDir: new THREE.Vector3(-0.55, 0.62, 0.35).normalize(),
+    hemiSky: '#d6e8fa', hemiGround: '#6f8a2e', hemi: 1.3, fogNear: 110, fogFar: 520, exposure: 1.1, glow: 1,
   },
   // Black Sea drizzle: flat grey light, the far hills lost in the cloud.
   rain: {

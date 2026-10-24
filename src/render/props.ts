@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { makeRng } from '../game/rng';
 
 /** Paint a whole geometry one vertex colour (so parts can be merged into one mesh). */
@@ -38,6 +38,50 @@ function limb(a: THREE.Vector3, b: THREE.Vector3, r0: number, r1: number, seg = 
   g.applyQuaternion(q);
   g.translate(a.x, a.y, a.z);
   return g;
+}
+
+/**
+ * A field stone in the painted style: a rounded, lumpy boulder (smooth shaded), warm grey, darker
+ * underneath, with moss on its top. `seed` gives another shape.
+ */
+export function paintedStoneGeometry(seed = 5): THREE.BufferGeometry {
+  const rnd = makeRng(seed);
+  const g = new THREE.IcosahedronGeometry(1, 2);
+  const p = g.getAttribute('position');
+  const ph = Array.from({ length: 6 }, () => rnd() * Math.PI * 2);
+  const v = new THREE.Vector3();
+  for (let k = 0; k < p.count; k++) {
+    v.fromBufferAttribute(p, k).normalize();
+    // Lumps from a few smooth waves, a flattened base, squat overall.
+    const lump = 1 + 0.12 * Math.sin(v.x * 3 + ph[0]) * Math.cos(v.z * 2.5 + ph[1]) + 0.08 * Math.sin(v.y * 4 + v.x * 2 + ph[2]) + 0.05 * Math.sin(v.z * 6 + ph[3]);
+    v.multiplyScalar(lump);
+    v.x *= 0.9 + 0.2 * Math.sin(ph[4]) ** 2;
+    v.z *= 0.9 + 0.2 * Math.cos(ph[5]) ** 2;
+    v.y = v.y < -0.2 ? -0.2 - (v.y + 0.2) * 0.25 : v.y;
+    p.setXYZ(k, v.x, v.y * 0.62, v.z);
+  }
+  // Smooth normals across the shared corners (mergeVertices, as the icosahedron's are split).
+  g.deleteAttribute('normal');
+  g.deleteAttribute('uv');
+  const m = mergeVertices(g);
+  m.computeVertexNormals();
+  const n = m.getAttribute('normal');
+  const pos = m.getAttribute('position');
+  const col = new Float32Array(pos.count * 3);
+  const rock = new THREE.Color('#a39d90');
+  const dark = new THREE.Color('#6b665c');
+  const moss = new THREE.Color('#6f8f34');
+  const c = new THREE.Color();
+  for (let k = 0; k < pos.count; k++) {
+    const up = n.getY(k);
+    c.copy(dark).lerp(rock, Math.min(1, Math.max(0, (pos.getY(k) + 0.15) * 2.2)));
+    c.multiplyScalar(0.92 + rnd() * 0.16);
+    if (up > 0.55) c.lerp(moss, Math.min(0.6, (up - 0.55) * 1.6) * (0.6 + rnd() * 0.4));
+    col.set([c.r, c.g, c.b], k * 3);
+  }
+  m.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  m.computeBoundingSphere();
+  return m;
 }
 
 export function stoneGeometry(): THREE.BufferGeometry {

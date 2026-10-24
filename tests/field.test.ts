@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { BUSH, CUT_HEIGHT, LEVELS, NO_UPGRADES } from '../src/game/config';
-import { Field } from '../src/game/field';
+import { Field, STREAM } from '../src/game/field';
 import { Session } from '../src/game/session';
 import { crank, runBot } from './bot';
 
@@ -35,7 +35,8 @@ describe('Field', () => {
       if (lv.stream) {
         // The stream bed is carved in, and the worker may walk to it.
         const z = 0;
-        expect(f.height(f.streamX(z), z)).toBeLessThan(f.height(f.streamX(z) - 3, z));
+        // (Measured beyond the bank: the bed is flat out to the water's edge.)
+        expect(f.height(f.streamX(z), z)).toBeLessThan(f.height(f.streamX(z) - STREAM.width - 1, z));
         expect(f.bounds(z).maxX).toBeGreaterThan(f.streamX(z));
       }
     }
@@ -180,9 +181,10 @@ describe('Session', () => {
     // Not up here: the trimmer stays in the trailer until the pat pat is down at the field.
     expect(s.takeTrimmer()).toBe(false);
     expect(s.board()).toBe(true);
-    // Getting on does not open the yard gate: only driving up to it does.
+    // Getting on by the yard gate starts it opening (the slow motor gate is open by the time the pat
+    // pat is driven up to it).
     for (let i = 0; i < 60; i++) s.step({ moveX: 0, moveZ: 0, throttle: false, bump: false, drive: { throttle: 0, steer: 0 } });
-    expect(s.field.gateOpen).toBe(0);
+    expect(s.field.gateOpen).toBeGreaterThan(0);
     // Down the lane, steering for a point a little way ahead on it; the gate is open before the pat pat
     // gets to it (it never has to wait).
     const yg = s.field.yardGate!;

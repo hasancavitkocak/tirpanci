@@ -244,10 +244,10 @@
     <section id="hud" class="screen">
       <!-- Driving the pat pat: the steering wheel (bottom left) and the pedals (bottom right). -->
       <div id="drive-ui">
-        <div id="drive-wheel"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="44" fill="none" stroke="#1d1d1f" stroke-width="9"/><circle cx="50" cy="50" r="44" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="2"/><path d="M50 50L12 58M50 50L88 58M50 50V92" stroke="#2a2a2c" stroke-width="8" stroke-linecap="round"/><circle cx="50" cy="50" r="12" fill="#2f62b0" stroke="#1d1d1f" stroke-width="3"/><rect x="45" y="4" width="10" height="9" rx="2" fill="#f2c12e"/></svg></div>
+        <div id="drive-wheel"><img src="/harita/direksiyon.webp" alt="" draggable="false"></div>
         <div class="drive-pedals">
-          <button id="pedal-brake" class="pedal brake">FREN<small>geri</small></button>
-          <button id="pedal-gas" class="pedal gas">GAZ</button>
+          <button id="pedal-brake" class="pedal brake" aria-label="Fren / geri"></button>
+          <button id="pedal-gas" class="pedal gas" aria-label="Gaz"></button>
         </div>
       </div>
       <div class="hud-top">

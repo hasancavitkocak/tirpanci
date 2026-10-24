@@ -41,11 +41,33 @@ function frameFor(cw: number, ch: number, VIEW: ReturnType<typeof viewOf>): Fram
 /** The static layer (everything but the markers), kept while the size and the state stay the same. */
 let cache: { key: string; canvas: HTMLCanvasElement } | null = null;
 
+/**
+ * The artist's painted ground for a village (public/harita/koy<region>.webp): meadow, trees and the
+ * stream, nothing that has to match the game (fields, roads and buildings are drawn over it). `bank`
+ * is where its stream's near (left) bank runs across the picture (0..1): it is laid just right of the
+ * game's stream, so the painted water, wider than the game's, stays clear of the fields beside it.
+ */
+const ART: Record<number, { bank: number }> = { 1: { bank: 0.82 }, 2: { bank: 0.74 } };
+const artImg: Record<number, HTMLImageElement | 'failed'> = {};
+function artFor(region: number): HTMLImageElement | null {
+  if (!ART[region]) return null;
+  let im = artImg[region];
+  if (!im) {
+    const img = new Image();
+    img.onload = () => (cache = null);
+    img.onerror = () => (artImg[region] = 'failed');
+    img.src = `./harita/koy${region}.webp`;
+    artImg[region] = im = img;
+  }
+  return im !== 'failed' && im.complete && im.naturalWidth ? im : null;
+}
+
 function staticLayer(cw: number, ch: number, dpr: number, st: MapState): HTMLCanvasElement {
   const R = REGIONS.find((r) => r.id === st.region) ?? REGIONS[0];
   const VIEW = viewOf(R);
   const ground = R.ground;
-  const key = `${cw}x${ch}@${dpr}:${st.region}:${st.current}:${st.unlockedUpTo}:${JSON.stringify(st.waiting)}`;
+  const art = artFor(st.region);
+  const key = `${cw}x${ch}@${dpr}:${st.region}:${st.current}:${st.unlockedUpTo}:${JSON.stringify(st.waiting)}:${!!art}`;
   if (cache?.key === key) return cache.canvas;
   const c = document.createElement('canvas');
   c.width = Math.round(cw * dpr);
@@ -55,6 +77,19 @@ function staticLayer(cw: number, ch: number, dpr: number, st: MapState): HTMLCan
   const { k, px, py } = frameFor(cw, ch, VIEW);
   const rnd = makeRng(77);
 
+  if (art) {
+    // The painted ground, covering the canvas, its stream laid over the game's (and big enough that
+    // shifting it so leaves no gap at the left).
+    const bank = ART[st.region].bank;
+    // Its bank just right of the game's stream; a stream off the right edge (Karadere) still shows,
+    // at the edge, right of the fields.
+    const fieldsRight = Math.max(...regionLevels(R).map((lv) => px(fieldRect(lv).maxX)));
+    const sx = Math.max(fieldsRight + 4, Math.min(px(streamX((VIEW.minZ + VIEW.maxZ) / 2)) + 3, cw - 44));
+    const aspect = art.naturalWidth / art.naturalHeight;
+    const w = Math.max(cw, sx / bank, (cw - sx) / (1 - bank), ch * aspect);
+    const h = w / aspect;
+    g.drawImage(art, sx - bank * w, (ch - h) / 2, w, h);
+  } else {
   // The land: meadow green, the hill shaded (lit from the north-west), paler as it rises.
   g.fillStyle = '#9fbf6e';
   g.fillRect(0, 0, cw, ch);
@@ -105,12 +140,14 @@ function staticLayer(cw: number, ch: number, dpr: number, st: MapState): HTMLCan
   g.strokeStyle = 'rgba(190, 225, 250, 0.7)';
   g.lineWidth = 1;
   g.stroke();
+  }
 
   const fields = regionLevels(R).map((lv) => ({ lv, r: fieldRect(lv) }));
   const roads = village(R).roads;
   const nearRoad = (x: number, z: number, d: number) => roads.some((r) => r.pts.some((p) => Math.abs(p.x - x) < d && Math.abs(p.z - z) < d));
-  // Trees: little round crowns with a shadow, clear of the fields, the roads, the yard and the stream.
-  for (let i = 0; i < 260; i++) {
+  // Trees: little round crowns with a shadow, clear of the fields, the roads, the yard and the stream
+  // (the painted ground has its own).
+  for (let i = 0; i < (art ? 0 : 260); i++) {
     const x = VIEW.minX + rnd() * (VIEW.maxX - VIEW.minX);
     const z = VIEW.minZ + rnd() * (VIEW.maxZ - VIEW.minZ);
     if (x > streamX(z) - 4) continue;
@@ -134,8 +171,14 @@ function staticLayer(cw: number, ch: number, dpr: number, st: MapState): HTMLCan
       const cobble = r.kind === 'cobble';
       g.beginPath();
       r.pts.forEach((p, i) => (i ? g.lineTo(px(p.x), py(p.z)) : g.moveTo(px(p.x), py(p.z))));
-      g.strokeStyle = pass === 0 ? (cobble ? '#5f5d58' : '#5c4027') : pass === 1 ? (cobble ? '#b9b6ad' : '#a37a4c') : cobble ? 'rgba(255,255,255,0.25)' : 'rgba(200, 170, 120, 0.6)';
-      g.lineWidth = pass === 0 ? Math.max(4, 4.4 * k) : pass === 1 ? Math.max(2.6, 3.2 * k) : 1;
+      // On the painted ground: a soft dark edge and warm sandy earth, like the job maps' paths.
+      if (art) {
+        g.strokeStyle = pass === 0 ? (cobble ? 'rgba(70, 66, 58, 0.55)' : 'rgba(96, 62, 30, 0.55)') : pass === 1 ? (cobble ? '#c9c2b2' : '#d2a868') : cobble ? 'rgba(255,255,255,0.3)' : 'rgba(240, 210, 150, 0.7)';
+        g.lineWidth = pass === 0 ? Math.max(6, 5.4 * k) : pass === 1 ? Math.max(3.6, 3.8 * k) : 1.2;
+      } else {
+        g.strokeStyle = pass === 0 ? (cobble ? '#5f5d58' : '#5c4027') : pass === 1 ? (cobble ? '#b9b6ad' : '#a37a4c') : cobble ? 'rgba(255,255,255,0.25)' : 'rgba(200, 170, 120, 0.6)';
+        g.lineWidth = pass === 0 ? Math.max(4, 4.4 * k) : pass === 1 ? Math.max(2.6, 3.2 * k) : 1;
+      }
       if (pass === 2 && cobble) g.setLineDash([2, 2]);
       g.stroke();
       g.setLineDash([]);
@@ -159,7 +202,15 @@ function staticLayer(cw: number, ch: number, dpr: number, st: MapState): HTMLCan
     const w = (r.maxX - r.minX) * k;
     const h = (r.maxZ - r.minZ) * k;
     const base = locked ? '#aeb0a4' : lv.theme === 'mezarlik' ? '#a7bf7e' : lv.theme === 'yayla' ? '#9ccc62' : '#6fae45';
-    g.fillStyle = base;
+    if (art) {
+      // A soft shadow under it, the sward with a little light from the top left.
+      g.fillStyle = 'rgba(30, 50, 10, 0.3)';
+      g.fillRect(x + 2, y + 3, w, h);
+      const sward = g.createLinearGradient(x, y, x + w, y + h);
+      sward.addColorStop(0, locked ? '#c3c4b8' : lv.theme === 'mezarlik' ? '#bcd38e' : '#8ccf4e');
+      sward.addColorStop(1, base);
+      g.fillStyle = sward;
+    } else g.fillStyle = base;
     g.fillRect(x, y, w, h);
     // Stripes of the sward.
     g.fillStyle = 'rgba(255, 255, 255, 0.08)';
@@ -174,7 +225,22 @@ function staticLayer(cw: number, ch: number, dpr: number, st: MapState): HTMLCan
           const cx = px(r.minX + 2 + ((r.maxX - r.minX - 4) * b) / cols);
           const cy = py(r.minZ + 2 + ((r.maxZ - r.minZ - 4) * a) / rows);
           if (lv.theme === 'mezarlik') g.fillRect(cx - 1, cy - 1.5, 2, 3);
-          else {
+          else if (art && lv.theme === 'findik' && !locked) {
+            // A little bush: shadow, crown, a light on its top left.
+            const br = Math.max(2.2, 1.7 * k);
+            g.fillStyle = 'rgba(20, 40, 10, 0.35)';
+            g.beginPath();
+            g.arc(cx + br * 0.3, cy + br * 0.35, br, 0, Math.PI * 2);
+            g.fill();
+            g.fillStyle = '#2f6a1c';
+            g.beginPath();
+            g.arc(cx, cy, br, 0, Math.PI * 2);
+            g.fill();
+            g.fillStyle = 'rgba(170, 220, 90, 0.55)';
+            g.beginPath();
+            g.arc(cx - br * 0.3, cy - br * 0.3, br * 0.45, 0, Math.PI * 2);
+            g.fill();
+          } else {
             g.beginPath();
             g.arc(cx, cy, lv.theme === 'findik' ? Math.max(1.6, 1.4 * k) : 1.2, 0, Math.PI * 2);
             g.fill();
@@ -183,8 +249,21 @@ function staticLayer(cw: number, ch: number, dpr: number, st: MapState): HTMLCan
       }
     }
     g.strokeStyle = lv.theme === 'mezarlik' ? '#8c877c' : locked ? '#85867c' : '#7b5d3a';
-    g.lineWidth = lv.theme === 'mezarlik' ? 2.5 : 1.2;
+    g.lineWidth = lv.theme === 'mezarlik' ? 2.5 : art ? 2 : 1.2;
     g.strokeRect(x - 2, y - 2, w + 4, h + 4);
+    // A wooden fence: posts round the edge.
+    if (art && lv.theme !== 'mezarlik') {
+      g.fillStyle = locked ? '#85867c' : '#5e4226';
+      const step = 9;
+      for (let i = 0; i <= w + 4; i += step) {
+        g.fillRect(x - 2 + i - 1, y - 3.5, 2, 3);
+        g.fillRect(x - 2 + i - 1, y + h + 0.5, 2, 3);
+      }
+      for (let i = step; i < h + 4; i += step) {
+        g.fillRect(x - 3.5, y - 2 + i - 1, 3, 2);
+        g.fillRect(x + w + 0.5, y - 2 + i - 1, 3, 2);
+      }
+    }
   }
 
   // The buildings.
@@ -219,13 +298,18 @@ function staticLayer(cw: number, ch: number, dpr: number, st: MapState): HTMLCan
   g.lineTo(mx + ms * 1.55, my - ms * 1.6);
   g.fill();
 
-  // Labels: a white pill with the job's number in a circle and its name; a padlock if locked.
-  const pill = (text: string, x: number, y: number, num: string | null, locked: boolean) => {
+  // Labels: a white pill with the job's number in a circle and its name; a padlock if locked. Each
+  // goes at the first of its places (`ys`) clear of the labels already put down.
+  const placed: { x0: number; x1: number; y0: number; y1: number }[] = [];
+  const pill = (text: string, x: number, ys: number[], num: string | null, locked: boolean): number => {
     g.font = 'bold 11px system-ui, sans-serif';
     const tw = g.measureText(text).width;
     const w = tw + (num ? 22 : 12) + (locked ? 12 : 0);
     const h = 18;
     const lx = Math.max(4, Math.min(cw - w - 4, x - w / 2));
+    const free = (y: number) => !placed.some((b) => lx < b.x1 + 3 && lx + w > b.x0 - 3 && y - h / 2 < b.y1 + 2 && y + h / 2 > b.y0 - 2);
+    const y = ys.filter((v) => v > h / 2 + 2 && v < ch - h / 2 - 2).find(free) ?? ys[0];
+    placed.push({ x0: lx, x1: lx + w, y0: y - h / 2, y1: y + h / 2 });
     g.fillStyle = 'rgba(0, 0, 0, 0.2)';
     g.beginPath();
     g.roundRect(lx + 1, y - h / 2 + 2, w, h, 9);
@@ -262,25 +346,29 @@ function staticLayer(cw: number, ch: number, dpr: number, st: MapState): HTMLCan
       g.fillStyle = '#77776f';
       g.fillRect(cx - 3.5, y - 2, 7, 5.5);
     }
+    return y;
   };
+  // The buildings' first (they cannot move), then the fields'.
+  pill('Ev', px(R.house.x), [py(R.house.z) + Math.max(14, 6 * k)], null, false);
+  pill('Cami', mx, [my + Math.max(14, 6 * k)], null, false);
+  if (R.hut) pill('Yayla evi', px(R.hut.x), [py(R.hut.z) + Math.max(13, 5 * k)], null, false);
   for (const { lv, r } of fields) {
     const locked = lv.id < 100 && lv.id > st.unlockedUpTo;
     const cx = px((r.minX + r.maxX) / 2);
     // Below the field (by its way in), or beside a long thin one.
     // Jobs by their number; the neighbours' gardens by the coffee-house job posted there (or none).
-    pill(lv.name, cx, py(r.maxZ) + 13, lv.id < 100 ? String(lv.id) : null, locked);
+    // (Where that is taken by another's: above the field, or a row further down.)
+    const below = py(r.maxZ) + 13;
+    const ly = pill(lv.name, cx, [below, py(r.minZ) - 13, below + 20, below + 40], lv.id < 100 ? String(lv.id) : null, locked);
     // Grass still growing back: how long, in amber under the name.
     const wait = st.waiting[lv.id];
     if (wait && !locked) {
       g.font = 'bold 10px system-ui, sans-serif';
       g.textAlign = 'center';
       g.fillStyle = '#8a4b05';
-      g.fillText(`⏳ ${wait}`, cx, py(r.maxZ) + 29);
+      g.fillText(`⏳ ${wait}`, cx, ly + 16);
     }
   }
-  pill('Ev', px(R.house.x), py(R.house.z) + Math.max(14, 6 * k), null, false);
-  pill('Cami', mx, my + Math.max(14, 6 * k), null, false);
-  if (R.hut) pill('Yayla evi', px(R.hut.x), py(R.hut.z) + Math.max(13, 5 * k), null, false);
 
   cache = { key, canvas: c };
   return c;

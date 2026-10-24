@@ -56,6 +56,7 @@ export interface Region {
 }
 
 /** The stream's centre line: it runs north to south down the east of every village. */
+/** (Also written out in the terrain shader, world.ts: keep the two the same.) */
 export function streamX(z: number): number {
   return 40 + Math.sin(z * 0.09 + 1) * 2.2 + Math.sin(z * 0.23) * 0.7;
 }

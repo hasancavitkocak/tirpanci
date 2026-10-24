@@ -80,6 +80,7 @@ export class GameAudio {
     this.far = farBus(this.kit!);
     // Start fetching the pat pat recordings now, so they are in before the first ride.
     this.patpatEngine = new PatpatEngine(ctx, this.master);
+    this.loadGate();
   }
 
   private get kit(): Kit | null {
@@ -192,9 +193,42 @@ export class GameAudio {
     if (on) e.set(rpm);
   }
 
-  /** The pat pat's gear lever thrown (only with the recorded engine). */
-  patpatGear(): void {
-    if (this.patpatEngine?.running) this.patpatEngine.gear();
+  /** The pat pat's gear lever thrown (only with the recorded engine); `blip`: a touch of throttle with it. */
+  patpatGear(blip = true): void {
+    if (this.patpatEngine?.running) this.patpatEngine.gear(blip);
+  }
+
+  /**
+   * The motor-driven sliding gate rolling open or shut: its recordings (public/audio/kapi_ac.wav and
+   * kapi_kapa.wav, cut from a real one; the gate moves as long as they last, shutting on the clank).
+   */
+  gate(open: boolean): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    this.loadGate();
+    const buf = this.gateBufs![open ? 'ac' : 'kapa'];
+    if (!buf) return;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const g = ctx.createGain();
+    g.gain.value = 0.55;
+    src.connect(g).connect(this.master!);
+    src.start(ctx.currentTime);
+  }
+
+  private gateBufs: { ac?: AudioBuffer; kapa?: AudioBuffer } | null = null;
+
+  private loadGate(): void {
+    const ctx = this.ctx;
+    if (!ctx || this.gateBufs) return;
+    const bufs: { ac?: AudioBuffer; kapa?: AudioBuffer } = (this.gateBufs = {});
+    for (const k of ['ac', 'kapa'] as const) {
+      void fetch(`./audio/kapi_${k}.wav`)
+        .then((r) => r.arrayBuffer())
+        .then((b) => ctx.decodeAudioData(b))
+        .then((buf) => (bufs[k] = buf))
+        .catch(() => undefined);
+    }
   }
 
   /** Falling over on the slope: a body thump into the grass. */
@@ -302,11 +336,37 @@ export class GameAudio {
   }
 
   private water: { gain: GainNode } | null = null;
+  /** The stream recording's gain once it has loaded (or where loading it has got to). */
+  private waterRec: { gain: GainNode } | 'loading' | 'none' | null = null;
 
   /** Babbling stream: noise through a wandering band-pass, louder the closer the worker is (0..1). */
   setWater(level: number): void {
     const ctx = this.ctx;
     if (!ctx) return;
+    // A recording of a stream (public/audio/dere.mp3), looped, once there is one; until then the
+    // drawn gurgle below.
+    if (!this.waterRec) {
+      this.waterRec = 'loading';
+      void fetch('./audio/dere.mp3')
+        .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error('no stream recording'))))
+        .then((b) => ctx.decodeAudioData(b))
+        .then((buf) => {
+          const src = ctx.createBufferSource();
+          src.buffer = buf;
+          src.loop = true;
+          const gain = ctx.createGain();
+          gain.gain.value = 0;
+          src.connect(gain).connect(this.master!);
+          src.start();
+          this.water?.gain.gain.setTargetAtTime(0, ctx.currentTime, 0.2);
+          this.waterRec = { gain };
+        })
+        .catch(() => (this.waterRec = 'none'));
+    }
+    if (typeof this.waterRec === 'object') {
+      this.waterRec.gain.gain.setTargetAtTime(level * level * 0.9, ctx.currentTime, 0.3);
+      return;
+    }
     if (!this.water) {
       const n = this.noiseSource(0.9);
       const bp = ctx.createBiquadFilter();
@@ -331,7 +391,8 @@ export class GameAudio {
       wob.start();
       this.water = { gain };
     }
-    this.water.gain.gain.setTargetAtTime(level * 0.12, ctx.currentTime, 0.3);
+    // Faint from afar, rising fast by the bank.
+    this.water.gain.gain.setTargetAtTime(level * level * 0.3, ctx.currentTime, 0.3);
   }
 
   private grainAcc = 0;
@@ -501,17 +562,18 @@ export class GameAudio {
     const t = ctx.currentTime;
     const s = Math.max(0.2, strength);
     const dur = 0.28 + s * 0.22;
-    this.hiss(t, 'bandpass', 700, 2.5, 0.12 + s * 0.12, 0.03, dur, 2200 * s + 600);
+    // (About twice as loud as at first: the rope was hard to hear over the field.)
+    this.hiss(t, 'bandpass', 700, 2.5, 0.24 + s * 0.24, 0.03, dur, 2200 * s + 600);
     // Compression strokes, faster the harder the pull.
     const strokes = 2 + Math.round(s * 4);
     let tt = t + 0.04;
     for (let i = 0; i < strokes; i++) {
-      this.tone(tt, 'sine', 85, 45, 0.16 + s * 0.12, 0.004, 0.06);
-      this.hiss(tt, 'lowpass', 380, 0.7, 0.12, 0.003, 0.05);
+      this.tone(tt, 'sine', 85, 45, 0.24 + s * 0.18, 0.004, 0.06);
+      this.hiss(tt, 'lowpass', 380, 0.7, 0.18, 0.003, 0.05);
       tt += 0.11 - s * 0.05 + i * 0.012;
     }
     // Recoil spring winding the rope back.
-    this.hiss(t + dur, 'bandpass', 1800, 3, 0.05, 0.02, 0.18, 900);
+    this.hiss(t + dur, 'bandpass', 1800, 3, 0.1, 0.02, 0.18, 900);
   }
 
   /** The engine fires a few times and dies (on choke). `wet` = flooded, soggy pops. */
@@ -534,9 +596,9 @@ export class GameAudio {
     const ctx = this.ctx;
     if (!ctx) return;
     const t = ctx.currentTime;
-    this.click(t, 0.18);
-    this.tone(t, 'triangle', 1400, 900, 0.06, 0.001, 0.03);
-    this.click(t + 0.045, 0.12);
+    this.click(t, 0.26);
+    this.tone(t, 'triangle', 1400, 900, 0.09, 0.001, 0.03);
+    this.click(t + 0.045, 0.18);
   }
 
   /** Primer bulb: squish and a fuel bubble. */

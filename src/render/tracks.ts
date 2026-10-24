@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { PAINTED_GROUND } from './scenery';
 
 const MAX = 900;
 /** One mark: as long as the spacing between marks so the tread runs on unbroken. */
@@ -14,10 +15,10 @@ function treadTexture(): THREE.CanvasTexture {
   c.height = h;
   const g = c.getContext('2d')!;
   // Faint pressed rut under the lugs.
-  g.fillStyle = 'rgba(52, 40, 26, 0.28)';
+  g.fillStyle = PAINTED_GROUND ? 'rgba(92, 64, 38, 0.16)' : 'rgba(52, 40, 26, 0.28)';
   g.fillRect(4, 0, w - 8, h);
   // Three chevrons per mark; the canvas top is the front of the mark.
-  g.fillStyle = 'rgba(40, 30, 18, 0.85)';
+  g.fillStyle = PAINTED_GROUND ? 'rgba(84, 56, 32, 0.4)' : 'rgba(40, 30, 18, 0.85)';
   for (let i = 0; i < 3; i++) {
     const y = i * (h / 3) + 6;
     for (const side of [-1, 1]) {

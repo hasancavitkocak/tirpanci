@@ -10,7 +10,7 @@ import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.j
 export type ModelKey =
   | 'worker' | 'hands' | 'trimmer' | 'handlebar' | 'bush' | 'stone' | 'depot' | 'house' | 'shoot'
   | 'patpat' | 'patpatTeker' | 'patpatDireksiyon'
-  | 'hive' | 'hen' | 'snake' | 'hose' | 'grave' | 'mosque' | 'hut' | 'car' | 'backpack' | 'earmuffs' | 'fuelcan' | 'spool';
+  | 'hive' | 'hen' | 'snake' | 'hose' | 'grave' | 'mosque' | 'hut' | 'car' | 'backpack' | 'earmuffs' | 'fuelcan' | 'spool' | 'gazebo' | 'kennel';
 
 export type Models = Partial<Record<ModelKey, GLTF[]>> & {
   /** Equirectangular sky panorama (manifest key "panorama", file in public/textures), and its turn in degrees. */

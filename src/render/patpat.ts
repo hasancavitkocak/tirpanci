@@ -179,8 +179,10 @@ export class PatpatRig {
 
     // The steering column on the centre line: from the front of the floor up and back towards the
     // seat, the wheel on top where the seated driver's hands reach it.
-    const base = new THREE.Vector3(0, this.floorY, (BODY.refX - BODY.columnX) * k);
-    const top = new THREE.Vector3(0, this.seatY + 0.42, PATPAT.seat + 0.42);
+    // (Its foot sunk into the floor, so from no angle does it stand in the air; the wheel a little
+    // lower than it was, nearer the driver's lap.)
+    const base = new THREE.Vector3(0, this.floorY - 0.12, (BODY.refX - BODY.columnX) * k);
+    const top = new THREE.Vector3(0, this.seatY + 0.34, PATPAT.seat + 0.42);
     const col = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, top.distanceTo(base), 10), this.columnMat);
     col.position.copy(top).add(base).multiplyScalar(0.5);
     col.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), top.clone().sub(base).normalize());

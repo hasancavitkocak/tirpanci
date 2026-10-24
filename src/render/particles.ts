@@ -14,6 +14,7 @@ export class Particles {
   private readonly alpha = new Float32Array(MAX);
   private readonly seed = new Float32Array(MAX);
   private readonly size0 = new Float32Array(MAX);
+  private readonly black = new THREE.Color(0.05, 0.045, 0.04);
   private readonly alpha0 = new Float32Array(MAX);
   private readonly grow = new Float32Array(MAX);
   private readonly life = new Float32Array(MAX);
@@ -59,7 +60,7 @@ export class Particles {
           vS = seed;
           vShape = shape;
           vec4 mv = modelViewMatrix * vec4(position, 1.0);
-          gl_PointSize = min(size * uScale / -mv.z, uScale * (alpha < 0.99 ? 0.08 : 0.012));
+          gl_PointSize = min(size * uScale / -mv.z, uScale * (alpha < 0.99 ? 0.12 : 0.012));
           gl_Position = projectionMatrix * mv;
         }`,
       fragmentShader: /* glsl */ `
@@ -97,6 +98,9 @@ export class Particles {
     });
     this.points = new THREE.Points(g, mat);
     this.points.frustumCulled = false;
+    // After the see-through ground layers (the lanes, the harman, the puddles): drawn before them, smoke
+    // over a lane was painted over by it.
+    this.points.renderOrder = 10;
   }
 
   setViewport(height: number): void {
@@ -138,7 +142,8 @@ export class Particles {
     }
   }
 
-  emit(x: number, y: number, z: number, n: number, kind: ParticleKind, dirX = 0, dirZ = 0, shade = 0): void {
+  /** `scale`: bigger puffs (the pat pat's diesel smoke against the trimmer's thin two-stroke trail). */
+  emit(x: number, y: number, z: number, n: number, kind: ParticleKind, dirX = 0, dirZ = 0, shade = 0, scale = 1, up = 0): void {
     for (let k = 0; k < n; k++) {
       const i = this.next;
       this.next = (this.next + 1) % MAX;
@@ -152,12 +157,17 @@ export class Particles {
       this.pos[i * 3 + 1] = y + Math.random() * (smoke ? 0.03 : 0.15);
       this.pos[i * 3 + 2] = z + (Math.random() - 0.5) * (smoke ? 0.04 : 0.15);
       this.vel[i * 3] = Math.cos(a) * sp + dirX * (smoke ? 1 : 2.5);
-      this.vel[i * 3 + 1] = kind === 'leaf' || feather ? 0.5 + Math.random() : smoke ? 0.25 + Math.random() * 0.25 : water ? 1.5 + Math.random() * 2.5 : 1.2 + Math.random() * 2.2;
+      this.vel[i * 3 + 1] = kind === 'leaf' || feather ? 0.5 + Math.random() : smoke ? 0.25 + Math.random() * 0.25 + up : water ? 1.5 + Math.random() * 2.5 : 1.2 + Math.random() * 2.2;
       this.vel[i * 3 + 2] = Math.sin(a) * sp + dirZ * (smoke ? 1 : 2.5);
       if (kind === 'grass') this.c.setHSL(0.22 + Math.random() * 0.06, 0.55, 0.32 + Math.random() * 0.2);
       else if (kind === 'spark') this.c.setHSL(0.09 + Math.random() * 0.04, 1, 0.6 + Math.random() * 0.3);
       else if (kind === 'leaf') this.c.setHSL(0.25 + Math.random() * 0.05, 0.5, 0.3 + Math.random() * 0.15);
-      else if (smoke) this.c.setRGB(0.74 - shade * 0.45, 0.78 - shade * 0.47, 0.88 - shade * 0.5);
+      else if (smoke) {
+        // Pale blue-grey (cold) to dark grey (hot); past 1, the diesel's sooty black.
+        const k = Math.min(1, shade);
+        this.c.setRGB(0.74 - k * 0.45, 0.78 - k * 0.47, 0.88 - k * 0.5);
+        if (shade > 1) this.c.lerp(this.black, Math.min(1, (shade - 1) / 0.4));
+      }
       else if (mud) this.c.setHSL(0.07, 0.45, 0.13 + Math.random() * 0.08);
       else if (water) this.c.setRGB(0.75 + Math.random() * 0.2, 0.85 + Math.random() * 0.1, 0.95);
       else if (feather) this.c.setHSL(0.08, 0.35, 0.45 + Math.random() * 0.4);
@@ -165,10 +175,11 @@ export class Particles {
       this.col[i * 3] = this.c.r;
       this.col[i * 3 + 1] = this.c.g;
       this.col[i * 3 + 2] = this.c.b;
-      this.size0[i] = this.size[i] = kind === 'spark' ? 0.025 : kind === 'leaf' || feather ? 0.08 : kind === 'dust' ? 0.08 : smoke ? 0.035 + Math.random() * 0.025 : water ? 0.025 + Math.random() * 0.02 : 0.04 + Math.random() * 0.03;
+      this.size0[i] = this.size[i] = kind === 'spark' ? 0.025 : kind === 'leaf' || feather ? 0.08 : kind === 'dust' ? 0.08 : smoke ? (0.035 + Math.random() * 0.025) * scale : water ? 0.025 + Math.random() * 0.02 : 0.04 + Math.random() * 0.03;
       // Grass bits are thin blades, leaves and feathers wider ones; the rest round.
       this.shape[i] = kind === 'grass' ? 1 : kind === 'leaf' || feather ? 2 : 0;
-      this.alpha0[i] = this.alpha[i] = smoke ? 0.16 + shade * 0.3 : 1;
+      // (The diesel's black smoke, shade past 1, stays see-through: thick by numbers, not by each puff.)
+      this.alpha0[i] = this.alpha[i] = smoke ? (shade > 1 ? 0.42 + (shade - 1) * 0.25 : 0.16 + shade * 0.3) : 1;
       this.grow[i] = smoke ? 7 + Math.random() * 5 : 0;
       this.maxLife[i] = this.life[i] = kind === 'spark' ? 0.35 : kind === 'leaf' || feather ? 1.6 : smoke ? 0.9 + Math.random() * 0.9 : water ? 0.5 + Math.random() * 0.4 : 0.6 + Math.random() * 0.5;
       this.drag[i] = kind === 'leaf' || feather ? 3 : kind === 'dust' ? 4 : smoke ? 1.2 : water ? 0.6 : 1.5;

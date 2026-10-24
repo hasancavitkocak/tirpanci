@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { Field } from '../game/field';
+import { Field, STREAM } from '../game/field';
 import { PATPAT } from '../game/config';
 import { Models, fitted } from './models';
 import { backpackPart, cutTriangles, isBakedLine, isEngine, prepare } from './trimmerRig';
@@ -7,13 +7,13 @@ import { PatpatRig } from './patpat';
 import { brambleObject } from './bramble';
 import { shootBush } from './shootBush';
 import { hazelnutBush } from './hazelnut';
-import { groundTextures, hills, skyDome } from './scenery';
+import { MEADOW_PATCHES, PAINTED_GROUND, groundTextures, hills, skyDome } from './scenery';
 import { boulderGeometry, graveGeometry, mosqueGroup, stoneWall, yaylaHutGroup } from './landmarks';
 import { WEATHER } from './weather';
 import { StreamView } from './stream';
 import { LaneView, harmanMesh, laneDip, puddleDip, puddleMeshes } from './lane';
 import { boardSpot, cobbleRoads, nameBoard, otherFields, villageBoard, villageTrees } from './villageView';
-import { clothesline, depotGroup, flowerPots, gazebo, haystackGroup, houseGroup, kennel, oldPostGroup, postGeometry, slidingGate, spoolGroup, stoneGeometry, wireFence, woodpileGroup } from './props';
+import { clothesline, depotGroup, flowerPots, gazebo, haystackGroup, houseGroup, kennel, oldPostGroup, postGeometry, slidingGate, spoolGroup, stoneGeometry, paintedStoneGeometry, wireFence, woodpileGroup } from './props';
 
 /** How far the terrain extends beyond the village on each side. */
 const MARGIN = 45;
@@ -65,7 +65,9 @@ function terrain(f: Field, cut: THREE.Texture, lane: LaneView): THREE.Mesh {
   const p = g.getAttribute('position');
   for (let i = 0; i < p.count; i++) p.setY(i, worldHeight(f, p.getX(i), p.getZ(i)));
   g.computeVertexNormals();
-  const mat = new THREE.MeshLambertMaterial({ color: '#ffffff' });
+  // Pushed back in depth: the fine rutted tracks and the stream bed laid on it (a few centimetres lower
+  // where its 2 m triangles cut across their ruts and banks) must not be covered by it.
+  const mat = new THREE.MeshLambertMaterial({ color: '#ffffff', polygonOffset: true, polygonOffsetFactor: 8, polygonOffsetUnits: 600 });
   const tex = groundTextures();
   // The coarse terrain is not drawn under the lane's middle: the fine rutted ribbon is the ground there.
   // Made once (not in onBeforeCompile, which runs for every program), freed with the material.
@@ -78,12 +80,15 @@ function terrain(f: Field, cut: THREE.Texture, lane: LaneView): THREE.Mesh {
     sh.uniforms.uField = { value: new THREE.Vector4(-f.width / 2, -f.depth / 2, 1 / f.width, 1 / f.depth) };
     sh.uniforms.uLaneMask = { value: laneMask?.tex ?? null };
     sh.uniforms.uLaneBox = { value: laneMask?.box ?? new THREE.Vector4(0, 0, 0, 0) };
+    sh.uniforms.uStream = { value: new THREE.Vector3(f.origin.x, f.origin.z, STREAM.width * 0.62 + 0.4) };
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec2 vWXZ;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWXZ = (modelMatrix * vec4(transformed, 1.0)).xz;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec2 vWXZ;\nuniform sampler2D uCut;\nuniform vec4 uField;\nuniform sampler2D uGrass;\nuniform sampler2D uSoil;\nuniform sampler2D uLaneMask;\nuniform vec4 uLaneBox;')
-      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nvec2 luv = (vWXZ - uLaneBox.xy) * uLaneBox.zw;\nif (uLaneBox.z > 0.0 && luv.x > 0.0 && luv.x < 1.0 && luv.y > 0.0 && luv.y < 1.0 && texture2D(uLaneMask, luv).r > 0.5) discard;')
+      .replace('#include <common>', (PAINTED_GROUND ? MEADOW_PATCHES : '') + '#include <common>\nvarying vec2 vWXZ;\nuniform sampler2D uCut;\nuniform vec4 uField;\nuniform sampler2D uGrass;\nuniform sampler2D uSoil;\nuniform sampler2D uLaneMask;\nuniform vec4 uLaneBox;\nuniform vec3 uStream;')
+      // Not drawn under the tracks' middles, nor under the stream's water (the coarse triangles cut
+      // across its carved bank and would cover the bed; the line is villageStreamX's).
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nvec2 luv = (vWXZ - uLaneBox.xy) * uLaneBox.zw;\nif (uLaneBox.z > 0.0 && luv.x > 0.0 && luv.x < 1.0 && luv.y > 0.0 && luv.y < 1.0 && texture2D(uLaneMask, luv).r > 0.5) discard;\nfloat sz = uStream.y + vWXZ.y;\nif (abs(vWXZ.x - (40.0 + sin(sz * 0.09 + 1.0) * 2.2 + sin(sz * 0.23) * 0.7 - uStream.x)) < uStream.z) discard;')
       .replace(
         '#include <color_fragment>',
         /* glsl */ `#include <color_fragment>
@@ -92,19 +97,21 @@ function terrain(f: Field, cut: THREE.Texture, lane: LaneView): THREE.Mesh {
         float h = texture2D(uCut, clamp(cuv, 0.0, 1.0)).r * 3.0;
         // Photo textures tiled in world space, two scales mixed so the repeat doesn't show,
         // and a broad colour drift across the ground.
-        vec3 grassT = texture2D(uGrass, vWXZ / 2.6).rgb * 0.6 + texture2D(uGrass, vWXZ / 9.0 + 0.37).rgb * 0.4;
-        vec3 soilT = texture2D(uSoil, vWXZ / 2.2).rgb * 0.65 + texture2D(uSoil, vWXZ / 7.0 + 0.61).rgb * 0.35;
+        vec3 grassT = texture2D(uGrass, vWXZ / ${PAINTED_GROUND ? '2.8' : '2.6'}).rgb * 0.6 + texture2D(uGrass, vWXZ / ${PAINTED_GROUND ? '3.7' : '9.0'} + 0.37).rgb * 0.4;
+        vec3 soilT = texture2D(uSoil, vWXZ / ${PAINTED_GROUND ? '2.4' : '2.2'}).rgb * 0.65 + texture2D(uSoil, vWXZ / ${PAINTED_GROUND ? '3.3' : '7.0'} + 0.61).rgb * 0.35;
+        // The painted textures, a touch calmer than drawn (the blades and the light do the rest).
+        ${PAINTED_GROUND ? 'grassT = mix(grassT, vec3(dot(grassT, vec3(0.3, 0.59, 0.11))), 0.25) * vec3(0.52, 0.64, 0.48); soilT = mix(soilT, vec3(dot(soilT, vec3(0.3, 0.59, 0.11))), 0.3) * vec3(0.84, 0.74, 0.64);' : ''}
         float drift = sin(vWXZ.x * 0.11 + sin(vWXZ.y * 0.07) * 2.0) * 0.5 + 0.5;
         vec3 soil = soilT * vec3(1.0, 0.95, 0.9);
         vec3 stubble = mix(grassT * vec3(1.15, 1.12, 0.78), soilT, 0.25);
         vec3 under = grassT * vec3(0.55, 0.62, 0.5);
-        vec3 wild = grassT * mix(vec3(0.9, 0.95, 0.75), vec3(0.75, 0.85, 0.65), drift);
+        vec3 wild = grassT * mix(vec3(0.9, 0.95, 0.75), vec3(0.75, 0.85, 0.65), drift)${PAINTED_GROUND ? ' * 0.85 * meadowPatches(vWXZ)' : ''};
         vec3 c = mix(soil, stubble, smoothstep(0.03, 0.1, h));
         c = mix(c, under, smoothstep(0.18, 0.45, h));
         // A worn earth path just outside the field edge, then rough meadow.
         vec2 edge = max(abs(vWXZ) - vec2(1.0 / uField.z, 1.0 / uField.w) * 0.5, 0.0);
         float out_ = length(edge);
-        vec3 outside = mix(mix(soilT, grassT, 0.35) * 1.05, wild, smoothstep(0.6, 2.5, out_));
+        vec3 outside = ${PAINTED_GROUND ? 'mix(mix(soilT, grassT, 0.6), wild, smoothstep(0.25, 1.3, out_))' : 'mix(mix(soilT, grassT, 0.35) * 1.05, wild, smoothstep(0.6, 2.5, out_))'};
         c = mix(outside, c, inside);
         diffuseColor.rgb *= c * 1.15;`,
       );
@@ -138,7 +145,8 @@ export class WorldView {
   /** The trimmer lying in the pat pat's trailer (menu, the start of the very first job, driving). */
   trailerTrimmer: THREE.Object3D | null = null;
   /** The pat pat (it moves when driven): the trailer and the head, their wheels and the steering wheel. */
-  private patRig: PatpatRig | null = null;
+  /** The pat pat as drawn (its head carries the engine the exhaust smoke comes from). */
+  patRig: PatpatRig | null = null;
 
   /** A field opened (bought): its chain and padlock come off, its board loses the KİLİTLİ band. */
   unlockField(id: number, name: string): void {
@@ -159,8 +167,12 @@ export class WorldView {
   }
   /** The lane ribbon: its vertices follow the ruts the wheels press into it. */
   readonly lane: LaneView;
-  /** The yard's sliding gate leaves (they move with the field's gateOpen). */
+  /** The yard's sliding gate leaf (it moves with the field's gateOpen). */
   private gate: THREE.Object3D[] | null = null;
+  /** Which way the leaf slides open: towards the gap's b end (else past a). */
+  private gateToB = true;
+  /** The height of the gate's rail (the gap's): it runs level, not up and down the ground beside it. */
+  private gateY = 0;
 
   /** Where the driver's hands hold the steering wheel: [right, left], world space. */
   /** The driver's eyes on the pat pat's seat, and the way the pat pat faces (pitched with it), world space. */
@@ -207,14 +219,16 @@ export class WorldView {
     const g = this.group;
     const look = WEATHER[f.level.weather];
     this.sunDir = look.sunDir;
-    g.add(skyDome(models.panorama, ((models.panoramaTurn ?? 0) * Math.PI) / 180, { top: look.skyTop, haze: look.haze, sun: look.sunDir, glow: look.glow }));
+    // The painted sky (sunny and clear) only on a fine day; rain and fog keep the drawn grey sky.
+    const panorama = f.level.weather === 'sunny' ? models.panorama : undefined;
+    g.add(skyDome(panorama, ((models.panoramaTurn ?? 0) * Math.PI) / 180, { top: look.skyTop, haze: look.haze, sun: look.sunDir, glow: look.glow }));
     // The hills start inside the terrain's edge and rise from its height there, clamped to the terrain;
     // round its middle, an ellipse as long as the village.
     const tr = terrainRect(f);
     const cx = (tr.minX + tr.maxX) / 2;
     const cz = (tr.minZ + tr.maxZ) / 2;
     const edge = (x: number, z: number) => f.height(Math.max(tr.minX, Math.min(tr.maxX, x + cx)), Math.max(tr.minZ, Math.min(tr.maxZ, z + cz)));
-    const hillRing = hills(f.level.seed + 77, (tr.maxX - tr.minX) / 2 - 8, !!models.panorama, edge, (tr.maxZ - tr.minZ) / 2 - 8);
+    const hillRing = hills(f.level.seed + 77, (tr.maxX - tr.minX) / 2 - 8, !!panorama, edge, (tr.maxZ - tr.minZ) / 2 - 8);
     hillRing.position.set(cx, 0, cz);
     g.add(hillRing);
     this.lane = new LaneView(f, { height: (x, z) => worldHeight(f, x, z), base: (x, z) => groundHeight(f, x, z), surface: (x, z, r, b) => laneSurface(f, x, z, r, b) });
@@ -291,7 +305,10 @@ export class WorldView {
         g.add(o);
       }
     } else {
-      const sm = new THREE.InstancedMesh(stoneGeometry(), mat, f.stones.length);
+      // The painted look: rounded mossy boulders, smooth shaded.
+      const sm = PAINTED_GROUND
+        ? new THREE.InstancedMesh(paintedStoneGeometry(), new THREE.MeshLambertMaterial({ vertexColors: true }), f.stones.length)
+        : new THREE.InstancedMesh(stoneGeometry(), mat, f.stones.length);
       const o = new THREE.Object3D();
       f.stones.forEach((s, i) => {
         // Their tops stand clear of the thin grass round them.
@@ -306,7 +323,9 @@ export class WorldView {
     }
 
     // The village's stream (beside this field or further off).
-    this.stream = new StreamView(f, (x, z) => worldHeight(f, x, z), look.sunDir, stoneGeometry(), mat);
+    this.stream = PAINTED_GROUND
+      ? new StreamView(f, (x, z) => worldHeight(f, x, z), look.sunDir, paintedStoneGeometry(9), new THREE.MeshLambertMaterial({ vertexColors: true }))
+      : new StreamView(f, (x, z) => worldHeight(f, x, z), look.sunDir, stoneGeometry(), mat);
     g.add(this.stream.group);
 
     // Bramble patches
@@ -475,14 +494,21 @@ export class WorldView {
     if (run.length > 1) g.add(wireFence(run));
     const yg = f.yardGate;
     if (yg) {
-      // Two leaves meeting in the middle; each slides back along the fence to its own side.
-      const half = Math.hypot(yg.bx - yg.ax, yg.bz - yg.az) / 2;
-      const rot = -Math.atan2(yg.bz - yg.az, yg.bx - yg.ax);
-      this.gate = [slidingGate(half), slidingGate(half)];
-      for (const leaf of this.gate) {
-        leaf.rotation.y = rot;
-        g.add(leaf);
-      }
+      // One leaf across the whole gap, sliding along the fence to the right as seen from the yard
+      // (driving out of it), on a rail at the gap's height.
+      const len = Math.hypot(yg.bx - yg.ax, yg.bz - yg.az);
+      const leaf = slidingGate(len);
+      leaf.rotation.y = -Math.atan2(yg.bz - yg.az, yg.bx - yg.ax);
+      this.gate = [leaf];
+      g.add(leaf);
+      const mx = (yg.ax + yg.bx) / 2;
+      const mz = (yg.az + yg.bz) / 2;
+      const fx = f.harman.x - mx;
+      const fz = f.harman.z - mz;
+      // Facing (fx, fz), the right is (-fz, fx).
+      // Facing out of the yard, (-fx, -fz): its right is (fz, -fx).
+      this.gateToB = (yg.bx - mx) * fz + (yg.bz - mz) * -fx > 0;
+      this.gateY = worldHeight(f, mx, mz);
       this.placeGate();
     }
     f.yardProps.forEach((y, i) => {
@@ -506,11 +532,13 @@ export class WorldView {
       if (WorldView.decor.includes('saksi')) put(flowerPots(3), { x: f.house.x + 3.4, z: f.house.z - 1.6 }, Math.PI / 2);
       if (WorldView.decor.includes('cardak')) {
         const at = ring(-2.1, p.r - 3);
-        put(gazebo(5), at, toCentre(at));
+        // The artist's gazebo (about 3 m to the roof top), or the drawn one.
+        put(models.gazebo?.[0] ? fitted(models.gazebo[0].scene, 3) : gazebo(5), at, toCentre(at));
       }
       if (WorldView.decor.includes('kulube')) {
         const at = ring(-1.2, p.r - 1.8);
-        put(kennel(7), at, toCentre(at));
+        // The artist's kennel (about 1.1 m to the roof ridge), or the drawn one.
+        put(models.kennel?.[0] ? fitted(models.kennel[0].scene, 1.1) : kennel(7), at, toCentre(at));
       }
       if (WorldView.decor.includes('camasir')) {
         const at = ring(1.5, p.r - 2.2);
@@ -622,14 +650,11 @@ export class WorldView {
     const f = this.field;
     const g = f.yardGate;
     if (!g || !this.gate) return;
-    // Leaf 0 runs from a to the middle when shut, leaf 1 from the middle to b; open, each has slid
-    // its own length back past its end post.
-    const dx = (g.bx - g.ax) / 2;
-    const dz = (g.bz - g.az) / 2;
-    const o = f.gateOpen;
-    const place = (leaf: THREE.Object3D, x: number, z: number) => leaf.position.set(x, worldHeight(f, x, z), z);
-    place(this.gate[0], g.ax - dx * o, g.az - dz * o);
-    place(this.gate[1], g.ax + dx * (1 + o), g.az + dz * (1 + o));
+    // The leaf runs from a to b when shut; open, it has slid its whole length past one end post.
+    const s = (this.gateToB ? 1 : -1) * f.gateOpen;
+    const x = g.ax + (g.bx - g.ax) * s;
+    const z = g.az + (g.bz - g.az) * s;
+    this.gate[0].position.set(x, this.gateY, z);
   }
 
   /** The pat pat on the ground where it is: pitched and rolled to the terrain under its wheels. */
