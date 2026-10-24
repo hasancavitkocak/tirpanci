@@ -65,7 +65,8 @@ await sleep(1300);
 const late = await game(page, () => window.__game.input.throttleLevel);
 check('held, the throttle rises gradually', early > 0.05 && early < late && late > 0.7, `after 0.7 s ${early.toFixed(2)}, after 2.0 s ${late.toFixed(2)}`);
 await hold;
-await sleep(500);
+// (Let go, it eases back down over about a second.)
+await sleep(1600);
 check('let go: back to idle', await game(page, () => window.__game.input.throttleLevel === 0));
 shot('emu-mow-gas');
 
@@ -93,7 +94,11 @@ await game(page, () => {
   s.broken = false;
   window.__stone = st;
 });
+// The throttle held open (the page's own pointer, as above), up to speed first.
+await game(page, () => document.getElementById('gas-btn').dispatchEvent(new PointerEvent('pointerdown', { pointerId: 78, bubbles: true, pointerType: 'touch' })));
+await sleep(2200);
 await dragAsync(250, 1750, 250, 1690, 5000);
+await game(page, () => document.getElementById('gas-btn').dispatchEvent(new PointerEvent('pointerup', { pointerId: 78, bubbles: true, pointerType: 'touch' })));
 const st = await game(page, () => ({ ticks: window.__ticks, hits: window.__hits, marks: window.__game.view.stoneMarks.size }));
 check('the line ticks near a stone (warning)', st.ticks > 0, `${st.ticks} ticks`);
 check('a stone hit leaves the red "!"', st.hits === 0 || st.marks > 0, `${st.hits} hits, ${st.marks} marks`);

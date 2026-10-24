@@ -59,6 +59,9 @@ export async function connect() {
       return false;
     },
   };
+  // The game finished loading first (its own start opens the menu and the daily reward: a test begun
+  // before that had its job thrown back to the menu).
+  if (!(await page.waitFor(() => window.__ready === true, 120000))) throw new Error('game did not get ready');
   return { browser: { disconnect: () => ws.close() }, page };
 }
 

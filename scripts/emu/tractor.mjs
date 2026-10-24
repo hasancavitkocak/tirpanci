@@ -3,7 +3,7 @@
 //    and they stand in the yard at once (no waiting for the next job).
 //  - The worker sits on the tractor's seat (hips on the cushion, not floating or sunk).
 //  - Its sound: only the tractor's own recording plays (not the pat pat's, nor its gear clunk); the
-//    recordings loaded are the ones cut from the Ferguson (idle 3.6 s, its stopping sound there).
+//    loops loaded are the diesel tractor's (idle, mid, high: cut-traktor2.py).
 //  - Out of the garage with the stick; KAPIYI AÇ by the gate (it swings out of the yard); the
 //    tractor and the trailer through it; the trailer stays on its hitch.
 //  - Over a stream boulder (the pat pat stops at them, the tractor climbs them).
@@ -55,7 +55,7 @@ await tap(page, await card('Traktör'));
 check('asked before buying the tractor', await W(() => document.getElementById('confirm').classList.contains('show'), 3000));
 await tap(page, '#btn-confirm-yes');
 check('tractor bought and chosen', await W(() => window.__game.save.vehicle === 'traktor', 3000));
-check('the tractor stands in the yard at once', await W(() => window.__game.session.field.tractor && window.__game.view.world.patRig?.constructor.name === 'TractorRig', 3000));
+check('the tractor stands in the yard at once', await W(() => window.__game.session.field.tractor && !!window.__game.view.world.patRig && 'hitch' in window.__game.view.world.patRig, 3000));
 await sleep(600);
 check('now the trailer is for sale', /TL$/.test((await label('Römork')) ?? ''), await label('Römork'));
 await tap(page, await card('Römork'));
@@ -104,20 +104,36 @@ const seat = await game(page, () => {
   const h = new V();
   hips.getWorldPosition(h);
   h.applyMatrix4(r.kasa.matrixWorld.clone().invert());
-  return { dy: h.y - r.seatY, dz: h.z - g.session.field.dims.seat, dx: h.x };
+  // The cushion's surface: the model's highest point (under 2 m) on the seat's flat part, from its
+  // middle forward (just behind it the backrest rises to 1.6 m).
+  const inv = r.kasa.matrixWorld.clone().invert();
+  const D = g.session.field.dims;
+  let top = -9;
+  r.kasa.children[0].traverse((o) => {
+    if (!o.isMesh) return;
+    const p = o.geometry.attributes.position;
+    const m = o.matrixWorld.clone().premultiply(inv);
+    const v = new V();
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i).applyMatrix4(m);
+      if (Math.abs(v.x) < 0.15 && v.z - D.seat > -0.02 && v.z - D.seat < 0.2 && v.y < 2) top = Math.max(top, v.y);
+    }
+  });
+  return { dy: h.y - top, dz: h.z - D.seat, dx: h.x };
 });
+// (The hip joint stands about a hand's width over what one sits on.)
 check('sitting on the seat: hips just over the cushion', seat.dy > 0 && seat.dy < 0.25 && Math.abs(seat.dz) < 0.2 && Math.abs(seat.dx) < 0.1, `hips ${seat.dy.toFixed(2)} over it, ${seat.dz.toFixed(2)} along, ${seat.dx.toFixed(2)} across`);
 
 // ---- The engine's sound.
 const sound = () => game(page, () => {
   const a = window.__game.audio;
   const t = a.tractorEngine;
-  return { tractor: !!t?.running, patpat: !!a.patpatEngine?.running, drawn: !!a.drawnEngine?.running, idle: t?.buffers?.idle.duration ?? 0, gear: !!t?.buffers?.gear, stop: !!t?.buffers?.stop };
+  return { tractor: !!t?.running, patpat: !!a.patpatEngine?.running, drawn: !!a.drawnEngine?.running, loops: t?.buffers?.loops.map((b) => +b.duration.toFixed(1)) ?? [], gear: !!t?.buffers?.gear };
 });
 let snd = await sound();
 check('the tractor recording runs', snd.tractor);
 check('no pat pat sound: neither its recording nor the drawn engine', !snd.patpat && !snd.drawn);
-check('the Ferguson cuts are the ones loaded', Math.abs(snd.idle - 3.6) < 0.05 && !snd.gear && snd.stop, `idle ${snd.idle.toFixed(2)} s, gear clunk ${snd.gear}, stop ${snd.stop}`);
+check('the diesel tractor recording is the one loaded (idle, mid, high), no gear clunk', snd.loops.length === 3 && Math.abs(snd.loops[0] - 9.9) < 0.1 && !snd.gear, `loops ${snd.loops.join(' / ')} s, gear clunk ${snd.gear}`);
 
 // ---- Out of the garage with the stick.
 const pos = () => game(page, () => {

@@ -17,6 +17,9 @@ await game(page, () => {
   s.z = h.z + 2;
   g.save.money = 20000;
   g.save.paint = 'mavi';
+  // (On the pat pat: the paints are for it; an earlier test may have left the tractor chosen.)
+  g.save.vehicle = 'patpat';
+  g.applyVehicle();
   g.save.decor = [];
 });
 check('DÜKKAN shows by the house', await page.waitFor(() => !!document.querySelector('[data-id="shop"]'), 8000));
