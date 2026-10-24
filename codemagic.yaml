@@ -1,0 +1,39 @@
+workflows:
+  # iOS build to TestFlight. The iOS project is made fresh on each build (npx cap add ios) and given the
+  # game's settings by scripts/ios-setup.mjs; signing is fetched with the App Store Connect API key.
+  # Started by hand in Codemagic (Start new build), not on every push.
+  ios-testflight:
+    name: iOS TestFlight
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    integrations:
+      # The name the App Store Connect API key was given in Codemagic (Team settings > Integrations).
+      app_store_connect: codemagic
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.kraltirpan.game
+      node: 22
+      xcode: latest
+    scripts:
+      - name: Install
+        script: npm ci
+      - name: Build the web game
+        script: npm run build
+      - name: Make the iOS project
+        script: |
+          npx cap add ios --packagemanager SPM
+          node scripts/ios-setup.mjs "$BUILD_NUMBER"
+          npx cap sync ios
+      - name: Signing
+        # (The certificate and profile are fetched by ios_signing above; the project told to use them.)
+        script: xcode-project use-profiles
+      - name: Build the ipa
+        script: xcode-project build-ipa --project ios/App/App.xcodeproj --scheme App
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
