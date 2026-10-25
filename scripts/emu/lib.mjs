@@ -9,6 +9,8 @@ export const adb = (...a) => execFileSync(ADB, a, { encoding: 'buffer', maxBuffe
 
 /** The WebView's top on the screen (pixels): under the status bar. */
 let topY = 0;
+/** And its left (pixels): held sideways, an older WebView is moved in clear of the camera's notch. */
+let leftX = 0;
 
 /**
  * Forward the WebView's DevTools socket and talk to the game's page over CDP (a small client: puppeteer
@@ -23,6 +25,7 @@ export async function connect() {
   const target = list.find((t) => t.url.startsWith('https://localhost'));
   if (!target) throw new Error('game page not found');
   topY = JSON.parse(target.description).screenY ?? 0;
+  leftX = JSON.parse(target.description).screenX ?? 0;
   const ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((r, e) => {
     ws.onopen = r;
@@ -88,6 +91,7 @@ export async function at(page, sel) {
   if (!r || !r.shown) throw new Error(`not on screen: ${sel}`);
   await sleep(150);
   r.y += topY;
+  r.x += leftX;
   return r;
 }
 
@@ -103,6 +107,18 @@ export async function hold(page, sel, ms) {
   const x = String(Math.round(p.x));
   const y = String(Math.round(p.y));
   adb('shell', 'input', 'swipe', x, y, x, y, String(ms));
+}
+
+/** Where the left thumb rests (the walking stick, bottom left), screen pixels; and the screen's bottom. */
+export async function leftThumb(page) {
+  const r = await page.evaluate(() => ({ w: innerWidth * devicePixelRatio, h: innerHeight * devicePixelRatio }));
+  return { x: leftX + r.w * 0.14, y: topY + r.h * 0.8, bottom: topY + r.h - 4 };
+}
+
+/** A finger held on an element for ms; started without waiting. */
+export async function holdAsync(page, sel, ms) {
+  const p = await at(page, sel);
+  return dragAsync(p.x, p.y, p.x, p.y, ms);
 }
 
 /** A finger drag from (x1, y1) to (x2, y2) in screen pixels over ms; started without waiting. */

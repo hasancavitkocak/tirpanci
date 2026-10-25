@@ -1,9 +1,9 @@
 // Dev: screenshot of the loading screen (before the models are in). Usage: node scripts/look-loading.mjs [baseUrl]
 import puppeteer from 'puppeteer-core';
-import { findChrome } from './chrome.mjs';
+import { CHROME_ARGS, findChrome } from './chrome.mjs';
 
 const base = process.argv[2] ?? 'http://localhost:5173/';
-const browser = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const browser = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: CHROME_ARGS });
 const page = await browser.newPage();
 // Phone size from the command line (e.g. 393x873 for a 20:9 phone); default 412x860.
 const [vw, vh] = (process.argv[3] ?? '412x860').split('x').map(Number);

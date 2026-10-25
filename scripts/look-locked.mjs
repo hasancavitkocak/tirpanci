@@ -1,11 +1,11 @@
 // Dev: a locked field's gate (chain, padlock, the board) and the mosque yard's iron gate, from the lane.
 // Usage: node scripts/look-locked.mjs [baseUrl] (default http://localhost:5173/)
 import puppeteer from 'puppeteer-core';
-import { findChrome } from './chrome.mjs';
+import { CHROME_ARGS, findChrome } from './chrome.mjs';
 
 const base = process.argv[2] ?? 'http://localhost:5173/';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const browser = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const browser = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: CHROME_ARGS });
 const page = await browser.newPage();
 await page.setViewport({ width: 500, height: 560 });
 page.on('pageerror', (e) => console.log('pageerror', e.message));

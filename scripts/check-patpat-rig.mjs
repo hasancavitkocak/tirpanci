@@ -1,10 +1,10 @@
 // Dev: how many wheel parts and steering-wheel triangles were cut out of patpat.glb.
 // Usage: node scripts/check-patpat-rig.mjs [baseUrl]
 import puppeteer from 'puppeteer-core';
-import { findChrome } from './chrome.mjs';
+import { CHROME_ARGS, findChrome } from './chrome.mjs';
 
 const base = process.argv[2] ?? 'http://localhost:5173/';
-const browser = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const browser = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: CHROME_ARGS });
 const page = await browser.newPage();
 await page.goto(`${base}?quality=low`);
 await page.waitForFunction('window.__ready === true', { timeout: 120000 });

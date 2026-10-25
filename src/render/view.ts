@@ -6,7 +6,7 @@ import { FpvRig } from './fpvRig';
 import { Particles } from './particles';
 import { HEAD_LIFT, TRIMMER_RIG } from './trimmerRig';
 import { PATPAT, SLOPE, TRIMMER } from '../game/config';
-import { SKY_HORIZON, WorldView, worldHeight } from './world';
+import { DRIVER_EYE, SKY_HORIZON, WorldView, worldHeight } from './world';
 import { WorkerView } from './worker';
 import { CrittersView } from './critters';
 import { Rain, WEATHER } from './weather';
@@ -573,7 +573,7 @@ export class View {
     if (s.driving && this.mode === 'fpv' && this.world?.driverView(this.camPos, this.tmp)) {
       // From the seat: looking where the pat pat goes (it pitches and rolls with it), dragging looks round.
       const a = Math.atan2(this.tmp.x, this.tmp.z) + this.driveOrbit + this.headTurn;
-      const up = this.tmp.y - 0.3;
+      const up = this.tmp.y - DRIVER_EYE.down;
       this.camTarget.set(this.camPos.x + Math.sin(a), this.camPos.y + up, this.camPos.z + Math.cos(a));
       this.camera.position.copy(this.camPos);
       if (this.shake > 0) {

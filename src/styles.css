@@ -64,6 +64,17 @@ html:has(#loading.show:not(.has-art):not(.no-art)), html:has(#loading.show:not(.
 #loading.has-art .logo { position: relative; margin-top: 4vh; }
 #loading.has-art .load-bottom { width: calc(100% + 32px); margin: 0 -16px calc(-16px - var(--safe-b)); padding: 28px 16px calc(24px + var(--safe-b)); background: linear-gradient(transparent, rgba(16, 36, 10, 0.75) 40%); }
 #loading.has-art .load-bar { margin-top: 0; }
+/* Held sideways (the picture is 16:9, the phone wider): its top kept (the open sky), the logo large in
+   the middle of it, over the lake between the worker and the vehicles. */
+@media (orientation: landscape) {
+  .load-art { object-position: 50% 62%; }
+  #loading.has-art .logo { align-self: center; margin: max(3vh, calc(var(--safe-t) + 8px)) 0 0; }
+  /* The bar and its words in the sky under the logo (along the bottom they lay over the pat pat). */
+  #loading.has-art { justify-content: flex-start; }
+  #loading.has-art .load-bottom { width: min(420px, 60vw); margin: 6px 0 0; padding: 8px 14px 4px; border-radius: 16px; background: rgba(16, 36, 10, 0.55); }
+  #loading.has-art .load-tip { min-height: 0; max-width: none; font-size: 13px; }
+  #loading.has-art .logo-img { width: min(34vw, 50vh, 380px); }
+}
 .load-tip { position: relative; color: rgba(255, 255, 255, 0.85); font-size: 14px; text-align: center; max-width: 300px; margin: 10px 0 0; min-height: 3em; }
 
 #menu { justify-content: space-between; }
@@ -233,14 +244,13 @@ input[type=range] { width: 55%; accent-color: var(--orange); }
 
 #stick { position: fixed; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; background: rgba(255,255,255,0.18); border: 2px solid rgba(255,255,255,0.5); display: none; pointer-events: none; }
 #stick.show { display: block; }
-/* Easy controls: the stick rests, faint, so it is clear where to walk or drive from: at the bottom
-   right on foot and on the pat pat, at the bottom left with the trimmer (the right thumb is on the
-   trigger). */
+/* Easy controls: the stick rests, faint, so it is clear where to walk from: bottom left, under the left
+   thumb (the right one looks round, or holds the trimmer's trigger). Driving it is not shown: the
+   steering wheel stands there. */
 body.playing.easy:not(.freecam) #stick { display: block; opacity: 0.55; }
-body.playing.easy:not(.freecam) #stick:not(.show) { left: calc(100% - 96px - var(--safe-r, 0px)); top: calc(100% - 300px - var(--safe-b, 0px)); }
-body.playing.easy.trimmer-hand:not(.driving):not(.freecam) #stick:not(.show) { left: calc(96px + var(--safe-l, 0px)); }
+body.playing.easy:not(.freecam) #stick:not(.show) { left: calc(110px + var(--safe-l, 0px)); top: calc(100% - 110px - var(--safe-b, 0px)); }
 #stick.show { opacity: 1 !important; }
-#look-hint { display: none; position: fixed; left: 18%; top: 46%; flex-direction: column; align-items: center; gap: 6px; color: #fff; font-weight: 800; font-size: 14px; text-shadow: 0 2px 4px #000; pointer-events: none; z-index: 3; }
+#look-hint { display: none; position: fixed; right: 18%; top: 46%; flex-direction: column; align-items: center; gap: 6px; color: #fff; font-weight: 800; font-size: 14px; text-shadow: 0 2px 4px #000; pointer-events: none; z-index: 3; }
 body.look-hint.playing:not(.driving):not(.freecam) #look-hint { display: flex; }
 .lh-finger { width: 56px; height: 56px; border-radius: 50%; background: rgba(255, 255, 255, 0.22); border: 2px solid rgba(255, 255, 255, 0.7); display: grid; place-items: center; animation: lh-swipe 3.2s ease-in-out infinite; }
 .lh-finger .ic { width: 30px; height: 30px; }
@@ -325,3 +335,21 @@ body.look-hint.playing:not(.driving):not(.freecam) #look-hint { display: flex; }
 .close-x { position: sticky; top: 0; align-self: flex-end; z-index: 3; width: 42px; height: 42px; margin: -6px -6px -36px 0; flex: none; border: 0; border-radius: 50%; background: linear-gradient(180deg, #ef5a3c, #c8341d); box-shadow: 0 3px 0 #8f2210, 0 5px 12px rgba(0, 0, 0, 0.3); display: grid; place-items: center; cursor: pointer; }
 .close-x svg { width: 20px; height: 20px; fill: none; stroke: #fff; stroke-width: 3.2; stroke-linecap: round; }
 .close-x:active { transform: translateY(2px); box-shadow: 0 1px 0 #8f2210, 0 3px 8px rgba(0, 0, 0, 0.3); }
+
+/* The artist's icons (public/harita): the corner buttons' badges (rozet-*.webp) sticking out of their
+   left end, the menu's buttons' pictures (ikon-*.webp) before their words. */
+.corner-btn .cb-art { width: 34px; height: 34px; margin: -8px 0 -8px -10px; object-fit: contain; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.35)); }
+.btn.art-icon { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.btn.art-icon img { width: 30px; height: 30px; margin: -6px 0; object-fit: contain; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.3)); }
+.btn.icon.art-icon img { width: 32px; height: 32px; }
+img.offer-badge { background: none; box-shadow: none; object-fit: contain; }
+
+/* The look stick: as the walking stick, resting faint at the bottom right on foot (not with the trimmer,
+   whose trigger is there, nor driving); an eye on its knob says what it is for. */
+#look-stick { position: fixed; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; background: rgba(255, 255, 255, 0.14); border: 2px solid rgba(255, 255, 255, 0.45); display: none; pointer-events: none; z-index: 1; }
+#look-knob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; border-radius: 50%; background: rgba(255, 255, 255, 0.7); transform: translate(-50%, -50%); }
+#look-stick .ls-eye { position: absolute; left: 50%; top: 50%; width: 22px; height: 14px; margin: -7px 0 0 -11px; border-radius: 50%; border: 2.5px solid rgba(40, 60, 30, 0.75); box-sizing: border-box; pointer-events: none; }
+#look-stick .ls-eye::after { content: ''; position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: rgba(40, 60, 30, 0.85); }
+body.playing.easy:not(.freecam):not(.driving):not(.trimmer-hand) #look-stick { display: block; opacity: 0.55; }
+body.playing.easy:not(.freecam) #look-stick:not(.show) { left: calc(100% - 110px - var(--safe-r, 0px)); top: calc(100% - 110px - var(--safe-b, 0px)); }
+#look-stick.show { display: block !important; opacity: 1 !important; }

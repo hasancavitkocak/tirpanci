@@ -1,9 +1,13 @@
+import { DriveControls, throttleAt } from './driveControls';
+
 /**
- * Easy controls (default): on foot without the trimmer, and on the pat pat, a finger on the right half
- * drags the stick (walk; or gas up, brake / reverse down, steer left / right), on the left half to look
- * around. Trimmer in hand the stick walks (up / down) and turns (left / right), and the right thumb
- * holds the round throttle trigger: the longer it is held the more gas (full in two seconds, like a
- * pedal pressed down); let go, it eases back to idle in a second. The right mouse button looks round.
+ * The game is played held sideways. Easy controls (default): on foot without the trimmer a finger on
+ * the left half drags the stick (walk), on the right half looks around. Driving, the steering wheel
+ * (left) and the pedals (right) drive (see DriveControls) and a drag anywhere else turns the camera
+ * round. Trimmer in hand the stick walks (up / down) and turns (left / right), and the right thumb
+ * holds the throttle trigger: as much gas as the thumb is up it (low on it a little, at its top full;
+ * slid up or down while held, more or less: throttleAt), easing there; let go, it eases back to idle in
+ * a second. The right mouse button looks round.
  * The head stays straight ahead.
  *
  * Advanced touch controls:
@@ -14,8 +18,13 @@
  * Keyboard: W/S walk, A/D turn, Space throttle, ←/→ swing the head, F bump, X stop, T re-thread (hold),
  * Esc pause.
  */
-/** The throttle trigger: milliseconds from idle to full held down, and from full back to idle let go. */
-const GAS_UP = 2000;
+/**
+ * The look stick (a finger on the right half, on foot without the trimmer): pushed to its edge it turns
+ * the view this many pixels' worth a second (as a drag that long would), across and up and down.
+ */
+const LOOK_RATE = { x: 340, y: 300 };
+/** The throttle trigger: milliseconds from idle to full opening, and from full back to idle let go. */
+const GAS_UP = 700;
 const GAS_DOWN = 1000;
 
 export class Input {
@@ -38,6 +47,14 @@ export class Input {
   private lookLastY = 0;
   private lookDX = 0;
   private lookDY = 0;
+  /** The look stick: where it came down, how far it is pushed (-1..1), its ring on the screen. */
+  private lookStick = false;
+  private lookOx = 0;
+  private lookOy = 0;
+  private lookSX = 0;
+  private lookSY = 0;
+  private readonly lookBase = document.getElementById('look-stick');
+  private readonly lookKnob = document.getElementById('look-knob');
   private padId: number | null = null;
   private padSweep = 0;
   private throttleHeld = false;
@@ -46,15 +63,18 @@ export class Input {
   private stopQueued = false;
   private rethreadHeld = false;
   private readonly keys = new Set<string>();
-  /** The throttle trigger: how far it is held 0..1, the finger on it and where it came down, the lock. */
+  /** The throttle trigger: how far it is open 0..1, how far the thumb on it asks for, the thumb, the last tick. */
   private gas = 0;
+  private gasWant = 0;
   private gasId: number | null = null;
-  /** When the trigger was pressed (its throttle rises with the time held), and let go (it falls back). */
-  private gasAt = 0;
-  private gasOffAt = 0;
+  private gasTick = 0;
   private readonly gasBtn = document.getElementById('gas-btn');
   /** The trimmer in hand on foot (first person): the left thumb walks and turns, the right one is on the trigger. */
   trimmer = false;
+  /** On the pat pat or the tractor: the wheel and the pedals drive, a drag on the screen looks round. */
+  driving = false;
+  /** The steering wheel and the pedals. */
+  readonly drive = new DriveControls(document.getElementById('drive-wheel')!, document.getElementById('pedal-gas')!, document.getElementById('pedal-brake')!);
 
   constructor(
     surface: HTMLElement,
@@ -71,11 +91,9 @@ export class Input {
       btn.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         if (this.gasId !== null) return;
-        // Like a pedal: opening the longer it is held (see holdGas), from where it is now (it may still
-        // be easing back from the last press).
-        const now = this.throttleLevel;
+        // As far open as the thumb is up the trigger (it eases there: see tickGas).
         this.gasId = e.pointerId;
-        this.gasAt = performance.now() - now * GAS_UP;
+        this.gasWant = throttleAt(btn, e.clientY);
         try {
           btn.setPointerCapture(e.pointerId);
         } catch {
@@ -83,11 +101,13 @@ export class Input {
         }
         this.showGas();
       });
+      // Slid up or down while held: more or less gas.
+      btn.addEventListener('pointermove', (e) => {
+        if (e.pointerId === this.gasId) this.gasWant = throttleAt(btn, e.clientY);
+      });
       const leave = (e: PointerEvent) => {
         if (e.pointerId !== this.gasId) return;
-        // Let go: it eases back to idle (see the throttle).
-        this.gas = this.holdGas();
-        this.gasOffAt = performance.now();
+        // Let go: it eases back to idle (see tickGas).
         this.gasId = null;
         this.showGas();
       };
@@ -183,6 +203,9 @@ export class Input {
     if (k.has('KeyK')) this.lookDY += 300 * dt;
     if (k.has('KeyJ')) this.lookDX -= 400 * dt;
     if (k.has('KeyL')) this.lookDX += 400 * dt;
+    // The look stick held over: on turning while it is.
+    this.lookDX += this.lookSX * LOOK_RATE.x * dt;
+    this.lookDY += this.lookSY * LOOK_RATE.y * dt;
     const r = { dx: this.lookDX, dy: this.lookDY };
     this.lookDX = this.lookDY = 0;
     return r;
@@ -191,7 +214,7 @@ export class Input {
   /** The throttle, 0..1: the trigger as held (Space: full). */
   get throttleLevel(): number {
     if (this.keys.has('Space')) return 1;
-    if (this.easy) return this.gasId !== null ? this.holdGas() : Math.max(0, this.gas - (performance.now() - this.gasOffAt) / GAS_DOWN);
+    if (this.easy) return this.gas;
     return this.throttleOn ? 1 : 0;
   }
 
@@ -205,14 +228,16 @@ export class Input {
     this.showGas();
   }
 
-  /** Held, the trigger opens like a pedal pressed down: from idle to full over two seconds, steadily. */
-  private holdGas(): number {
-    this.gas = Math.min(1, (performance.now() - this.gasAt) / GAS_UP);
-    return this.gas;
-  }
 
-  /** Each frame: the trigger's ring follows the throttle as it rises. */
+
+  /** Each frame: the throttle eases towards what the thumb asks for, its gauge following. */
   tickGas(): void {
+    const now = performance.now();
+    const dt = Math.min(100, now - (this.gasTick || now));
+    this.gasTick = now;
+    // Towards what the thumb asks for (idle once let go): opening over GAS_UP, closing over GAS_DOWN.
+    const want = this.gasId !== null ? this.gasWant : 0;
+    this.gas = want > this.gas ? Math.min(want, this.gas + dt / GAS_UP) : Math.max(want, this.gas - dt / GAS_DOWN);
     this.showGas();
   }
 
@@ -263,6 +288,7 @@ export class Input {
     this.stickId = null;
     this.lookId = null;
     this.lookDX = this.lookDY = 0;
+    this.endLookStick();
     this.padId = null;
     this.padSweep = 0;
     this.throttleHeld = this.throttleLatched = false;
@@ -270,6 +296,7 @@ export class Input {
     this.rethreadHeld = false;
     this.gasId = null;
     this.setGas(0);
+    this.drive.reset();
     this.stickBase.classList.remove('show');
     this.renderPad();
   }
@@ -281,17 +308,26 @@ export class Input {
   }
 
   private down(e: PointerEvent): void {
-    // The first finger walks (and opens the throttle in easy mode); a second finger, or the right
-    // mouse button, looks around. In advanced first person the right half is for looking.
-    // (Trimmer in hand, a finger anywhere walks and turns: the right thumb is on the trigger.)
-    // (On foot without the trimmer the stick is on the right and the left half looks; trimmer in hand
-    // the right thumb is on the trigger and a finger anywhere else walks and turns.)
-    const look = e.button === 2 || (!this.trimmer && ((this.stickId !== null && e.pointerType === 'touch') || ((e.pointerType === 'touch' || !this.easy) && this.fpv && e.clientX < window.innerWidth * 0.5)));
+    // The left half walks (the stick), the right half looks (so does a second finger): on foot with the
+    // look stick, trimmer in hand by dragging round its trigger (up and down too). Driving, the wheel and
+    // the pedals drive: the screen only looks. The right mouse button looks.
+    const look = e.button === 2 || this.driving || (this.stickId !== null && e.pointerType === 'touch') || ((e.pointerType === 'touch' || !this.easy) && this.fpv && e.clientX > window.innerWidth * 0.5);
     if (look) {
       if (this.lookId !== null) return;
       this.lookId = e.pointerId;
       this.lookLastX = e.clientX;
       this.lookLastY = e.clientY;
+      // On foot without the trimmer a finger looks with the look stick (it shows where it came down);
+      // driving and with the mouse, by dragging.
+      this.lookStick = e.pointerType === 'touch' && !this.driving && !this.trimmer && this.easy;
+      if (this.lookStick && this.lookBase) {
+        this.lookOx = e.clientX;
+        this.lookOy = e.clientY;
+        this.lookBase.style.left = `${e.clientX}px`;
+        this.lookBase.style.top = `${e.clientY}px`;
+        this.lookBase.classList.add('show');
+        if (this.lookKnob) this.lookKnob.style.transform = 'translate(-50%, -50%)';
+      }
       return;
     }
     if (this.stickId !== null) return;
@@ -307,6 +343,31 @@ export class Input {
   private move(e: PointerEvent): void {
     if (e.pointerId === this.lookId) {
       this.looked += Math.abs(e.clientX - this.lookLastX) + Math.abs(e.clientY - this.lookLastY);
+      if (this.lookStick) {
+        // As the walking stick: pushed up to R from where it came down, its ring dragged along past that.
+        const R = 55;
+        let dx = e.clientX - this.lookOx;
+        let dy = e.clientY - this.lookOy;
+        const l = Math.hypot(dx, dy);
+        if (l > R) {
+          this.lookOx += (dx / l) * (l - R);
+          this.lookOy += (dy / l) * (l - R);
+          dx = (dx / l) * R;
+          dy = (dy / l) * R;
+          if (this.lookBase) {
+            this.lookBase.style.left = `${this.lookOx}px`;
+            this.lookBase.style.top = `${this.lookOy}px`;
+          }
+        }
+        const m = Math.max(0, Math.hypot(dx, dy) - 6) / (R - 6);
+        const a = Math.atan2(dy, dx);
+        this.lookSX = Math.cos(a) * m;
+        this.lookSY = Math.sin(a) * m;
+        if (this.lookKnob) this.lookKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+        this.lookLastX = e.clientX;
+        this.lookLastY = e.clientY;
+        return;
+      }
       this.lookDX += e.clientX - this.lookLastX;
       this.lookDY += e.clientY - this.lookLastY;
       this.lookLastX = e.clientX;
@@ -338,6 +399,7 @@ export class Input {
   private up(e: PointerEvent): void {
     if (e.pointerId === this.lookId) {
       this.lookId = null;
+      this.endLookStick();
       return;
     }
     if (e.pointerId !== this.stickId) return;
@@ -347,6 +409,16 @@ export class Input {
     // Back to where it rests (the stylesheet's place).
     this.stickBase.style.left = this.stickBase.style.top = '';
     this.stickKnob.style.transform = 'translate(-50%, -50%)';
+  }
+
+  /** The look stick let go: still, back to where it rests. */
+  private endLookStick(): void {
+    this.lookStick = false;
+    this.lookSX = this.lookSY = 0;
+    if (!this.lookBase) return;
+    this.lookBase.classList.remove('show');
+    this.lookBase.style.left = this.lookBase.style.top = '';
+    if (this.lookKnob) this.lookKnob.style.transform = 'translate(-50%, -50%)';
   }
 
   /** How far the player has dragged to look round, in all (pixels). */

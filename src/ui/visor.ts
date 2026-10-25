@@ -16,6 +16,13 @@ interface Splat {
 }
 
 const MAX_SPLATS = 220;
+/**
+ * The shield is drawn small and stretched over the screen (its specks are soft: it does not show), and
+ * redrawn at most REDRAW_HZ times a second while being splattered (every frame only while wiping). Drawn
+ * full size every frame it was what heated a phone: a 1640 x 720 canvas of gradients over the 3D.
+ */
+const SCALE = 0.5;
+const REDRAW_HZ = 10;
 
 export class Visor {
   private readonly ctx: CanvasRenderingContext2D;
@@ -27,6 +34,8 @@ export class Visor {
   private w = 0;
   private h = 0;
   private dpr = 1;
+  /** Seconds since the last redraw. */
+  private since = 0;
   visible = false;
 
   constructor(private readonly canvas: HTMLCanvasElement) {
@@ -96,7 +105,11 @@ export class Visor {
         this.dirty = true;
       }
     }
-    if (this.dirty) this.draw();
+    this.since += dt;
+    if (this.dirty && (this.wiping || this.since >= 1 / REDRAW_HZ)) {
+      this.since = 0;
+      this.draw();
+    }
   }
 
   private edge(): number {
@@ -126,7 +139,7 @@ export class Visor {
   }
 
   private resize(): void {
-    this.dpr = Math.min(2, window.devicePixelRatio || 1);
+    this.dpr = SCALE;
     this.w = this.canvas.width = Math.round(window.innerWidth * this.dpr);
     this.h = this.canvas.height = Math.round(window.innerHeight * this.dpr);
     this.dirty = true;

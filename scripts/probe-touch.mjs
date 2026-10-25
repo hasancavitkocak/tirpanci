@@ -1,11 +1,11 @@
 // Dev: at the start of a job, hold MİSİNA TAK with a real touch, and walk with W; print what happens.
 // Usage: node scripts/probe-touch.mjs [baseUrl]
 import puppeteer from 'puppeteer-core';
-import { findChrome } from './chrome.mjs';
+import { CHROME_ARGS, findChrome } from './chrome.mjs';
 
 const base = process.argv[2] ?? 'http://localhost:5173/';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const browser = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const browser = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: CHROME_ARGS });
 const page = await browser.newPage();
 await page.setViewport({ width: 405, height: 566, isMobile: true, hasTouch: true });
 page.on('pageerror', (e) => console.log('pageerror', e.message));

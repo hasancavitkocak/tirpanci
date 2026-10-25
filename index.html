@@ -59,11 +59,13 @@
     <canvas id="visor"></canvas>
     <div id="touch"></div>
     <div id="stick"><div id="knob"></div></div>
+    <!-- The look stick (right thumb, on foot): pushed, the view turns that way and keeps turning. -->
+    <div id="look-stick"><div id="look-knob"></div><span class="ls-eye"></span></div>
     <!-- Until the player has looked round once: a finger swiping on the right half, "drag: look". -->
     <div id="look-hint"><div class="lh-finger"><svg class="ic"><use href="#i-hand"/></svg></div><span>Sürükle: etrafa, yukarı aşağı bak</span></div>
 
     <section id="loading" class="screen show">
-      <!-- The portrait opening picture (public/acilis.webp) when there is one; else the green screen below. -->
+      <!-- The opening picture (public/acilis.webp, 16:9) when there is one; else the green screen below. -->
       <img class="load-art" src="./acilis.webp" alt="" onload="this.parentNode.classList.add('has-art')" onerror="this.parentNode.classList.add('no-art'); this.remove()" />
       <div class="load-hills"></div>
       <img class="load-icon" src="./ikon.webp" alt="" />
@@ -76,9 +78,9 @@
     </section>
 
     <section id="menu" class="screen">
-      <button id="btn-noads" class="corner-btn"><svg class="ic"><use href="#i-noads"/></svg><span>Reklamsız</span></button>
-      <button id="btn-tasks" class="corner-btn tasks-btn"><svg class="ic"><use href="#i-check"/></svg><span>Görevler</span><b id="tasks-badge" class="corner-badge"></b></button>
-      <button id="btn-starter" class="corner-btn starter-pack"><svg class="ic"><use href="#i-coins"/></svg><span>Başlangıç Paketi</span></button>
+      <button id="btn-noads" class="corner-btn"><img class="cb-art" src="./harita/rozet-reklamsiz.webp" alt=""><span>Reklamsız</span></button>
+      <button id="btn-tasks" class="corner-btn tasks-btn"><img class="cb-art" src="./harita/rozet-gorev.webp" alt=""><span>Görevler</span><b id="tasks-badge" class="corner-badge"></b></button>
+      <button id="btn-starter" class="corner-btn starter-pack"><img class="cb-art" src="./harita/rozet-paket.webp" alt=""><span>Başlangıç Paketi</span></button>
       <div class="menu-top">
         <h1 class="logo"><img class="logo-img" src="./logo.webp" alt="Kral Tırpan" onload="this.parentNode.classList.add('has-img')" onerror="this.remove()" /><div class="logo-text">KRAL<span>TIRPAN</span></div></h1>
         <p class="tagline">Fındık bahçesi simülatörü</p>
@@ -91,9 +93,9 @@
           <button id="btn-roam" class="btn roam art-go art-roam"><span>SERBEST GEZ</span></button>
         </div>
         <div class="row">
-          <button id="btn-shop" class="btn ghost">Dükkan</button>
-          <button id="btn-store" class="btn ghost store-btn"><svg class="ic"><use href="#i-coins"/></svg>Mağaza</button>
-          <button id="btn-settings" class="btn ghost icon" aria-label="Ayarlar"><svg class="ic"><use href="#i-gear"/></svg></button>
+          <button id="btn-shop" class="btn ghost art-icon"><img src="./harita/ikon-dukkan.webp" alt="">Dükkan</button>
+          <button id="btn-store" class="btn ghost store-btn art-icon"><img src="./harita/ikon-magaza.webp" alt="">Mağaza</button>
+          <button id="btn-settings" class="btn ghost icon art-icon" aria-label="Ayarlar"><img src="./harita/ikon-ayar.webp" alt=""></button>
         </div>
       </div>
     </section>
@@ -111,7 +113,7 @@
 
     <section id="noads-offer" class="screen dim">
       <div class="card offer">
-        <div class="offer-badge"><svg class="ic"><use href="#i-noads"/></svg></div>
+        <img class="offer-badge" src="./harita/rozet-reklamsiz.webp" alt="">
         <h2>Reklamsız Oyna</h2>
         <ul class="offer-list">
           <li><svg class="ic"><use href="#i-check"/></svg>Bahçe aralarındaki reklamlar tamamen kalkar</li>
@@ -204,11 +206,12 @@
         <div class="setting column">
           <span>Grafik kalitesi</span>
           <div id="set-quality" class="segmented">
+            <button data-q="auto">Otomatik</button>
             <button data-q="low">Düşük</button>
             <button data-q="medium">Orta</button>
             <button data-q="high">Yüksek</button>
           </div>
-          <small>Kalite değişikliği bir sonraki bahçede uygulanır.</small>
+          <small>Otomatik: telefonuna göre seçer, kasarsa düşürür. Çim ve ağaçlar bir sonraki bahçede değişir.</small>
         </div>
         <div class="setting column">
           <span>Hava durumu</span>
@@ -223,11 +226,11 @@
         <details class="howto">
           <summary>Nasıl oynanır?</summary>
           <ul>
-            <li><b>Yürümek:</b> ekranda sürükle. Tırpan elindeyken sol baştaki çubukla yürür, döner.</li>
-            <li><b>Etrafa bakmak:</b> ekranın sağ yarısında sürükle (tırpan yokken).</li>
+            <li><b>Yürümek:</b> sol alttaki çubuk (ileri, geri, sağa sola).</li>
+            <li><b>Etrafa bakmak:</b> sağ alttaki göz çubuğu (itince o yöne döner, yukarı aşağı bakar). Tırpan elindeyken ekranın sağ yarısında sürükle.</li>
             <li><b>Gaz:</b> sağdaki GAZ düğmesini basılı tut, gaz yavaş yavaş artar; bırakınca yavaşça düşer.</li>
             <li><b>Motoru çalıştırmak:</b> ipi aşağı doğru hızlı ve uzun çek. Soğuk motorda önce jikle.</li>
-            <li><b>Patpat / traktör sürmek:</b> sağda sürükle: yukarı gaz, aşağı fren (durunca geri gider), sağa sola dön. İN ile inersin.</li>
+            <li><b>Patpat / traktör sürmek:</b> soldaki direksiyonu tutup çevir; sağda GAZ pedalı, FREN pedalı (durunca geri gider). Ekranda sürükleyince etrafa bakarsın. İN ile inersin.</li>
             <li><b>Avlu kapısı:</b> kapının yanına gel, KAPIYI AÇ'a bas.</li>
             <li><b>Misina:</b> bitince MİSİNA TAK'a basılı tut; makara boşalırsa sarı halkaya git.</li>
             <li><b>STOP</b> motoru durdurur. Uzun süre ağır işte motor ısınır; hararet yaparsa soğumasını bekle.</li>
@@ -248,10 +251,19 @@
     </section>
 
     <section id="hud" class="screen">
+      <!-- Driving the pat pat or the tractor: the steering wheel (bottom left) and the pedals (bottom right). -->
+      <div id="drive-ui">
+        <div id="drive-wheel"><img src="/harita/direksiyon.webp" alt="" draggable="false"></div>
+        <div class="drive-pedals">
+          <button id="pedal-brake" class="pedal brake" aria-label="Fren / geri"><span>FREN</span></button>
+          <span class="gas-meter"><i></i></span>
+          <button id="pedal-gas" class="pedal gas" aria-label="Gaz"><span>GAZ</span></button>
+        </div>
+      </div>
       <div class="hud-top">
         <canvas id="minimap" width="96" height="96"></canvas>
         <div class="hud-mid">
-          <div class="progress"><div id="progress-fill"></div><div class="progress-goal"></div><b id="progress-text">%0</b></div>
+          <div class="progress"><div class="progress-slot"><div id="progress-fill"></div><div class="progress-goal"></div><b id="progress-text">%0</b></div></div>
           <div class="gauges">
             <div class="gauge fuel" title="Benzin"><i class="gi"></i><div class="bar"><div id="fuel-fill"></div></div></div>
             <div class="gauge line" title="Misina"><i class="gi"></i><div class="bar"><div id="line-fill"></div></div><small id="spool-text"></small></div>

@@ -1,7 +1,7 @@
 // Dev: screenshot dev/bush.html (procedural hazelnut bush next to the reference photo) for each variant.
 import puppeteer from 'puppeteer-core';
-import { findChrome } from './chrome.mjs';
-const b = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+import { CHROME_ARGS, findChrome } from './chrome.mjs';
+const b = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: CHROME_ARGS });
 const p = await b.newPage();
 await p.setViewport({ width: 1000, height: 500 });
 p.on('pageerror', (e) => console.log('pageerror', e.message));

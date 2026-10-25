@@ -16,7 +16,7 @@ import { streamDistance } from './render/stream';
 import { Models, loadModels } from './render/models';
 import { Quality, View } from './render/view';
 import { WorldView } from './render/world';
-import { drawVillageMap } from './ui/villageMap';
+import { drawVillageMap, preloadVillageArt } from './ui/villageMap';
 import { formatWait, readyIn } from './game/regrow';
 import { makeIlan } from './game/ilan';
 import { GoldKind, goldArt } from './ui/goldArt';
@@ -87,6 +87,11 @@ function picture(files: string[], fallback: string): string {
  * fast pull is 87 % of it in about 290 ms: the same pull as ever, scaled with the panel.
  */
 const PULL_PX = 108;
+/**
+ * First person, the look down at the line with the trimmer in hand (radians): the screen held sideways
+ * is short, so further down than the hands' own pitch to keep the head in view.
+ */
+const TRIMMER_PITCH = -0.75;
 
 /** Shop pictures in public/textures (shop-<id>.webp), preloaded at start. */
 const SHOP_PICTURES = ['patpat', 'traktor', 'romork', 'emektar', 'usta', 'sirt', 'yuvarlak', 'koseli', 'burgulu', 'kulaklik', 'siperlik', 'depo', 'kalin', 'kafa', 'motor', 'cizme'];
@@ -118,6 +123,9 @@ class Game {
   private doubled = false;
   private fpsAcc = 0;
   private fpsFrames = 0;
+  /** Automatic quality: the highest it may go now (lowered for good when the game struggled at a level), and the smooth spells in a row. */
+  private autoCeiling: Quality = 'high';
+  private fpsSmooth = 0;
   /** First-person facing, radians. */
   private lookYaw = Math.PI;
   private lastPull = 1;
@@ -151,6 +159,15 @@ class Game {
     void this.checkStore();
     const q = (params.get('quality') as Quality) || this.save.quality || this.defaultQuality();
     this.view = new View($<HTMLCanvasElement>('game'), q);
+    // The 3D context dropped by the phone (the screen off a while, the GPU memory taken back): asked
+    // back, and once it is, the game opened again from the save (the textures and models are gone with
+    // the old context). Saved first so nothing of the job's progress outside it is lost.
+    const canvas = $<HTMLCanvasElement>('game');
+    canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      void writeSave(this.save);
+    });
+    canvas.addEventListener('webglcontextrestored', () => location.reload());
     this.input = new Input($('touch'), $('stick'), $('knob'), $('pad'), $('btn-bump'), $('btn-stop'), $('btn-rethread'));
     // One way to play: the easy controls (the choice and the throttle latch are gone from the settings).
     this.input.toggleThrottle = false;
@@ -162,7 +179,12 @@ class Game {
     void initAds();
     void initPlatform({
       onBackground: () => this.mode === 'playing' && this.pause(),
-      onForeground: () => {},
+      // Back from the screen being off: the 3D drawn again at once (some WebViews show a blank page
+      // until the next change otherwise).
+      onForeground: () => {
+        this.view.resize();
+        this.view.frame(0);
+      },
       onBack: () => {
         if (this.mode === 'playing') return this.pause(), true;
         if (this.mode === 'paused') return this.resume(), true;
@@ -186,7 +208,7 @@ class Game {
     ];
     let tip = 0;
     const tipTimer = window.setInterval(() => ($('loading-tip').textContent = tips[++tip % tips.length]), 2600);
-    [this.models] = await Promise.all([loadModels((p) => ($('load-fill').style.width = `${20 + p * 70}%`)), preloadBushTextures(), preloadGround()]);
+    [this.models] = await Promise.all([loadModels((p) => ($('load-fill').style.width = `${20 + p * 70}%`)), preloadBushTextures(), preloadGround(), preloadVillageArt()]);
     $('load-fill').style.width = '95%';
     // Menu background: the first field with the worker standing at the depot.
     this.applyLook();
@@ -254,11 +276,16 @@ class Game {
     return s;
   }
 
+  /**
+   * Automatic quality's start: computers high; phones low (a Galaxy A05s: ~50 fps low, ~32 fps medium),
+   * a strong one (8 cores and 6 GB or more) medium. While playing it goes up a step when smooth, down
+   * when struggling (see trackFps).
+   */
   private defaultQuality(): Quality {
     const mobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
     if (!mobile) return 'high';
-    // Phones start on low (a Galaxy A05s: ~50 fps low, ~32 fps medium); the player can raise it in settings.
-    return 'low';
+    const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 0;
+    return (navigator.hardwareConcurrency ?? 0) >= 8 && memory >= 6 ? 'medium' : 'low';
   }
 
   // ---------------------------------------------------------------- screens
@@ -431,7 +458,7 @@ class Game {
     const b = $<HTMLButtonElement>('btn-noads');
     b.style.display = this.save.noAds ? 'none' : '';
     if (this.save.noAds) return;
-    b.innerHTML = `${icon('i-noads')}<span>Reklamsız</span>`;
+    b.innerHTML = `<img class="cb-art" src="./harita/rozet-reklamsiz.webp" alt=""><span>Reklamsız</span>`;
   }
 
   /** The "remove ads" offer: what it gives and the store price. */
@@ -726,7 +753,9 @@ class Game {
     this.sagaSeen = this.save.unlocked;
     const art = SAGA_MAPS[tab];
     const map = document.createElement('div');
-    map.className = `saga-map${art ? ' art' : ''}`;
+    // (A wide picture: the whole village in view at once, its jobs smaller.)
+    const wide = !!art && art.w > art.h;
+    map.className = `saga-map${art ? ' art' : ''}${wide ? ' wide' : ''}`;
     // Where each job sits, in percent of the map (x from the left, y from the top).
     let pts: { x: number; y: number }[];
     let road = '';
@@ -759,7 +788,8 @@ class Game {
     // The part of the map not open yet lies under a grey mist, from halfway between the last open job
     // and the first locked one up to the top.
     const lockAt = jobs.findIndex((l) => !open(l));
-    const mist = lockAt < 0 ? 0 : lockAt === 0 ? 100 : (pts[lockAt - 1].y + pts[lockAt].y) / 2;
+    // (Not on a wide picture: its road runs across, not up; the padlocks say it there.)
+    const mist = wide || lockAt < 0 ? 0 : lockAt === 0 ? 100 : (pts[lockAt - 1].y + pts[lockAt].y) / 2;
     map.innerHTML = `${road}${mist ? `<div class="saga-mist" style="height:${mist}%"></div>` : ''}
       <div class="saga-sign"><b>${region.name}</b><small>${jobs[0] && open(jobs[0]) ? `<img src="./harita/yildiz.webp" alt=""> ${stars} / ${jobs.length * 3}` : 'Önceki köy bitince açılır'}</small></div>`;
     const firstLocked = jobs.find((l) => !open(l));
@@ -957,7 +987,7 @@ class Game {
     const buy = (id: string) => () => void this.buyPack(id);
     if (this.starterOffered) card(goldPic(STARTER_ID, 'yigin'), 'Başlangıç Paketi', `${STARTER.coins.toLocaleString('tr-TR')} TL + Pro Siperlik + reklamsız oyun. Sadece ilk ${STARTER.days} gün!`, this.prices[STARTER_ID] ?? '…', !!this.prices[STARTER_ID], buy(STARTER_ID), 'starter-card');
     for (const p of COIN_PACKS) card(goldPic(p.id, kinds[p.id] ?? 'kese'), p.name, `${p.coins.toLocaleString('tr-TR')} TL`, this.prices[p.id] ?? '…', !!this.prices[p.id], buy(p.id));
-    if (!this.save.noAds) card(`<svg class="ic"><use href="#i-noads"/></svg>`, 'Reklamsız Oyna', 'İşler arasındaki reklamlar kalkar. Ödüllü reklamlar isteğe bağlı kalır.', 'İNCELE', true, () => {
+    if (!this.save.noAds) card(`<img class="ok" src="./harita/rozet-reklamsiz.webp" alt="">`, 'Reklamsız Oyna', 'İşler arasındaki reklamlar kalkar. Ödüllü reklamlar isteğe bağlı kalır.', 'İNCELE', true, () => {
         // The offer opens over the menu.
         this.showMenu();
         void this.openNoAds();
@@ -1201,7 +1231,7 @@ class Game {
   private openSettings(): void {
     $<HTMLInputElement>('set-sfx').value = String(Math.round(this.save.sfxVolume * 100));
     $<HTMLInputElement>('set-vibration').checked = this.save.vibration;
-    document.querySelectorAll<HTMLButtonElement>('#set-quality button').forEach((b) => b.classList.toggle('on', b.dataset.q === this.view.quality));
+    document.querySelectorAll<HTMLButtonElement>('#set-quality button').forEach((b) => b.classList.toggle('on', b.dataset.q === (this.save.quality ?? 'auto')));
     document.querySelectorAll<HTMLButtonElement>('#set-weather button').forEach((b) => b.classList.toggle('on', b.dataset.w === (this.save.weather ?? 'auto')));
     $('settings').classList.add('show');
   }
@@ -1276,9 +1306,15 @@ class Game {
     );
     document.querySelectorAll<HTMLButtonElement>('#set-quality button').forEach((b) =>
       b.addEventListener('click', () => {
-        const q = b.dataset.q as Quality;
-        this.save.quality = q;
-        this.view.setQuality(q);
+        const q = b.dataset.q as Quality | 'auto';
+        if (q === 'auto') {
+          delete this.save.quality;
+          this.autoCeiling = 'high';
+          this.view.setQuality(this.defaultQuality());
+        } else {
+          this.save.quality = q;
+          this.view.setQuality(q);
+        }
         document.querySelectorAll('#set-quality button').forEach((x) => x.classList.toggle('on', x === b));
       }),
     );
@@ -1324,11 +1360,11 @@ class Game {
     if (this.input.easy) {
       if (this.input.trimmer) {
         // (Both on the left: the trigger stands where the right one would be.)
-        $('tut-left').innerHTML = `${move} Sürükle: yürü, sağa sola dön<br>GAZ: basılı tut, yavaş yavaş artar`;
+        $('tut-left').innerHTML = `${move} Sol: yürü, sağa sola dön<br>Sağ: sürükle, yukarı aşağı bak · GAZ: tetiğin üstü tam gaz`;
         $('tut-right').innerHTML = '';
       } else {
-        $('tut-left').innerHTML = `${drag} Sol: sürükle, etrafa bak`;
-        $('tut-right').innerHTML = `Sağ: sürükle, yürü ${move}`;
+        $('tut-left').innerHTML = `${move} Sol: sürükle, yürü`;
+        $('tut-right').innerHTML = `Sağ: sürükle, etrafa bak ${drag}`;
       }
     } else {
       $('tut-left').innerHTML = `${move} Sürükle: yürü / dön`;
@@ -1664,7 +1700,7 @@ class Game {
     this.lookYaw = this.session.yaw;
     this.pitchHands = this.session.hasTrimmer;
     this.pitchEase = null;
-    this.view.pitch = this.session.hasTrimmer ? -0.55 : -0.06;
+    this.view.pitch = this.session.hasTrimmer ? TRIMMER_PITCH : -0.06;
     this.view.resize();
     this.view.snapCamera();
     // One frame drawn now, behind the loading screen, so the first one seen is the job's own view (the
@@ -1951,7 +1987,7 @@ class Game {
           this.audio.patpat(true);
           haptic('medium');
           this.updateStarterUi();
-          this.toast('Sağda sürükle ve sür (tarifi: Ayarlar › Nasıl oynanır?)', 'good', 'board', 120);
+          this.toast('Direksiyonu çevir, GAZ ve FREN pedallarıyla sür', 'good', 'board', 120);
           break;
         case 'alight':
           this.audio.patpat(false);
@@ -2299,7 +2335,7 @@ class Game {
         const hands = this.session!.hasTrimmer;
         if (hands !== this.pitchHands) {
           this.pitchHands = hands;
-          this.pitchEase = hands ? -0.55 : -0.06;
+          this.pitchEase = hands ? TRIMMER_PITCH : -0.06;
         }
         if (this.pitchEase !== null) {
           this.view.pitch += (this.pitchEase - this.view.pitch) * Math.min(1, dt * 3);
@@ -2327,19 +2363,24 @@ class Game {
         this.save.tutorialSeen = true;
         setTimeout(() => $('tutorial').classList.remove('show'), 2500);
       }
-      // On the pat pat the stick is throttle (up; down brakes, then backs up) and steering (left / right).
-      const drive = s.driving ? { throttle: -m.y, steer: m.x } : undefined;
-      if (s.driving) {
+      // On the pat pat or the tractor: the steering wheel and the pedals (FREN brakes, then backs up);
+      // else the keys (W gas, S brake / back up, A D steer).
+      this.input.driving = s.driving;
+      const wheel = this.input.drive;
+      wheel.update(dt);
+      const drive = s.driving ? (wheel.active ? { throttle: wheel.throttle, steer: wheel.steer } : { throttle: -m.y, steer: m.x }) : undefined;
+      if (drive) {
         moveX = moveZ = 0;
         this.lookYaw = s.yaw;
         // Dragging on the right turns the camera round the pat pat; it drifts back behind when let go.
         this.view.driveOrbit -= look.dx * 0.006;
         if (look.dx === 0) this.view.driveOrbit *= Math.exp(-dt * 0.8);
         this.view.driveOrbit = Math.max(-Math.PI, Math.min(Math.PI, this.view.driveOrbit));
-        this.audio.patpat(true, Math.min(1, Math.abs(s.field.vehicle.speed) / 4 + Math.max(0, -m.y) * 0.3), Math.min(1, Math.abs(s.field.vehicle.speed) / s.field.dims.forward));
-        // The gear: into first or reverse as the stick is pushed from standing, or across from one to
-        // the other; back to neutral once stopped with the stick let go.
-        const dir = Math.abs(m.y) > 0.15 ? (m.y < 0 ? 1 : -1) : 0;
+        // The engine revs with the speed in the gear it is in (high near its top, low after a shift up).
+        this.audio.patpat(true, Math.min(1, Math.abs(s.field.vehicle.speed) / 4 + Math.max(0, drive.throttle) * 0.3), Math.min(1, Math.abs(s.field.vehicle.speed) / s.field.dims.forward));
+        // The gear: into first or reverse as a pedal is pressed from standing, or across from one to
+        // the other; back to neutral once stopped with the pedals let go.
+        const dir = Math.abs(drive.throttle) > 0.15 ? Math.sign(drive.throttle) : 0;
         if (dir && dir !== this.patGear) {
           this.audio.patpatGear();
           this.patGear = dir;
@@ -2651,19 +2692,31 @@ class Game {
     this.audio.setTraffic(Math.max(0, 1 - car / 45) ** 2);
   }
 
-  /** Drop the quality one step if the game is clearly struggling. */
+  /**
+   * Automatic quality (none chosen in the settings): a step down when the game is clearly struggling
+   * (under 40 fps over 4 s), and that level is the most it goes to from then on; a step up after three
+   * smooth spells in a row (57 fps or more), up to that.
+   */
   private trackFps(dt: number): void {
-    if (this.mode !== 'playing' || params.has('quality')) return;
+    if (this.mode !== 'playing' || params.has('quality') || this.save.quality) return;
     this.fpsAcc += dt;
     this.fpsFrames++;
     if (this.fpsAcc < 4) return;
     const fps = this.fpsFrames / this.fpsAcc;
     this.fpsAcc = 0;
     this.fpsFrames = 0;
-    if (fps < 40 && this.view.quality !== 'low' && !this.save.quality) {
-      const q: Quality = this.view.quality === 'high' ? 'medium' : 'low';
-      this.view.setQuality(q);
-    }
+    const order: Quality[] = ['low', 'medium', 'high'];
+    const at = order.indexOf(this.view.quality);
+    if (fps < 40 && at > 0) {
+      this.autoCeiling = order[at - 1];
+      this.view.setQuality(this.autoCeiling);
+      this.fpsSmooth = 0;
+    } else if (fps >= 57 && at < order.indexOf(this.autoCeiling)) {
+      if (++this.fpsSmooth >= 3) {
+        this.view.setQuality(order[at + 1]);
+        this.fpsSmooth = 0;
+      }
+    } else this.fpsSmooth = 0;
   }
 
   /** For tests. */

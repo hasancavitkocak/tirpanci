@@ -3,11 +3,11 @@
 // 2. Driving with the on-screen wheel and pedals: GAZ moves it, the wheel turns it, FREN backs up.
 // Usage: node scripts/check-flows.mjs [baseUrl]
 import puppeteer from 'puppeteer-core';
-import { findChrome } from './chrome.mjs';
+import { CHROME_ARGS, findChrome } from './chrome.mjs';
 
 const base = process.argv[2] ?? 'http://localhost:5173/';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const browser = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const browser = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: CHROME_ARGS });
 const page = await browser.newPage();
 await page.setViewport({ width: 412, height: 860, hasTouch: false });
 const errors = [];

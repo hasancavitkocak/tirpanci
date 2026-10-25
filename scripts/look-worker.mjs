@@ -1,8 +1,8 @@
 // Dev: third-person close-ups of the worker (standing, walking, from the side).
 import puppeteer from 'puppeteer-core';
-import { findChrome } from './chrome.mjs';
+import { CHROME_ARGS, findChrome } from './chrome.mjs';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const b = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const b = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: CHROME_ARGS });
 const p = await b.newPage();
 await p.setViewport({ width: 412, height: 860, isMobile: true, hasTouch: true });
 p.on('pageerror', (e) => console.log('pageerror', e.message));

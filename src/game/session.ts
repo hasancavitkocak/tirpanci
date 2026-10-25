@@ -273,10 +273,9 @@ export class Session {
     return { level: this.level.id, region: this.field.region.id, worker: { x: this.x + O.x, z: this.z + O.z, yaw: this.yaw }, vehicle: { x: v.x + O.x, z: v.z + O.z, yaw: v.yaw, art: v.art } };
   }
 
-  /** Close enough to the pat pat to reach into its trailer. */
+  /** Close enough to get on, or to the trailer: within 2 m of any side of it (front, back or beside). */
   get nearVehicle(): boolean {
-    const v = this.field.vehicle;
-    return Math.hypot(this.x - v.x, this.z - v.z) < v.length / 2 + 1.4;
+    return this.field.vehicleGap(this.x, this.z) < 2;
   }
 
   /** Can get on the pat pat now (next to it, trimmer engine off, on his feet). */
@@ -403,6 +402,7 @@ export class Session {
     // as on the road: crawling there only made the trips longer).
     const deep = this.field.patpatWheels().some((w) => (this.field.puddleAt(w.x, w.z)?.r ?? 0) > 0.8);
     const ford = deep ? 0.6 : 1;
+    // The gas asks for a speed: half gas, half the vehicle's top; easing off, it slows to that.
     const want = (d.throttle >= 0 ? d.throttle * this.field.dims.forward : d.throttle * PATPAT.reverse) * ford;
     const braking = Math.sign(want) !== Math.sign(v.speed) && Math.abs(v.speed) > 0.05;
     const rate = (braking ? PATPAT.brake : PATPAT.accel) * dt;

@@ -31,6 +31,25 @@ export interface Slot {
   theme: Theme;
 }
 
+/**
+ * A bridge where a track crosses the stream: its middle, heading (0: across, east-west), the length and
+ * width of its walkway, how high its level middle stands over its ends and the ramp up to it at each
+ * end (m): see deckRise.
+ */
+export interface Bridge extends Pt {
+  rot: number;
+  len: number;
+  width: number;
+  hump: number;
+  ramp: number;
+}
+
+/** How far a bridge's walkway stands over its ends at `u` from its middle (along it): up its end ramps, level between. */
+export function deckRise(b: Bridge, u: number): number {
+  const fromEnd = b.len / 2 - Math.abs(u);
+  return b.hump * Math.max(0, Math.min(1, fromEnd / b.ramp));
+}
+
 export interface Region {
   id: number;
   name: string;
@@ -53,14 +72,62 @@ export interface Region {
   trunkEnd: number;
   /** The lie of the land. */
   ground: (x: number, z: number) => number;
+  /**
+   * The stream's course, north to south (village coordinates): unset, down the east edge (streamX's
+   * own line); else through these points (Yeşilyamaç's runs down the west, past the gardens beyond it).
+   */
+  stream?: Pt[];
+  /** The bridge over it, and the mill on its west bank by it (its wheel on its own +x side; x is set from the stream). */
+  bridge?: Bridge;
+  mill?: Pt & { rot: number };
 }
 
-/** The stream's centre line: it runs north to south down the east of every village. */
-/** (Also written out in the terrain shader, world.ts: keep the two the same.) */
-export function streamX(z: number): number {
-  return 40 + Math.sin(z * 0.09 + 1) * 2.2 + Math.sin(z * 0.23) * 0.7;
+/**
+ * The stream's centre line at z in a village: down the east edge (x 40, meandering), or through its own
+ * points (Region.stream), smoothly, with the same small meander.
+ */
+export function streamX(z: number, r: Region = REGIONS[0]): number {
+  const wiggle = Math.sin(z * 0.23) * 0.7;
+  if (!r.stream) return EAST_LINE + Math.sin(z * 0.09 + 1) * 2.2 + wiggle;
+  const t = (courses.get(r.id) ?? courses.set(r.id, course(r.stream)).get(r.id))!;
+  const i = Math.max(0, Math.min(t.xs.length - 2, Math.floor((z - t.z0) / COURSE_STEP)));
+  const u = Math.max(0, Math.min(1, (z - t.z0) / COURSE_STEP - i));
+  return t.xs[i] + (t.xs[i + 1] - t.xs[i]) * u + wiggle;
 }
-/** Gap between a stream-side field's right edge and the stream's middle (before the meander). */
+
+/** A stream's course through its points (Catmull-Rom), tabled every COURSE_STEP metres down z. */
+const COURSE_STEP = 0.5;
+const courses = new Map<number, { z0: number; xs: number[] }>();
+function course(pts: Pt[]): { z0: number; xs: number[] } {
+  const xs: number[] = [];
+  const z0 = pts[0].z;
+  const z1 = pts[pts.length - 1].z;
+  for (let z = z0; z <= z1 + COURSE_STEP; z += COURSE_STEP) {
+    let i = 0;
+    while (i < pts.length - 2 && pts[i + 1].z < z) i++;
+    const p0 = pts[Math.max(0, i - 1)];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[Math.min(pts.length - 1, i + 2)];
+    const t = Math.max(0, Math.min(1, (z - p1.z) / (p2.z - p1.z)));
+    const t2 = t * t;
+    xs.push(0.5 * (2 * p1.x + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t2 * t));
+  }
+  return { z0, xs };
+}
+
+/**
+ * How far west of the stream's middle the mill stands: turned (rot) so its long wall with the wheel faces
+ * the stream, the wheel (2.75 m out from its middle) turning in the water near the bank, the chute's open
+ * end upstream.
+ */
+const MILL_WHEEL = 4.3;
+
+/** The east line: the stream there in a village where it runs down the east; the stream-side fields line up against it. */
+const EAST_LINE = 40;
+/** Where a village whose stream runs elsewhere ends to the east (the worker's limit). */
+export const EAST_EDGE = 46;
+/** Gap between a stream-side field's right edge and the east line. */
 const STREAM_GAP = 7.5;
 
 /** The asphalt road there once was along the west of the first village (x of its centre line). */
@@ -86,7 +153,7 @@ export const REGIONS: Region[] = [
     map: { minX: -125, minZ: -280, maxZ: 60 },
     // Gardens beside the stream south of the house, highland meadows north of it; the mosque yard
     // and the roadside field to the west.
-    place: { 1: { z: -110 }, 2: { z: -80 }, 3: { z: -45 }, 4: { z: 0 }, 5: { z: -195 }, 6: { x: -50, z: -60 }, 7: { x: ASPHALT_X - 11.9, z: 0 }, 8: { z: -240 } },
+    place: { 1: { z: -110 }, 2: { z: -80 }, 3: { z: -45 }, 4: { z: 0 }, 5: { z: -195 }, 6: { x: -50, z: -60 }, 7: { x: ASPHALT_X - 11.9, z: 0 }, 8: { z: -240 }, 9: { x: -99, z: -182 }, 10: { x: -100, z: -136 } },
     slots: [
       { id: 101, x: -24, z: -100, w: 16, d: 18, theme: 'findik' },
       { id: 102, x: -29, z: 5, w: 20, d: 22, theme: 'findik' },
@@ -95,6 +162,12 @@ export const REGIONS: Region[] = [
     ],
     north: true,
     trunkEnd: 48,
+    // The stream down the empty ground west of the house, past the mosque, between the neighbour's
+    // garden and the roadside field; the track to Dere Yanı and Değirmen Önü crosses it on the stone
+    // bridge, the mill stands on its far bank.
+    stream: [{ x: -64, z: -340 }, { x: -67, z: -285 }, { x: -63, z: -248 }, { x: -68, z: -215 }, { x: -66, z: -188 }, { x: -69, z: -160 }, { x: -68, z: -132 }, { x: -72, z: -105 }, { x: -77, z: -70 }, { x: -82, z: -35 }, { x: -84, z: -5 }, { x: -84, z: 30 }, { x: -81, z: 70 }, { x: -79, z: 120 }],
+    bridge: { x: -69, z: -160, rot: 0, len: 11.6, width: 3.2, hump: 0.45, ramp: 2.2 },
+    mill: { x: -76, z: -117, rot: Math.PI / 2 },
     // The hill rises to the north, ever steeper (a few percent at the bottom, near 30 % up by the
     // meadows), gently to the west, with long low swells.
     ground: (x, z) => {
@@ -109,7 +182,7 @@ export const REGIONS: Region[] = [
     mosque: { x: -62, z: -82 },
     hut: null,
     map: { minX: -125, minZ: -190, maxZ: 70 },
-    place: { 9: { z: -95 }, 10: { z: -45 }, 11: { x: -52, z: -60 }, 12: { x: -100, z: 5 }, 13: { z: 12 } },
+    place: { 11: { z: -95 }, 12: { z: -45 }, 13: { x: -52, z: -60 }, 14: { x: -100, z: 5 }, 15: { z: 12 } },
     slots: [],
     north: false,
     trunkEnd: 52,
@@ -155,7 +228,7 @@ export function placement(lv: LevelDef): Pt {
   if (s) return { x: s.x, z: s.z };
   const p = r.place[lv.id] ?? { z: 0 };
   // Beside the stream unless placed elsewhere: its right edge STREAM_GAP short of the stream's line.
-  return { x: p.x ?? 40 - STREAM_GAP - lv.width / 2, z: p.z };
+  return { x: p.x ?? EAST_LINE - STREAM_GAP - lv.width / 2, z: p.z };
 }
 
 /** The lie of the land in a level's village. */
@@ -262,6 +335,40 @@ export function village(r: Region = REGIONS[0]): Village {
     }
     return best;
   };
+  if (r.bridge) {
+    // Over the stream: off the nearest track east of the bridge, across it, and on west a little to
+    // where the ways to the gardens beyond branch off. (No dirt ribbon on the bridge itself: its
+    // stones are the road there; the routes still run over it.)
+    const b = r.bridge;
+    // (On the stream's line where it crosses.)
+    b.x = streamX(b.z, r);
+    // The mill on the west bank.
+    if (r.mill) r.mill.x = streamX(r.mill.z, r) - MILL_WHEEL;
+    const ax = Math.cos(b.rot);
+    const az = -Math.sin(b.rot);
+    const east = { x: b.x + (ax * b.len) / 2, z: b.z + (az * b.len) / 2 };
+    const west = { x: b.x - (ax * b.len) / 2, z: b.z - (az * b.len) / 2 };
+    const from = nearestOnRoads({ x: east.x + 20 * ax, z: east.z + 20 * az });
+    const t = from.road[from.i];
+    const n = Math.max(24, Math.round(Math.hypot(east.x - t.x, east.z - t.z) * 1.3));
+    const approach = [t, ...bezier(t, { x: t.x - 10 * ax, z: t.z - 10 * az }, { x: east.x + 9 * ax, z: east.z + 9 * az }, east, n, 0.3, 5)];
+    addRoad('dirt', from.road, from.i, approach);
+    const deck: Pt[] = [];
+    for (let k = 1; k < Math.round(b.len / 0.8); k++) {
+      const u = k / Math.round(b.len / 0.8);
+      deck.push({ x: east.x + (west.x - east.x) * u, z: east.z + (west.z - east.z) * u });
+    }
+    const beyond = [west, ...bezier(west, { x: west.x - 6 * ax, z: west.z - 6 * az }, { x: west.x - 12 * ax, z: west.z + 1 }, { x: west.x - 17 * ax, z: west.z + 2 }, 24, 0.2, 9)];
+    roads.push({ kind: 'dirt', pts: beyond });
+    ways.set(beyond, { via: [...routeTo(approach, approach.length - 1), ...deck], at: 0 });
+  }
+  if (r.hut) {
+    // Up to the front of the highland hut, off the nearest track.
+    const front = { x: r.hut.x + 6, z: r.hut.z + 1 };
+    const from = nearestOnRoads(front);
+    const t = from.road[from.i];
+    addRoad('dirt', from.road, from.i, [t, ...bezier(t, { x: t.x - 4, z: t.z }, { x: front.x + 4, z: front.z }, front, 20, 0.2, 3)]);
+  }
   for (const lv of regionLevels(r)) {
     const fr = fieldRect(lv);
     const ex = entryX(lv);

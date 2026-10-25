@@ -1,11 +1,11 @@
 // Dev: first person with the trimmer, turning fast (as when dragging to look round), screenshots during
 // the turn to see whether the trimmer comes up in front of the eyes. Usage: node scripts/look-fpvturn.mjs [baseUrl]
 import puppeteer from 'puppeteer-core';
-import { findChrome } from './chrome.mjs';
+import { CHROME_ARGS, findChrome } from './chrome.mjs';
 
 const base = process.argv[2] ?? 'http://localhost:5173/';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const browser = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const browser = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: CHROME_ARGS });
 const page = await browser.newPage();
 await page.setViewport({ width: 400, height: 760 });
 page.on('pageerror', (e) => console.log('pageerror', e.message));

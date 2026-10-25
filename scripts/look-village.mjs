@@ -1,12 +1,12 @@
 // Dev: the whole village from above and a few places in it (load time and frame rate too).
 // Usage: node scripts/look-village.mjs [baseUrl] [level id] (default http://localhost:5173/, 1)
 import puppeteer from 'puppeteer-core';
-import { findChrome } from './chrome.mjs';
+import { CHROME_ARGS, findChrome } from './chrome.mjs';
 
 const base = process.argv[2] ?? 'http://localhost:5173/';
 const lvId = Number(process.argv[3] ?? 1);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const browser = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const browser = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: CHROME_ARGS });
 const page = await browser.newPage();
 await page.setViewport({ width: 700, height: 900 });
 page.on('pageerror', (e) => console.log('pageerror', e.message));

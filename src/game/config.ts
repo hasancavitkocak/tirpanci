@@ -73,21 +73,21 @@ export interface LevelDef {
 const GRANDPA: Client = { name: 'Dedem', face: 'dede', call: 'Torunum, bahçe ot bağladı. Bir biçiver, harçlığını veririm.', request: 'none', tip: 0 };
 
 export const LEVELS: LevelDef[] = [
-  { id: 1, name: 'Dedemin Bahçesi', place: 'Yeşilyamaç', theme: 'findik', weather: 'sunny', grass: 'taze', width: 14, depth: 15, rowGap: 6.5, plantGap: 5.6, stones: 3, slope: 0.8, bumps: 0.2, pay: 300, heat: 0.55, parTime: 110, seed: 11, stream: true, grassLoad: 0.7, client: GRANDPA },
+  { id: 1, name: 'Dedemin Bahçesi', place: 'Yeşilyamaç', theme: 'findik', weather: 'sunny', grass: 'taze', width: 14, depth: 15, rowGap: 6.5, plantGap: 5.6, stones: 3, slope: 0.8, bumps: 0.2, pay: 300, heat: 0.55, parTime: 110, seed: 11, grassLoad: 0.7, client: GRANDPA },
   {
-    id: 2, name: 'Yamaç Bahçe', place: 'Yeşilyamaç', theme: 'findik', weather: 'sunny', grass: 'taze', width: 16, depth: 18, rowGap: 6.5, plantGap: 5.4, stones: 5, slope: 3.5, bumps: 0.4, pay: 550, heat: 0.7, parTime: 190, seed: 23, stream: true, chickens: 4, banks: 1, grassLoad: 0.85,
+    id: 2, name: 'Yamaç Bahçe', place: 'Yeşilyamaç', theme: 'findik', weather: 'sunny', grass: 'taze', width: 16, depth: 18, rowGap: 6.5, plantGap: 5.4, stones: 5, slope: 3.5, bumps: 0.4, pay: 550, heat: 0.7, parTime: 190, seed: 23, chickens: 4, banks: 1, grassLoad: 0.85,
     client: { name: 'Hatice Teyze', face: 'teyze', call: 'Oğlum tavuklarım evin önünde geziyor, aman onları ürkütme ha!', request: 'chickens', tip: 120 },
   },
   {
-    id: 3, name: 'Dere Kenarı', place: 'Yeşilyamaç', theme: 'findik', weather: 'rain', grass: 'koyu', width: 20, depth: 24, rowGap: 6.5, plantGap: 5.4, stones: 9, slope: 5, bumps: 0.6, pay: 900, heat: 0.85, parTime: 320, seed: 37, stream: true, hose: true, giant: true,
+    id: 3, name: 'Ocaklı Bahçe', place: 'Yeşilyamaç', theme: 'findik', weather: 'rain', grass: 'koyu', width: 20, depth: 24, rowGap: 6.5, plantGap: 5.4, stones: 9, slope: 5, bumps: 0.6, pay: 900, heat: 0.85, parTime: 320, seed: 37, hose: true, giant: true,
     client: { name: 'Remzi Amca', face: 'remzi', call: 'Komşu inadına hortumunu yine bahçeme sermiş. Kesersen kavga çıkar, dikkat et!', request: 'hose', tip: 180 },
   },
   {
-    id: 4, name: 'Tepedeki Bahçe', place: 'Yeşilyamaç', theme: 'findik', weather: 'sunny', grass: 'kuru', width: 26, depth: 32, rowGap: 6.5, plantGap: 5.4, stones: 14, slope: 8.5, bumps: 0.85, pay: 1500, parTime: 560, seed: 53, stream: true, hives: 3, snakes: 2, giant: true, banks: 2,
+    id: 4, name: 'Tepedeki Bahçe', place: 'Yeşilyamaç', theme: 'findik', weather: 'sunny', grass: 'kuru', width: 26, depth: 32, rowGap: 6.5, plantGap: 5.4, stones: 14, slope: 8.5, bumps: 0.85, pay: 1500, parTime: 560, seed: 53, hives: 3, snakes: 2, giant: true, banks: 2,
     client: { name: 'Şükriye Teyze', face: 'sukriye', call: 'Ocaklar bu sene çok verimli, sakın dallarına vurma. Kovanlar da orada, dikkat!', request: 'no-knock', tip: 300 },
   },
   {
-    id: 5, name: 'Uzungöl Yaylası', place: 'Yeşilyamaç', theme: 'yayla', weather: 'fog', grass: 'cayir', width: 28, depth: 30, rowGap: 6, plantGap: 6, stones: 12, slope: 4, bumps: 0.8, pay: 1600, parTime: 500, seed: 71, stream: true, snakes: 3,
+    id: 5, name: 'Uzungöl Yaylası', place: 'Yeşilyamaç', theme: 'yayla', weather: 'fog', grass: 'cayir', width: 28, depth: 30, rowGap: 6, plantGap: 6, stones: 12, slope: 4, bumps: 0.8, pay: 1600, parTime: 500, seed: 71, snakes: 3,
     client: { name: 'Yayla Muhtarı', face: 'muhtar', call: 'Hayvanlar inmeden çayırı biçmen lazım, akşama yetiştir!', request: 'fast', tip: 250 },
   },
   {
@@ -99,28 +99,38 @@ export const LEVELS: LevelDef[] = [
     client: { name: 'Belediye', face: 'belediye', call: 'Yol kenarı tertemiz olacak, denetime geliyorlar. Ot kalmasın!', request: 'clean', tip: 260 },
   },
   {
-    id: 8, name: 'Kovanlı Yayla', place: 'Yeşilyamaç', theme: 'yayla', weather: 'sunny', grass: 'cayir', width: 32, depth: 34, rowGap: 6, plantGap: 6, stones: 16, slope: 8, bumps: 1, pay: 2000, parTime: 760, seed: 89, stream: true, hives: 6, snakes: 2, banks: 3,
+    id: 8, name: 'Kovanlı Yayla', place: 'Yeşilyamaç', theme: 'yayla', weather: 'sunny', grass: 'cayir', width: 32, depth: 34, rowGap: 6, plantGap: 6, stones: 16, slope: 8, bumps: 1, pay: 2000, parTime: 760, seed: 89, hives: 6, snakes: 2, banks: 3,
     client: { name: 'Arıcı Kemal', face: 'arici', call: 'Kovanların yanında motoru bağırtma, arılar kızar. Sokulursan karışmam!', request: 'bees', tip: 350 },
+  },
+  // Across the stream west of the house, over the stone bridge: the stream-side garden, and the
+  // one in front of the mill.
+  {
+    id: 9, name: 'Dere Yanı', place: 'Yeşilyamaç', theme: 'findik', weather: 'sunny', grass: 'taze', width: 20, depth: 20, rowGap: 6.5, plantGap: 5.4, stones: 11, slope: 3, bumps: 0.5, pay: 2050, parTime: 470, seed: 91, chickens: 3, banks: 1,
+    client: { name: 'Fadime Teyze', face: 'teyze', call: 'Evladım, köprünün öte yanındaki bahçem ot içinde. Dereden geçerken dikkat et!', request: 'clean', tip: 280 },
+  },
+  {
+    id: 10, name: 'Değirmen Önü', place: 'Yeşilyamaç', theme: 'findik', weather: 'evening', grass: 'koyu', width: 22, depth: 18, rowGap: 6.5, plantGap: 5.4, stones: 13, slope: 2.5, bumps: 0.6, pay: 2200, parTime: 520, seed: 97, hose: true, giant: true,
+    client: { name: 'Değirmenci Rıza', face: 'dede', call: 'Değirmenin önü çalı bağladı, un çuvallarını taşıyamıyoruz. Akşam olmadan bitir!', request: 'fast', tip: 320 },
   },
   // Karadere, the village beyond: bigger fields, heavier work.
   {
-    id: 9, name: 'Değirmen Bahçesi', place: 'Karadere', region: 2, theme: 'findik', weather: 'rain', grass: 'koyu', width: 24, depth: 28, rowGap: 6.5, plantGap: 5.4, stones: 12, slope: 6, bumps: 0.7, pay: 2300, parTime: 430, seed: 101, stream: true, banks: 1, giant: true,
+    id: 11, name: 'Değirmen Bahçesi', place: 'Karadere', region: 2, theme: 'findik', weather: 'rain', grass: 'koyu', width: 24, depth: 28, rowGap: 6.5, plantGap: 5.4, stones: 12, slope: 6, bumps: 0.7, pay: 2300, parTime: 430, seed: 101, stream: true, banks: 1, giant: true,
     client: { name: 'Değirmenci Hüseyin', face: 'remzi', call: 'Değirmenin yanındaki bahçe ot içinde kaldı. Yağmur durmuyor ama iş beklemez!', request: 'clean', tip: 300 },
   },
   {
-    id: 10, name: 'Köprübaşı', place: 'Karadere', region: 2, theme: 'findik', weather: 'sunny', grass: 'taze', width: 28, depth: 32, rowGap: 6.5, plantGap: 5.4, stones: 14, slope: 5, bumps: 0.6, pay: 2700, parTime: 560, seed: 113, stream: true, chickens: 5, hose: true,
+    id: 12, name: 'Köprübaşı', place: 'Karadere', region: 2, theme: 'findik', weather: 'sunny', grass: 'taze', width: 28, depth: 32, rowGap: 6.5, plantGap: 5.4, stones: 14, slope: 5, bumps: 0.6, pay: 2700, parTime: 560, seed: 113, stream: true, chickens: 5, hose: true,
     client: { name: 'Nazife Teyze', face: 'teyze', call: 'Tavuklarım köprünün dibinde gezer, komşunun hortumu da orada. İkisine de dikkat et oğlum.', request: 'chickens', tip: 350 },
   },
   {
-    id: 11, name: 'Karadere Mezarlığı', place: 'Karadere', region: 2, theme: 'mezarlik', weather: 'sunny', grass: 'koyu', width: 28, depth: 26, rowGap: 3, plantGap: 2.2, stones: 8, slope: 2, bumps: 0.2, pay: 2500, parTime: 660, seed: 127,
+    id: 13, name: 'Karadere Mezarlığı', place: 'Karadere', region: 2, theme: 'mezarlik', weather: 'sunny', grass: 'koyu', width: 28, depth: 26, rowGap: 3, plantGap: 2.2, stones: 8, slope: 2, bumps: 0.2, pay: 2500, parTime: 660, seed: 127,
     client: { name: 'Karadere İmamı', face: 'imam', call: 'Bayram geliyor, kabristan tertemiz olmalı. Taşlara dokunma evladım.', request: 'no-knock', tip: 400 },
   },
   {
-    id: 12, name: 'Uzun Tarla', place: 'Karadere', region: 2, theme: 'yol', weather: 'fog', grass: 'kuru', width: 12, depth: 70, rowGap: 8, plantGap: 8, stones: 34, slope: 4, bumps: 0.4, pay: 2600, parTime: 600, seed: 131, giant: true,
+    id: 14, name: 'Uzun Tarla', place: 'Karadere', region: 2, theme: 'yol', weather: 'fog', grass: 'kuru', width: 12, depth: 70, rowGap: 8, plantGap: 8, stones: 34, slope: 4, bumps: 0.4, pay: 2600, parTime: 600, seed: 131, giant: true,
     client: { name: 'Karadere Muhtarı', face: 'muhtar', call: 'Uzun tarla baştan sona ot doldu. Sis var ama bugün bitmesi lazım!', request: 'fast', tip: 380 },
   },
   {
-    id: 13, name: 'Büyük Bahçe', place: 'Karadere', region: 2, theme: 'findik', weather: 'sunny', grass: 'kuru', width: 30, depth: 40, rowGap: 6.5, plantGap: 5.4, stones: 22, slope: 9, bumps: 0.9, pay: 3600, parTime: 900, seed: 149, stream: true, hives: 4, snakes: 3, banks: 2, giant: true,
+    id: 15, name: 'Büyük Bahçe', place: 'Karadere', region: 2, theme: 'findik', weather: 'sunny', grass: 'kuru', width: 30, depth: 40, rowGap: 6.5, plantGap: 5.4, stones: 22, slope: 9, bumps: 0.9, pay: 3600, parTime: 900, seed: 149, stream: true, hives: 4, snakes: 3, banks: 2, giant: true,
     client: { name: 'Arıcı Cemal', face: 'arici', call: 'Kardeşim Kemal sana güveniyor, ben de güveniyorum. Bahçe büyük, kovanlar dört tane, yılan da çıkar. Kolay gelsin!', request: 'bees', tip: 500 },
   },
 ];

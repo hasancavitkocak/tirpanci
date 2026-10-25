@@ -1,11 +1,11 @@
 // Dev check: an extra bought can be taken off (ÇIKAR) and put back (TAK); a yard decoration can be taken
 // away (KALDIR) and put back (EKLE); neither asks to pay again. Usage: node scripts/check-takeoff.mjs [baseUrl]
 import puppeteer from 'puppeteer-core';
-import { findChrome } from './chrome.mjs';
+import { CHROME_ARGS, findChrome } from './chrome.mjs';
 
 const base = process.argv[2] ?? 'http://localhost:5173/';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const browser = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const browser = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: CHROME_ARGS });
 const page = await browser.newPage();
 await page.setViewport({ width: 412, height: 842 });
 const errors = [];

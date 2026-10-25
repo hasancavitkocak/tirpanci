@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { bridgeGroup, turnMillWheel } from './bridge';
 import { Field, STREAM } from '../game/field';
 import { Models, fitted } from './models';
 import { backpackPart, cutTriangles, isBakedLine, isEngine, prepare } from './trimmerRig';
@@ -18,6 +19,11 @@ import { clothesline, depotGroup, flowerPots, gazebo, haystackGroup, houseGroup,
 
 /** How far the terrain extends beyond the village on each side. */
 const MARGIN = 45;
+/**
+ * The view from the seat (first person, driving): the eye over the seat (m) and behind it, and how far
+ * the look is tipped down (the y of a unit look ahead), so the steering wheel shows at the bottom.
+ */
+export const DRIVER_EYE = { up: 0.95, back: 0.32, down: 0.42 };
 
 /** The yard's bank round its levelled ground (a share of its radius), and the hill's lean left in it. */
 const PLATEAU_BANK = 1.6;
@@ -100,7 +106,7 @@ export function laneSurface(f: Field, x: number, z: number, r: number, base: num
 
 /** The rectangle the terrain covers: the village and a margin round it (field coordinates). */
 function terrainRect(f: Field): { minX: number; maxX: number; minZ: number; maxZ: number } {
-  return { minX: f.map.minX - MARGIN, maxX: f.streamX(0) + MARGIN, minZ: f.map.minZ - MARGIN, maxZ: f.map.maxZ + MARGIN };
+  return { minX: f.map.minX - MARGIN, maxX: f.eastLimit(0) + MARGIN, minZ: f.map.minZ - MARGIN, maxZ: f.map.maxZ + MARGIN };
 }
 
 function terrain(f: Field, cut: THREE.Texture, lane: LaneView): THREE.Mesh {
@@ -111,7 +117,10 @@ function terrain(f: Field, cut: THREE.Texture, lane: LaneView): THREE.Mesh {
   g.rotateX(-Math.PI / 2);
   g.translate((r.minX + r.maxX) / 2, 0, (r.minZ + r.maxZ) / 2);
   const p = g.getAttribute('position');
+  // (Down into the stream under its bridge: the bridge's walkway is not ground.)
+  f.noDeck = true;
   for (let i = 0; i < p.count; i++) p.setY(i, worldHeight(f, p.getX(i), p.getZ(i)));
+  f.noDeck = false;
   g.computeVertexNormals();
   // Pushed back in depth: the fine rutted tracks and the stream bed laid on it (a few centimetres lower
   // where its 2 m triangles cut across their ruts and banks) must not be covered by it.
@@ -121,6 +130,14 @@ function terrain(f: Field, cut: THREE.Texture, lane: LaneView): THREE.Mesh {
   // Made once (not in onBeforeCompile, which runs for every program), freed with the material.
   const laneMask = lane.mask();
   if (laneMask) mat.addEventListener('dispose', () => laneMask.tex.dispose());
+  // The stream's line (Field.streamX) down the terrain, tabled: its x every metre of z from r.minZ.
+  const sn = Math.ceil(d) + 2;
+  const sxs = new Float32Array(sn);
+  for (let i = 0; i < sn; i++) sxs[i] = f.streamX(r.minZ + i);
+  const streamTex = new THREE.DataTexture(sxs, sn, 1, THREE.RedFormat, THREE.FloatType);
+  streamTex.minFilter = streamTex.magFilter = THREE.NearestFilter;
+  streamTex.needsUpdate = true;
+  mat.addEventListener('dispose', () => streamTex.dispose());
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.uCut = { value: cut };
     sh.uniforms.uGrass = { value: tex?.grass ?? null };
@@ -128,15 +145,16 @@ function terrain(f: Field, cut: THREE.Texture, lane: LaneView): THREE.Mesh {
     sh.uniforms.uField = { value: new THREE.Vector4(-f.width / 2, -f.depth / 2, 1 / f.width, 1 / f.depth) };
     sh.uniforms.uLaneMask = { value: laneMask?.tex ?? null };
     sh.uniforms.uLaneBox = { value: laneMask?.box ?? new THREE.Vector4(0, 0, 0, 0) };
-    sh.uniforms.uStream = { value: new THREE.Vector3(f.origin.x, f.origin.z, STREAM.width * 0.62 + 0.4) };
+    sh.uniforms.uStreamX = { value: streamTex };
+    sh.uniforms.uStream = { value: new THREE.Vector3(r.minZ, streamTex.image.width, STREAM.width * 0.62 + 0.4) };
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec2 vWXZ;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWXZ = (modelMatrix * vec4(transformed, 1.0)).xz;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', (PAINTED_GROUND ? MEADOW_PATCHES : '') + '#include <common>\nvarying vec2 vWXZ;\nuniform sampler2D uCut;\nuniform vec4 uField;\nuniform sampler2D uGrass;\nuniform sampler2D uSoil;\nuniform sampler2D uLaneMask;\nuniform vec4 uLaneBox;\nuniform vec3 uStream;')
+      .replace('#include <common>', (PAINTED_GROUND ? MEADOW_PATCHES : '') + '#include <common>\nvarying vec2 vWXZ;\nuniform sampler2D uCut;\nuniform vec4 uField;\nuniform sampler2D uGrass;\nuniform sampler2D uSoil;\nuniform sampler2D uLaneMask;\nuniform vec4 uLaneBox;\nuniform vec3 uStream;\nuniform sampler2D uStreamX;')
       // Not drawn under the tracks' middles, nor under the stream's water (the coarse triangles cut
-      // across its carved bank and would cover the bed; the line is villageStreamX's).
-      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nvec2 luv = (vWXZ - uLaneBox.xy) * uLaneBox.zw;\nif (uLaneBox.z > 0.0 && luv.x > 0.0 && luv.x < 1.0 && luv.y > 0.0 && luv.y < 1.0 && texture2D(uLaneMask, luv).r > 0.5) discard;\nfloat sz = uStream.y + vWXZ.y;\nif (abs(vWXZ.x - (40.0 + sin(sz * 0.09 + 1.0) * 2.2 + sin(sz * 0.23) * 0.7 - uStream.x)) < uStream.z) discard;')
+      // across its carved bank and would cover the bed; its line from uStreamX, between its samples).
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nvec2 luv = (vWXZ - uLaneBox.xy) * uLaneBox.zw;\nif (uLaneBox.z > 0.0 && luv.x > 0.0 && luv.x < 1.0 && luv.y > 0.0 && luv.y < 1.0 && texture2D(uLaneMask, luv).r > 0.5) discard;\nfloat sq = clamp(vWXZ.y - uStream.x, 0.0, uStream.y - 2.0);\nfloat sx = mix(texture2D(uStreamX, vec2((floor(sq) + 0.5) / uStream.y, 0.5)).r, texture2D(uStreamX, vec2((floor(sq) + 1.5) / uStream.y, 0.5)).r, fract(sq));\nif (abs(vWXZ.x - sx) < uStream.z) discard;')
       .replace(
         '#include <color_fragment>',
         /* glsl */ `#include <color_fragment>
@@ -227,7 +245,8 @@ export class WorldView {
     const r = this.patRig;
     if (!r) return false;
     r.kasa.updateMatrixWorld(true);
-    eye.set(0, r.seatY + 0.82, this.field.dims.seat - 0.05).applyMatrix4(r.kasa.matrixWorld);
+    // A little behind and over where the driver's eyes are, so the steering wheel is in view below.
+    eye.set(0, r.seatY + DRIVER_EYE.up, this.field.dims.seat - DRIVER_EYE.back).applyMatrix4(r.kasa.matrixWorld);
     ahead.set(0, 0, 1).transformDirection(r.kasa.matrixWorld);
     return true;
   }
@@ -244,6 +263,8 @@ export class WorldView {
   }
   readonly bushes: THREE.Object3D[] = [];
   private readonly stream: StreamView | null = null;
+  /** The bridge and the mill (its wheel turns in update). */
+  private bridge: THREE.Group | null = null;
   /** The highest level id the player may take on (for the padlocks on the other fields' boards). */
   static unlockedUpTo = 99;
   /** The pat pat's paint (hue 0..1, null = its own blue) and the yard decorations bought. */
@@ -370,9 +391,12 @@ export class WorldView {
     }
 
     // The village's stream (beside this field or further off).
+    // (The water, its bed and stones on the ground under the bridge, not on its walkway.)
+    f.noDeck = true;
     this.stream = PAINTED_GROUND
       ? new StreamView(f, (x, z) => worldHeight(f, x, z), look.sunDir, paintedStoneGeometry(9), new THREE.MeshLambertMaterial({ vertexColors: true }))
       : new StreamView(f, (x, z) => worldHeight(f, x, z), look.sunDir, stoneGeometry(), mat);
+    f.noDeck = false;
     g.add(this.stream.group);
 
     // Bramble patches
@@ -462,6 +486,10 @@ export class WorldView {
       hut.rotation.y = 0.6;
       g.add(hut);
     }
+    // The bridge over the stream and the mill on its bank.
+    const bridge = bridgeGroup(f, models.bridge?.[0], models.mill?.[0]);
+    if (bridge) g.add(bridge);
+    this.bridge = bridge;
     // The other fields, the cobbled road to the mosque, the village's name board.
     const at = (x: number, z: number) => worldHeight(f, x, z);
     // Low quality (fewest trees) draws the other fields without their bushes.
@@ -624,6 +652,7 @@ export class WorldView {
 
   update(dt: number, time: number, playerX: number, playerZ: number, camera: THREE.Vector3 | null, fpv = false): void {
     this.stream?.update(time);
+    turnMillWheel(this.bridge, time);
     this.field.brambles.forEach((b, i) => {
       const o = this.brambles[i];
       // Cut down from the top and thinned out as the line chews through it.

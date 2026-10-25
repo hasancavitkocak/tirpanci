@@ -1,6 +1,6 @@
 // Emulator test 2: driving up to a locked field (job 3, with job 2 locked before it) by touch:
 // BÖLÜMÜ AÇ shows with both jobs' price; short of money it points to the store; with money it opens both.
-import { alive, allOk, at, check, connect, dragAsync, game, inJob, shot, sleep, tap } from './lib.mjs';
+import { alive, allOk, at, check, connect, game, holdAsync, inJob, shot, sleep, tap } from './lib.mjs';
 
 const { browser, page } = await connect();
 const W = (fn, t, ...a) => page.waitFor(fn, t, ...a);
@@ -22,14 +22,16 @@ await game(page, () => {
   v.art = 0;
   v.speed = 0;
   if (!s.driving) {
+    // (The trimmer's engine stopped: an earlier test may have left it running, and no getting on then.)
+    s.running = false;
     s.x = v.x + 1.4;
     s.z = v.z;
     s.board();
   }
 });
 await sleep(1000);
-// Driven up to it: the stick pushed up on the right half.
-const going = dragAsync(800, 1700, 800, 1520, 4000);
+// Driven up to it: the gas pedal held.
+const going = await holdAsync(page, '#pedal-gas', 4000);
 const seen = await W(() => !!document.querySelector('[data-id="unlock"]'), 6000);
 await going;
 check('BÖLÜMÜ AÇ shows driving up to the locked gate', seen);

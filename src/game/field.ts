@@ -1,6 +1,6 @@
 import { BRAMBLE, BUSH_KINDS, BushKind, CELL, CUT_HEIGHT, HIVE, HOSE, LevelDef, MOWN_AT, PATPAT, SLOPE, TRACTOR, VehicleDims, TRAILER, GARAGE } from './config';
 import { makeNoise, makeRng } from './rng';
-import { ASPHALT_X, Pt, Region, RoadKind, entryX, fieldRect, placement, regionLevels, regionOf, streamX as villageStreamX, village } from './village';
+import { ASPHALT_X, Bridge, EAST_EDGE, deckRise, Pt, Region, RoadKind, entryX, fieldRect, placement, regionLevels, regionOf, streamX as villageStreamX, village } from './village';
 
 export interface Bush {
   kind: BushKind;
@@ -126,6 +126,7 @@ function polyDist(x: number, z: number, pts: Pt[]): number {
   return d;
 }
 
+
 function segDist(px: number, pz: number, ax: number, az: number, bx: number, bz: number): number {
   const dx = bx - ax;
   const dz = bz - az;
@@ -184,6 +185,15 @@ export class Field {
   readonly fences: { ax: number; az: number; bx: number; bz: number }[] = [];
   /** The village this field is in. */
   readonly region: Region;
+  /** The stone bridge over the stream and the mill beside it, in this field's coordinates (null: none). */
+  readonly bridge: Bridge | null;
+  readonly mill: (Pt & { rot: number }) | null;
+  /** The stream runs down the village's east edge (its stream-side fields open onto it); else elsewhere. */
+  readonly streamEast: boolean;
+  /** While building the terrain's mesh: the ground without the bridge's walkway on it (it spans the stream). */
+  noDeck = false;
+  /** The bridge's walkway at its ends (the banks' ground there), worked out once. */
+  private deckEnds: [number, number] | null = null;
   /** The mosque above its graveyard and the highland hut if there is one (solid), field coordinates. */
   readonly mosque: Pt;
   readonly hut: Pt | null;
@@ -257,6 +267,7 @@ export class Field {
     this.width = level.width;
     this.depth = level.depth;
     this.bumps = level.bumps;
+    this.streamEast = !regionOf(level).stream;
     this.hasStream = !!level.stream;
     this.origin = placement(level);
     const O = this.origin;
@@ -267,6 +278,10 @@ export class Field {
     this.region = regionOf(level);
     const R = this.region;
     this.map = { minX: R.map.minX - O.x, minZ: R.map.minZ - O.z, maxZ: R.map.maxZ - O.z };
+    // (village() puts the bridge on the stream's line first.)
+    village(R);
+    this.bridge = R.bridge ? { ...R.bridge, ...local(R.bridge) } : null;
+    this.mill = R.mill ? { ...R.mill, ...local(R.mill) } : null;
     this.noise = makeNoise(level.seed * 7 + 1);
     const nb = level.banks ?? 0;
     for (let i = 1; i <= nb; i++) this.banks.push(-this.depth / 2 + (this.depth * i) / (nb + 1) + ((i * 37) % 5) - 2);
@@ -407,6 +422,11 @@ export class Field {
   height(x: number, z: number): number {
     const O = this.origin;
     let h = this.region.ground(O.x + x, O.z + z) - this.streamCarve(x, z);
+    // On the bridge: its walkway (the terrain under it goes on down into the stream).
+    if (!this.noDeck) {
+      const d = this.bridgeDeck(x, z);
+      if (d !== null) return Math.max(h, d);
+    }
     // Lumps and banks belong to the field and its surroundings, not to the whole village.
     const out = Math.hypot(Math.max(0, Math.abs(x) - this.width / 2), Math.max(0, Math.abs(z) - this.depth / 2));
     if (out < 12) {
@@ -429,14 +449,49 @@ export class Field {
     return { g, dx: g > 1e-6 ? -gx / g : 0, dz: g > 1e-6 ? -gz / g : 0 };
   }
 
-  /** x of the stream centre at z (the village's stream, down the east side). */
+  /** x of the stream centre at z (the village's stream: Region.stream). */
   streamX(z: number): number {
-    return villageStreamX(this.origin.z + z) - this.origin.x;
+    return villageStreamX(this.origin.z + z, this.region) - this.origin.x;
+  }
+
+  /** How far east the worker may go at z: the stream's far bank where it runs down the east, else the village's edge. */
+  eastLimit(z: number): number {
+    return this.streamEast ? this.streamX(z) + STREAM.width / 2 + 0.85 : EAST_EDGE - this.origin.x;
   }
 
   /** Distance from a point to the stream centre line (rough). */
   streamDistance(x: number, z: number): number {
     return Math.abs(x - this.streamX(z));
+  }
+
+  /**
+   * The bridge's walkway height at a point on it (null off it): from bank to bank, up its end ramps to
+   * its level middle (deckRise; the model is fitted to it: see render/bridge.ts).
+   */
+  bridgeDeck(x: number, z: number): number | null {
+    const b = this.bridge;
+    if (!b) return null;
+    const ax = Math.cos(b.rot);
+    const az = -Math.sin(b.rot);
+    const u = (x - b.x) * ax + (z - b.z) * az;
+    const v = (x - b.x) * -az + (z - b.z) * ax;
+    if (Math.abs(u) > b.len / 2 || Math.abs(v) > b.width / 2 + 0.25) return null;
+    const [w, e] = (this.deckEnds ??= this.bridgeEnds());
+    const t = u / b.len + 0.5;
+    return w + (e - w) * t + deckRise(b, u);
+  }
+
+  /** The ground just off the bridge's west and east ends (where the track meets it: the walkway starts level with it). */
+  bridgeEnds(): [number, number] {
+    const b = this.bridge!;
+    const ax = Math.cos(b.rot);
+    const az = -Math.sin(b.rot);
+    const keep = this.noDeck;
+    this.noDeck = true;
+    const at = (s: number) => this.height(b.x + s * ax * (b.len / 2 + 0.3), b.z + s * az * (b.len / 2 + 0.3));
+    const ends: [number, number] = [at(-1), at(1)];
+    this.noDeck = keep;
+    return ends;
   }
 
   private stonesCache: { x: number; z: number; s: number; rot: number }[] | null = null;
@@ -451,15 +506,17 @@ export class Field {
     const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
     for (let z = this.map.minZ - 38; z < this.map.maxZ + 40; z += 0.6 + rnd() * 1.1) {
       const x = this.streamX(z) + (rnd() - 0.5) * STREAM.width * 1.6;
-      const s = rnd() < 0.18 ? 0.35 + rnd() * 0.4 : 0.12 + rnd() * 0.25;
+      let s = rnd() < 0.18 ? 0.35 + rnd() * 0.4 : 0.12 + rnd() * 0.25;
+      // No boulders where a track fords it or under the bridge (they would stop the pat pat there).
+      if (s > 0.3 && (this.roadDistance(x, z) < 4 || (this.bridge && Math.hypot(x - this.bridge.x, z - this.bridge.z) < this.bridge.len / 2 + 2))) s = 0.2;
       out.push({ x, z, s, rot: rnd() * 6 });
     }
     return (this.stonesCache = out);
   }
 
-  /** Standing in the water. */
+  /** Standing in the water (on the bridge, not). */
   inWater(x: number, z: number): boolean {
-    return this.streamDistance(x, z) < STREAM.width / 2;
+    return this.streamDistance(x, z) < STREAM.width / 2 && this.bridgeDeck(x, z) === null;
   }
 
   /** How much the terrain is lowered at (x, z) for the stream bed (0 away from it). */
@@ -487,9 +544,9 @@ export class Field {
     return STREAM.depth * t * t * (3 - 2 * t);
   }
 
-  /** How far the worker may go: the village's ends, its west edge and the stream's far bank. */
+  /** How far the worker may go: the village's ends, its west edge and its east one (eastLimit). */
   bounds(z: number): { minX: number; maxX: number; minZ: number; maxZ: number } {
-    return { minX: this.map.minX, maxX: this.streamX(z) + STREAM.width / 2 + 0.85, minZ: this.map.minZ, maxZ: this.map.maxZ };
+    return { minX: this.map.minX, maxX: this.eastLimit(z), minZ: this.map.minZ, maxZ: this.map.maxZ };
   }
 
   /** Distance from a point to the middle of the nearest dirt track (Infinity far from them all). */
@@ -877,16 +934,7 @@ export class Field {
    * or into the walled mosque yard.
    */
   vehicleFits(x: number, z: number, yaw: number, art = this.vehicle.art): boolean {
-    const v = this.vehicle;
-    const h = this.head(x, z, yaw, art);
-    // The trailer, and the head from its pin to its nose (centred a little ahead of its axle).
-    const hl = this.dims.headAxle + this.dims.headFront;
-    const hc = this.dims.headFront - hl / 2;
-    const bodies = [
-      { x, z, yaw, length: v.length, width: v.width },
-      { x: h.x + Math.sin(h.yaw) * hc, z: h.z + Math.cos(h.yaw) * hc, yaw: h.yaw, length: hl, width: 1.4 },
-    ];
-    for (const b of bodies) {
+    for (const b of this.vehicleBodies(x, z, yaw, art)) {
       const fx = Math.sin(b.yaw);
       const fz = Math.cos(b.yaw);
       for (const t of [-0.5, -0.25, 0, 0.25, 0.5]) {
@@ -896,6 +944,35 @@ export class Field {
       }
     }
     return true;
+  }
+
+  /**
+   * The pat pat's two boxes for a trailer at (x, z, yaw) with the head turned by `art`: the trailer, and
+   * the head from its pin to its nose (centred a little ahead of its axle).
+   */
+  vehicleBodies(x: number, z: number, yaw: number, art: number): { x: number; z: number; yaw: number; length: number; width: number }[] {
+    const v = this.vehicle;
+    const h = this.head(x, z, yaw, art);
+    const hl = this.dims.headAxle + this.dims.headFront;
+    const hc = this.dims.headFront - hl / 2;
+    return [
+      { x, z, yaw, length: v.length, width: v.width },
+      { x: h.x + Math.sin(h.yaw) * hc, z: h.z + Math.cos(h.yaw) * hc, yaw: h.yaw, length: hl, width: 1.4 },
+    ];
+  }
+
+  /** How far a point is from the vehicle where it stands: from the nearest edge of its boxes (0 on or inside it). */
+  vehicleGap(px: number, pz: number): number {
+    const v = this.vehicle;
+    let gap = Infinity;
+    for (const b of this.vehicleBodies(v.x, v.z, v.yaw, v.art)) {
+      const dx = px - b.x;
+      const dz = pz - b.z;
+      const along = Math.abs(dx * Math.sin(b.yaw) + dz * Math.cos(b.yaw)) - b.length / 2;
+      const across = Math.abs(dx * Math.cos(b.yaw) - dz * Math.sin(b.yaw)) - b.width / 2;
+      gap = Math.min(gap, Math.hypot(Math.max(0, along), Math.max(0, across)));
+    }
+    return gap;
   }
 
   /** A point of the pat pat may be here. */

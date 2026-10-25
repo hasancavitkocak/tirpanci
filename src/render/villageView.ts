@@ -443,7 +443,8 @@ export function villageTrees(f: Field, heightAt: Height, count: number): THREE.G
   const spots: { x: number; z: number }[] = [];
   const free = (x: number, z: number, roadGap: number) => {
     if (x < f.map.minX + 3 || z < f.map.minZ + 3 || z > f.map.maxZ - 3) return false;
-    if (f.streamDistance(x, z) < 5 || x > f.streamX(z)) return false;
+    // (Beyond the east edge, where the stream runs elsewhere, the woods go on a little.)
+    if (f.streamDistance(x, z) < 5 || x > f.eastLimit(z) + (f.streamEast ? -1 : 12)) return false;
     if (f.roadDistance(x, z) < roadGap) return false;
     if (Math.hypot(x - f.plateau.x, z - f.plateau.z) < f.plateau.r + 5) return false;
     if (Math.hypot(x - f.mosque.x, z - f.mosque.z) < 12 || (f.hut && Math.hypot(x - f.hut.x, z - f.hut.z) < 7)) return false;
@@ -452,7 +453,7 @@ export function villageTrees(f: Field, heightAt: Height, count: number): THREE.G
     if (f.others.some((o) => inRect(o, 6))) return false;
     return !spots.some((s) => Math.hypot(s.x - x, s.z - z) < 7);
   };
-  const xMax = f.streamX(0);
+  const xMax = f.eastLimit(0) + (f.streamEast ? 0 : 12);
   for (let tries = 0; spots.length < count && tries < count * 30; tries++) {
     const x = f.map.minX + rnd() * (xMax - f.map.minX);
     const z = f.map.minZ + rnd() * (f.map.maxZ - f.map.minZ);

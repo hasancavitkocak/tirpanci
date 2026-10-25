@@ -4,17 +4,16 @@
 //  - The worker sits on the tractor's seat (hips on the cushion, not floating or sunk).
 //  - Its sound: only the tractor's own recording plays (not the pat pat's, nor its gear clunk); the
 //    loops loaded are the diesel tractor's (idle, mid, high: cut-traktor2.py).
-//  - Out of the garage with the stick; KAPIYI AÇ by the gate (it swings out of the yard); the
+//  - Out of the garage on the gas pedal; KAPIYI AÇ by the gate (it swings out of the yard); the
 //    tractor and the trailer through it; the trailer stays on its hitch.
 //  - Over a stream boulder (the pat pat stops at them, the tractor climbs them).
 //  - Messages never over the objective, the buttons or the hints; the controls' how-to in the settings.
-import { alive, allOk, check, connect, dragAsync, game, inJob, shot, sleep, tap } from './lib.mjs';
+import { alive, allOk, check, connect, game, holdAsync, inJob, shot, sleep, tap } from './lib.mjs';
 
 const { browser, page } = await connect();
 const W = (fn, t, ...a) => page.waitFor(fn, t, ...a);
-// The stick (right half): up = gas, sideways = steer.
-const STICK = { x: 800, y: 1700 };
-const stick = (dx, dy, ms) => dragAsync(STICK.x, STICK.y, STICK.x + dx, STICK.y + dy, ms);
+// The gas pedal (bottom right) held for ms; started without waiting.
+const gas = (ms) => holdAsync(page, '#pedal-gas', ms);
 
 await game(page, () => {
   const g = window.__game;
@@ -84,6 +83,8 @@ check('the tractor waits in the garage', parked.inside);
 await game(page, () => {
   const s = window.__game.session;
   const v = s.field.vehicle;
+  // (The trimmer's engine stopped: an earlier test may have left it running, and no getting on then.)
+  s.running = false;
   s.x = v.x + 1.6;
   s.z = v.z + 1;
 });
@@ -135,7 +136,7 @@ check('the tractor recording runs', snd.tractor);
 check('no pat pat sound: neither its recording nor the drawn engine', !snd.patpat && !snd.drawn);
 check('the diesel tractor recording is the one loaded (idle, mid, high), no gear clunk', snd.loops.length === 3 && Math.abs(snd.loops[0] - 9.9) < 0.1 && !snd.gear, `loops ${snd.loops.join(' / ')} s, gear clunk ${snd.gear}`);
 
-// ---- Out of the garage with the stick.
+// ---- Out of the garage on the gas pedal.
 const pos = () => game(page, () => {
   const f = window.__game.session.field;
   const v = f.vehicle;
@@ -146,7 +147,7 @@ const pos = () => game(page, () => {
   return { x: v.x, z: v.z, speed: v.speed, gate: f.gateOpen, gd: Math.hypot(v.x - (yg.ax + yg.bx) / 2, v.z - (yg.az + yg.bz) / 2), hitch: a ? Math.hypot(h.x - a.x, h.z - a.z) : -1, out: Math.hypot(v.x - p.x, v.z - p.z), trailerOut: a ? Math.hypot(a.x - p.x, a.z - p.z) : -1, r: p.r };
 });
 const p0 = await pos();
-const driving = stick(0, -180, 3000);
+const driving = await gas(3000);
 let heard = { patpat: false, drawn: false, tractor: true };
 for (let i = 0; i < 8; i++) {
   await sleep(300);
@@ -155,7 +156,7 @@ for (let i = 0; i < 8; i++) {
 }
 await driving;
 const p1 = await pos();
-check('stick up: out of the garage', Math.hypot(p1.x - p0.x, p1.z - p0.z) > 3, `${Math.hypot(p1.x - p0.x, p1.z - p0.z).toFixed(1)} m`);
+check('gas pedal: out of the garage', Math.hypot(p1.x - p0.x, p1.z - p0.z) > 3, `${Math.hypot(p1.x - p0.x, p1.z - p0.z).toFixed(1)} m`);
 check('pulling away: still only the tractor heard', heard.tractor && !heard.patpat && !heard.drawn, JSON.stringify(heard));
 check('the trailer stays on its hitch', Math.abs(p1.hitch - 3) < 0.01, p1.hitch.toFixed(3));
 shot('emu-tr-out-of-garage');
@@ -198,7 +199,7 @@ const swing = await game(page, () => {
 });
 check('it swung out of the yard', swing.end > swing.post + 2, `leaf end ${swing.end.toFixed(1)} m from the middle, posts ${swing.post.toFixed(1)} m`);
 shot('emu-tr-gate-open');
-await stick(0, -180, 5000);
+await (await gas(5000));
 await sleep(500);
 const p2 = await pos();
 check('the tractor drove out through the gate', p2.out > p2.r + 1, `${p2.out.toFixed(1)} m from the yard's middle (fence ${p2.r} m)`);
@@ -234,7 +235,7 @@ const lifting = setInterval(() => game(page, () => {
   window.__lift = Math.max(window.__lift, lift);
   return r.kasa.position.y;
 }).catch(() => {}), 150);
-await stick(0, -180, 3500);
+await (await gas(3500));
 clearInterval(lifting);
 const over = await game(page, (z) => ({ dz: window.__game.session.field.vehicle.z - z, lift: window.__lift }), stone.z);
 check('the tractor drove on over the boulder', over.dz > 1, `${over.dz.toFixed(1)} m past it`);

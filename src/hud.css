@@ -18,7 +18,10 @@
 .gauge .bar div { height: 100%; width: 100%; background: #ffcf3a; transition: width 0.2s, background 0.3s; }
 .gauge .bar div.low { background: var(--danger); animation: blink 0.6s infinite alternate; }
 .gauge.line .bar div { background: var(--accent); }
-.gauge.temp .bar div { background: linear-gradient(90deg, #4fb3ff, #8fd14f 35%, #ffcf3a 70%, var(--danger)); background-size: 300px 100%; }
+/* The temperature's colours laid along the whole bar (cold blue to red from 85 %, where the engine is hot: ENGINE.hotWarn), the fill a window onto them:
+   its own shadow darkens the rest, so its end shows the colour of the temperature it has reached. */
+.hud-mid .gauge.temp .bar, .gauge.temp .bar { background: linear-gradient(90deg, #4fb3ff, #8fd14f 35%, #ffcf3a 70%, var(--danger) 85%); }
+.gauge.temp .bar div { background: transparent; box-shadow: 0 0 0 100vw #050505; }
 .gauge.temp.hot { border-color: var(--danger); }
 .gauge.temp.hot .ic { color: var(--danger); animation: blink 0.5s infinite alternate; }
 .gauge small { font-size: 10px; opacity: 0.85; white-space: nowrap; }
@@ -409,3 +412,218 @@ body.engine-off .gas-btn { display: none !important; }
 /* At the right edge over the hands on screen (level with them it read as a second handlebar grip). */
 .gas-btn { right: calc(6px + var(--safe-r)); bottom: max(calc(170px + var(--safe-b)), 44vh); }
 @media (orientation: landscape) and (max-height: 520px) { .gas-btn { bottom: calc(96px + var(--safe-b)); } }
+
+/* Driving the pat pat or the tractor: the steering wheel bottom left, the pedals bottom right (FREN a
+   wide red-rimmed pad, GAZ a tall green-rimmed one beside it, at the right thumb). */
+#drive-ui { display: none; }
+body.driving #drive-ui { display: block; }
+#drive-wheel { position: fixed; left: calc(18px + var(--safe-l, 0px)); bottom: calc(16px + var(--safe-b, 0px)); width: 124px; height: 124px; border-radius: 50%; touch-action: none; pointer-events: auto; filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.45)); z-index: 4; }
+#drive-wheel img { width: 100%; height: 100%; display: block; pointer-events: none; user-select: none; }
+.drive-pedals { position: fixed; right: calc(18px + var(--safe-r, 0px)); bottom: calc(16px + var(--safe-b, 0px)); display: flex; gap: 14px; align-items: flex-end; pointer-events: auto; z-index: 4; }
+.pedal { position: relative; touch-action: none; user-select: none; border: 0; border-radius: 0; padding: 0; background: center / contain no-repeat; filter: drop-shadow(0 5px 6px rgba(0, 0, 0, 0.45)); transition: transform 0.06s; }
+.pedal span { position: absolute; left: 0; right: 0; text-align: center; font-size: 12px; font-weight: 900; letter-spacing: 1px; color: #fff; text-shadow: 0 1px 0 #000, 0 0 4px rgba(0, 0, 0, 0.9); pointer-events: none; }
+.pedal.gas { width: 58px; height: 136px; background-image: url(/harita/pedal-gaz.webp); }
+.pedal.gas span { bottom: -16px; }
+.pedal.brake { width: 100px; height: 60px; background-image: url(/harita/pedal-fren.webp); }
+.pedal.brake span { bottom: -16px; }
+.pedal.down { transform: translateY(4px) scale(0.95); filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45)) brightness(0.85); }
+/* Raised a little so the words under them stay on the screen. */
+.drive-pedals { bottom: calc(26px + var(--safe-b, 0px)); }
+/* Driving, the buttons (İN, KAPIYI AÇ...) in a row along the bottom between the wheel and the pedals:
+   in their place top left the wheel covered them. */
+body.driving .actions { top: auto; left: calc(156px + var(--safe-l, 0px)); bottom: calc(14px + var(--safe-b, 0px)); flex-direction: row; align-items: flex-end; }
+/* Driving, the stick is not used (the wheel and the pedals are): its faint resting ring goes. */
+body.driving #stick { display: none !important; }
+
+/* A phone held sideways (the game is played so): cards that stood in a tall column are laid out wide,
+   the hazelnut board's frame thinner, so nothing falls off the bottom of the screen. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .card.pano { border-width: 34px 26px 44px; }
+  /* Daily reward: the days and the amount, the two buttons side by side under them. */
+  #daily .card.pano { width: min(620px, 100%); display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; row-gap: 6px; }
+  #daily .card.pano > :not(.btn) { grid-column: 1 / 3; margin-bottom: 0; }
+  #daily .card.pano h2 { margin: 0; }
+  #daily .card.pano .btn { align-self: center; }
+  /* The result: the bill on the left, the title, the stars and the buttons on the right. */
+  #result .card.pano { width: min(720px, 100%); display: grid; grid-template-columns: 1.15fr 1fr; grid-template-rows: auto auto repeat(4, auto) 1fr; grid-template-areas: 'table title' 'table stars' 'table ad' 'table next' 'table again' 'table menu' 'table .'; column-gap: 16px; row-gap: 8px; }
+  #result-title { grid-area: title; margin: 0; }
+  #result-stars { grid-area: stars; }
+  #result-stars img { width: 42px; height: 42px; }
+  #result-stars span:nth-child(2) img { width: 50px; height: 50px; }
+  #result-table { grid-area: table; align-self: center; font-size: 13.5px; }
+  #result-table td { padding: 3px 2px; }
+  #result-table tr.total td { font-size: 16px; }
+  #btn-ad-double { grid-area: ad; }
+  #btn-next { grid-area: next; }
+  #btn-again { grid-area: again; }
+  #btn-menu { grid-area: menu; }
+  #result .btn { padding-top: 9px; padding-bottom: 9px; }
+  #result .btn.ad { padding-top: 5px; padding-bottom: 5px; }
+  /* No ads offer: what it gives on the left, the price and the buttons on the right. */
+  #noads-offer .card.offer { width: min(720px, 100%); display: grid; grid-template-columns: 1.3fr 1fr; grid-template-areas: 'badge price' 'title buy' 'list later' 'list restore' 'list .'; grid-template-rows: auto auto auto auto 1fr; column-gap: 18px; align-items: center; }
+  .offer-badge { grid-area: badge; width: 56px; height: 56px; justify-self: center; }
+  .offer-badge .ic { width: 30px; height: 30px; }
+  #noads-offer h2 { grid-area: title; }
+  .offer-list { grid-area: list; align-self: start; gap: 6px; }
+  .offer-list li { font-size: 14px; padding: 7px 9px; }
+  .offer-price { grid-area: price; }
+  #btn-offer-buy { grid-area: buy; }
+  #btn-offer-later { grid-area: later; }
+  #btn-offer-restore { grid-area: restore; }
+  /* The village map: as tall as the screen allows, its legend and the close button beside it. */
+  #map .map-card { width: min(96vw, 820px); display: grid; grid-template-columns: 1fr 150px; grid-template-areas: 'canvas title' 'canvas legend' 'canvas close'; grid-template-rows: auto 1fr auto; column-gap: 12px; }
+  #map-canvas { grid-area: canvas; height: calc(100vh - 56px - var(--safe-t) - var(--safe-b)); }
+  #map-title { grid-area: title; font-size: 18px; }
+  #map .map-legend { grid-area: legend; flex-direction: column; align-items: flex-start; justify-content: center; }
+  #btn-map-close { grid-area: close; }
+  /* Settings: wider, the rows in two columns (the how-to and the buttons across the bottom). */
+  .card.settings { width: min(760px, 100%); display: grid; grid-template-columns: 1fr 1fr; column-gap: 20px; row-gap: 6px; padding-top: 12px; align-items: start; }
+  .card.settings > h2, .card.settings > .howto, #btn-settings-close { grid-column: 1 / 3; }
+  /* The starter: its hint to the left of the panel (above it, it ran into the map button). */
+  .starter { flex-direction: row; }
+  .starter .hint { align-self: flex-start; }
+}
+
+/* The top bar's own frames (public/harita): the progress an orange machine bar (ilerleme.webp, 1200 x 207,
+   its black slot 122 / 123 px in from the ends, 64 / 59 px from the top and bottom), the gauges a plate
+   with a round socket for the icon on the left and a slot for the bar (gosterge.webp, 800 x 201, the
+   slot from x 200 to 744, y 58 to 137; the socket x 53 to 171, y 43 to 155). The frames are drawn as
+   border images: their ends kept, their middles stretched; inside the border is the slot, so the green
+   fill, the 90 % notch and the words stay in it. --h: the frame's height. */
+.hud-mid .progress { --h: 36px; height: var(--h); box-sizing: border-box; border-style: solid; border-color: transparent; border-width: calc(var(--h) * 64 / 207) calc(var(--h) * 123 / 207) calc(var(--h) * 59 / 207) calc(var(--h) * 122 / 207); border-image: url(/harita/ilerleme.webp) 64 123 59 122 fill stretch; border-radius: 0; background: #0b0b0b; background-clip: padding-box; box-shadow: none; filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.45)); }
+.hud-mid .progress::after { display: none; }
+.hud-mid #progress-fill { border-radius: 0; }
+/* The slot rounded at both ends (a pill), the fill kept in it; the fill's own front end round too. */
+.progress-slot { position: absolute; inset: 0; border-radius: 999px; overflow: hidden; }
+.hud-mid .progress-slot #progress-fill { border-radius: 0 999px 999px 0; }
+.hud-mid #progress-text { font-size: 13px; }
+.hud-mid .gauges { gap: 4px; }
+.hud-mid .gauge { --h: 30px; position: relative; height: var(--h); box-sizing: border-box; padding: 0 3px 0 2px; gap: 3px; border-style: solid; border-color: transparent; border-width: calc(var(--h) * 58 / 201) calc(var(--h) * 56 / 201) calc(var(--h) * 64 / 201) calc(var(--h) * 200 / 201); border-image: url(/harita/gosterge.webp) 58 56 64 200 fill stretch; border-radius: 0; background: none; box-shadow: none; filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.45)); }
+.hud-mid .gauge .gi { position: absolute; left: calc(var(--h) * -147 / 201); top: calc(var(--h) * -15 / 201); width: calc(var(--h) * 118 / 201); height: calc(var(--h) * 112 / 201); background-size: 100%; }
+.hud-mid .gauge .bar { height: 55%; border-radius: 3px; }
+.hud-mid .gauge.temp.hot { filter: drop-shadow(0 0 5px var(--danger)); }
+/* (The top bar is taller with its frames: the objective under it.) */
+.objective { top: calc(108px + var(--safe-t)); }
+
+/* ---- Held sideways on a phone (360 px high and so): every screen fits without scrolling to its buttons.
+   The screens stand clear of the notch; the cards lose height (titles smaller, padding less); lists go
+   wide (more cards side by side, each smaller). */
+@media (orientation: landscape) and (max-height: 520px) {
+  .screen { padding: calc(8px + var(--safe-t)) calc(14px + var(--safe-r)) calc(8px + var(--safe-b)) calc(14px + var(--safe-l)); }
+  .card { padding: 12px 14px; gap: 7px; }
+  .card h2 { font-size: 20px; margin: 0; }
+  .card .sub { margin: -2px 0 2px; font-size: 13px; }
+  .btn { padding: 9px 14px; font-size: 15px; }
+  .close-x { width: 36px; height: 36px; margin: -4px -6px -32px 0; }
+  .close-x svg { width: 17px; height: 17px; }
+
+  /* Menu: the logo over the middle of its tagline; the twin buttons a little smaller. */
+  .logo { align-items: center; }
+  .menu-top { margin-top: 2vh; }
+  .menu-go { --h: min(78px, 21vh); }
+  #menu .menu-go .btn.art-go span { font-size: 14px; }
+  .menu-bottom { gap: 8px; }
+  #menu .row .btn { padding: 8px 12px; font-size: 15px; }
+
+  /* The store: wide, the money beside the title, four packs in a row. */
+  #store .card { width: min(780px, 100%); position: relative; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto minmax(0, 1fr) auto; align-items: center; column-gap: 12px; }
+  #store .card > h2 { grid-column: 1; }
+  #store .card > .wallet { grid-column: 2; justify-self: start; margin: 0; padding: 4px 12px 4px 6px; font-size: 14px; }
+  #store .close-x { position: absolute; top: 8px; right: 10px; margin: 0; }
+  #store-list { grid-column: 1 / 3; align-self: stretch; overflow-y: auto; grid-template-columns: repeat(auto-fit, minmax(110px, 140px)); justify-content: center; grid-auto-rows: max-content; }
+  #btn-store-restore { grid-column: 1 / 3; justify-self: center; width: auto; padding: 6px 16px; font-size: 13px; }
+  #store-list .shop-card .pic { height: 62px; }
+  #store-list .shop-card .pic .gold-art { width: 62px; height: 62px; }
+  #store-list .shop-card b { font-size: 13px; }
+  #store-list .shop-card small { font-size: 11px; }
+  #store-list .shop-card .buy { padding: 6px; font-size: 13px; }
+
+  /* Daily tasks: wider, each task a lower row. */
+  #tasks .card { width: min(640px, 100%); }
+  #tasks .task-list { margin: 2px 0 0; gap: 6px; }
+  #tasks .task { padding: 7px 12px; gap: 2px 10px; }
+  #tasks .task .bar { height: 6px; }
+
+  /* No ads: the badge beside the title, the list tighter, the price smaller. */
+  #noads-offer .card.offer { width: min(700px, 100%); grid-template-areas: 'title price' 'list buy' 'list later' 'list restore'; grid-template-rows: auto auto auto 1fr; row-gap: 6px; padding: 14px 18px; }
+  .offer-badge { display: none; }
+  .offer-list { gap: 5px; }
+  .offer-list li { font-size: 13px; padding: 6px 9px; }
+  .offer-price b { font-size: 30px; }
+
+  /* Settings: lower rows; the how-to opens inside the card, which scrolls. */
+  .card.settings { padding: 10px 16px; row-gap: 4px; }
+  .settings .setting { font-size: 14px; }
+  .segmented button { padding: 6px 4px; font-size: 13px; }
+  .setting small { font-size: 11.5px; }
+  .card.settings .btn { padding: 8px 12px; font-size: 14px; }
+  .settings .howto { padding: 6px 12px; }
+
+  /* The result: a thinner frame, lower rows and buttons. */
+  #result .card.pano { border-width: 26px 22px 34px; row-gap: 6px; padding: 0 4px; }
+  #result-table { font-size: 12.5px; }
+  #result-table td { padding: 2px; }
+  #result-stars img { width: 34px; height: 34px; }
+  #result-stars span:nth-child(2) img { width: 40px; height: 40px; }
+  #result .btn { padding-top: 7px; padding-bottom: 7px; font-size: 14px; }
+  #result .btn.ad { padding-top: 3px; padding-bottom: 3px; }
+  #result .btn.ad .ad-play { width: 30px; height: 30px; }
+
+  /* The job map: its title, tabs and close on the left, the map the whole height on the right. */
+  #levels.saga-on .card { width: min(720px, 100%); display: grid; grid-template-columns: 170px minmax(0, 1fr); grid-template-rows: auto auto 1fr; column-gap: 12px; position: relative; }
+  #levels .card > h2 { grid-column: 1; grid-row: 1; text-align: left; }
+  #levels .close-x { position: absolute; top: 8px; left: 140px; margin: 0; }
+  #levels .level-tabs { grid-column: 1; grid-row: 2; flex-direction: column; align-self: start; }
+  #levels .level-tabs button { flex: none; padding: 9px 6px; }
+  #level-list { grid-column: 2; grid-row: 1 / 4; min-height: 0; }
+
+  /* The shop: smaller cards, four in a row (the rows their own height: the cards and the Köy turntable
+     were squeezed to nothing); Köy: the turntable two cards wide on the left, the cards beside and under it. */
+  .shop-card-board #shop-list { grid-template-columns: repeat(auto-fit, minmax(128px, 150px)); justify-content: center; grid-auto-rows: max-content; gap: 6px; }
+  .shop-card-board .shop-card { border-width: 20px 8px 9px 11px; padding: 0 3px 3px 4px; gap: 2px; }
+  .shop-card-board .shop-card .pic { height: 58px; }
+  .shop-card-board .shop-card .pic .gold-art { width: 58px; height: 58px; }
+  .shop-card-board .shop-card b { font-size: 13px; }
+  .shop-card-board .shop-card small { font-size: 11px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .shop-card-board .shop-card .buy { padding: 5px 4px; font-size: 13px; margin-top: 2px; }
+  .shop-card-board .shop-card.selected::after { width: 22px; height: 22px; font-size: 13px; top: -6px; }
+  .shop-card .swatch { height: 44px; }
+  .shop-card-board .sub-tabs { margin-bottom: 0; justify-content: center; }
+  .shop-card-board .sub-tabs button { flex: none; width: 130px; font-size: 13px; white-space: nowrap; }
+  .shop-card-board .shop-preview { grid-column: 1 / 3; align-self: stretch; min-height: 150px; }
+  .shop-card-board .shop-preview-canvas { height: 100%; position: absolute; inset: 0; }
+  .shop-card-board .shop-preview small { font-size: 12px; }
+
+  /* A question: lower. */
+  #confirm .card { padding: 4px 8px 0; }
+
+  /* In a job on foot: the buttons (DÜKKAN, TIRPANI AL...) right under the minimap, smaller; the
+     walking stick rests lower, under them. */
+  .actions { top: calc(112px + var(--safe-t)); left: calc(10px + var(--safe-l)); gap: 6px; }
+  .action-btn { padding: 3px 12px 3px 3px; gap: 7px; }
+  body.playing.easy:not(.freecam) #stick:not(.show) { left: calc(130px + var(--safe-l, 0px)); top: calc(100% - 78px - var(--safe-b, 0px)); }
+  /* MİSİNA TAK over the trimmer's buttons, left of the trigger (high up it lay over the top bar). */
+  .rethread { right: calc(112px + var(--safe-r)); bottom: calc(92px + var(--safe-b)); padding: 7px 14px 7px 9px; }
+  /* The how-to words along the very bottom, between the stick and the buttons (higher up they met the
+     messages under the objective). */
+  .tutorial, body.has-acts .tutorial { bottom: calc(10px + var(--safe-b)); padding: 0 calc(300px + var(--safe-r)) 0 calc(240px + var(--safe-l)); font-size: 12px; }
+}
+
+/* The gas pedal's gauge beside it (--gas 0..1, set by DriveControls). */
+.gas-meter { align-self: flex-end; width: 9px; height: 100px; margin-bottom: 18px; margin-right: -8px; border-radius: 5px; background: #111; border: 2px solid #d9690f; box-shadow: inset 0 1px 2px #000, 0 2px 4px rgba(0, 0, 0, 0.4); overflow: hidden; position: relative; }
+.gas-meter i { position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--gas, 0) * 100%); background: linear-gradient(#a5e05a, #3f861c); }
+
+/* A wide job map (held sideways): the whole village in view, its jobs small along the road. */
+.saga-map.wide .saga-node { width: 76px; }
+.saga-map.wide .saga-node .sn-disc { width: 38px; height: 38px; }
+.saga-map.wide .saga-node .sn-disc b { font-size: 16px; }
+.saga-map.wide .saga-node.next .sn-disc { width: 48px; height: 48px; }
+.saga-map.wide .saga-node.next .sn-disc b { font-size: 20px; }
+.saga-map.wide .saga-node .sn-name { font-size: 9.5px; }
+.saga-map.wide .saga-node .sn-stars img { width: 11px; height: 11px; }
+.saga-map.wide .saga-node .sn-pin { width: 26px; }
+.saga-map.wide .saga-node .sn-tag { font-size: 9px; }
+.saga-map.wide .saga-sign { width: 26%; }
+.saga-map.wide .saga-node .sn-pin { top: -14px; left: calc(50% + 12px); }
+.saga-map.wide .saga-node.pin-left .sn-pin { left: auto; right: calc(50% + 12px); }
+.saga:has(.saga-map.wide) { display: flex; align-items: center; }

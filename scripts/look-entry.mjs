@@ -1,11 +1,11 @@
 // Dev: the old wheel tracks into the field and the two posts at the way in, on a couple of levels.
 // Usage: node scripts/look-entry.mjs [baseUrl] (default http://localhost:5173/)
 import puppeteer from 'puppeteer-core';
-import { findChrome } from './chrome.mjs';
+import { CHROME_ARGS, findChrome } from './chrome.mjs';
 
 const base = process.argv[2] ?? 'http://localhost:5173/';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const browser = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const browser = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: CHROME_ARGS });
 const page = await browser.newPage();
 await page.setViewport({ width: 700, height: 500 });
 page.on('pageerror', (e) => console.log('pageerror', e.message));

@@ -43,10 +43,9 @@ for (let i = 0; i < ROUNDS; i++) {
       if (!ad) adWait = await game(page, () => !document.getElementById('call').classList.contains('show')).catch(() => true);
       ad = true;
       if (k === 0 || k % 8 === 0) shot(`emu-next-ad-${i + 1}`);
-      // As a player would: the system's full-screen hint away ("Got it"), then the ad's X.
-      const cur = adb('shell', 'dumpsys', 'window').toString().match(/mCurrentFocus=.*/)?.[0] ?? '';
-      if (/ImmersiveModeConfirmation/.test(cur)) adb('shell', 'input', 'tap', '859', '655');
-      else adb('shell', 'input', 'tap', '1019', '191');
+      // BACK closes it (a tap on its X, where it stands upright, landed on the ad itself while the
+      // screen was still sideways and opened the browser).
+      adb('shell', 'input', 'keyevent', 'KEYCODE_BACK');
       await sleep(1500);
       continue;
     }

@@ -25,6 +25,8 @@
   "gazebo": "cardak.glb",
   "kennel": "kulube.glb",
   "garage": "garaj.glb",
+  "bridge": "kopru.glb",
+  "mill": "degirmen.glb",
   "panorama": "gokyuzu.jpg",
   "panoramaTurn": 0
 }

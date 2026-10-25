@@ -1,8 +1,8 @@
 // Dev: screenshot dev/viewer.html for a model. Usage: node scripts/model-shot.mjs <viewer url> <out.png>
 import puppeteer from 'puppeteer-core';
-import { findChrome } from './chrome.mjs';
+import { CHROME_ARGS, findChrome } from './chrome.mjs';
 const [, , url, out] = process.argv;
-const b = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const b = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: CHROME_ARGS });
 const p = await b.newPage();
 await p.setViewport({ width: 1400, height: 1500 });
 p.on('pageerror', (e) => console.log('ERR', e.message));

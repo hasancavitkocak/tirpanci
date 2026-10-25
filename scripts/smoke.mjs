@@ -37,7 +37,7 @@ const fail = async (msg) => {
 };
 try {
   const page = await browser.newPage();
-  await page.setViewport({ width: 412, height: 860, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
+  await page.setViewport({ width: 915, height: 412, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
   page.on('console', (m) => (m.type() === 'error' || m.type() === 'warning') && errors.push(`[${m.type()}] ${m.text()}`));
   page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`));
   await page.goto(`${base}?quality=${process.env.QUALITY ?? 'low'}`, { waitUntil: 'load' });
@@ -52,19 +52,21 @@ try {
   await page.click('#btn-play');
   await sleep(300);
   await page.screenshot({ path: `${OUT}/02-levels.png` });
-  await page.click('.level');
+  await page.click('.saga-node');
   await page.click('#btn-call-ok');
   await page.waitForFunction('window.__game.mode === "playing"');
   // Each job starts with the trimmer in the pat pat (take it, fit line): look-intro.mjs plays that part.
   await page.evaluate(() => {
     const s = window.__game.session;
-    s.takeTrimmer();
+    // (In hand at once: the job starts up at the house, where it cannot be taken from the trailer.)
+    s.hasTrimmer = true;
     s.line = s.gear.lineMax;
     s.broken = false;
     s.intro = null;
     // Stand at the bottom edge of the field, facing up into it.
-    s.x = s.field.depot.x + 1.2;
-    s.z = s.field.depot.z - 1.2;
+    // (The depot is up by the house now: the field's bottom edge instead.)
+    s.x = 0;
+    s.z = s.field.depth / 2 - 1;
     s.yaw = Math.PI;
     window.__game.lookYaw = Math.PI;
     window.__game.updateStarterUi();
@@ -145,63 +147,32 @@ try {
       return true;
     });
   await ensureRunning();
-  // Touch joystick: drag on the left side.
+  // Touch joystick: drag at the bottom left (the left thumb; the screen is held sideways).
   const before = await page.evaluate(() => ({ x: window.__game.session.x, z: window.__game.session.z }));
-  await page.touchscreen.touchStart(110, 650);
-  await page.touchscreen.touchMove(110, 590);
+  await page.touchscreen.touchStart(110, 330);
+  await page.touchscreen.touchMove(110, 270);
   await sleep(1200);
-  // Easy controls (default): the finger on the screen opens the throttle, the head stays straight.
-  const easy = await page.evaluate(() => ({ thr: window.__game.input.throttleOn ? 1 : 0, sweep: window.__game.session.sweep }));
+  // Easy controls (default): walking does not swing the head (it stays straight).
+  const easy = await page.evaluate(() => ({ sweep: window.__game.session.sweep }));
   await page.touchscreen.touchEnd();
   console.log('easy', JSON.stringify(easy));
-  if (!(easy.thr > 0.3)) await fail(`touch did not open the throttle in easy mode (${easy.thr})`);
   if (Math.abs(easy.sweep) > 1e-3) await fail('head moved in easy mode');
   const after = await page.evaluate(() => ({ x: window.__game.session.x, z: window.__game.session.z }));
+  // The throttle: the GAZ trigger (right thumb) held.
+  await ensureRunning();
+  const gas = await page.$eval('#gas-btn', (el) => {
+    const r = el.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  await page.touchscreen.touchStart(gas.x, gas.y);
+  await sleep(1200);
+  const thr = await page.evaluate(() => window.__game.input.throttleLevel);
+  await page.touchscreen.touchEnd();
+  console.log('gas trigger', thr.toFixed(2));
+  if (!(thr > 0.3)) await fail(`the GAZ trigger did not open the throttle (${thr})`);
   if (!(after.z < before.z - 0.2)) await fail(`joystick did not move the worker up (${before.z} -> ${after.z})`);
 
-  // Advanced controls: throttle pad, press and slide right, the head must follow to the right (no automatic swing).
-  await ensureRunning();
-  await page.evaluate(() => {
-    window.__game.save.controls = 'advanced';
-    window.__game.applyControls();
-  });
-  const pad = await page.$eval('#pad', (el) => {
-    const r = el.getBoundingClientRect();
-    return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width };
-  });
-  console.log('pad hit', await page.evaluate((x, y) => { const e = document.elementFromPoint(x, y); return e ? `${e.tagName}#${e.id}.${e.className}` : 'none'; }, pad.x, pad.y), JSON.stringify(pad));
-  // Phones press the pad with a finger: use touch, as players do. Stand in mown-down grass so the
-  // engine is not bogged down while the test browser crawls.
-  await page.evaluate(() => {
-    const s = window.__game.session;
-    // Only round the worker: mowing everything would finish the job.
-    s.field.cutSegment(s.x - 3, s.z, s.x + 3, s.z, 3);
-    window.__ev = [];
-    const push = s.events.push.bind(s.events);
-    s.events.push = (...e) => {
-      for (const x of e) if (x.type !== 'cut') window.__ev.push(x.type);
-      return push(...e);
-    };
-  });
-  await ensureRunning();
-  await page.touchscreen.touchStart(pad.x, pad.y);
-  await sleep(600);
-  const centred = await page.evaluate(() => window.__game.session.sweep);
-  await page.touchscreen.touchMove(pad.x + pad.w * 0.4, pad.y);
-  try {
-    await page.waitForFunction('window.__game.session.sweep > 0.4 && window.__game.session.throttle > 0.3', { timeout: 8000 });
-  } catch {
-    /* reported below */
-  }
-  const swung = await page.evaluate(() => {
-    const s = window.__game.session;
-    return { ev: window.__ev, fuel: s.fuel, temp: s.temp, tangle: s.tangle, sweep: s.sweep, thr: s.throttle, running: s.running, input: window.__game.input.throttleOn, engineOff: document.body.classList.contains('engine-off'), easy: window.__game.input.easy };
-  });
-  await page.screenshot({ path: `${OUT}/05b-pad.png` });
-  await page.touchscreen.touchEnd();
-  console.log('pad', centred, JSON.stringify(swung));
-  if (Math.abs(centred) > 0.05) await fail(`head swung by itself (${centred})`);
-  if (!(swung.sweep > 0.4 && swung.thr > 0.3)) await fail(`pad did not throttle/swing the head (${JSON.stringify(swung)})`);
+  // (The advanced controls and their throttle pad are gone: the easy controls are the one way to play.)
 
   // Stop switch (engine warmed up first: a few seconds of running is not enough to count as warm).
   await ensureRunning();

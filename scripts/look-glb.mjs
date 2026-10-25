@@ -1,9 +1,9 @@
 // Dev: a GLB on its own from +Z, +X, +Y, -Z (axes: X red, Y green, Z blue). Optional x cut keeps x < cut.
 // Usage: node scripts/look-glb.mjs models/x.glb out-prefix [cutX]
 import puppeteer from 'puppeteer-core';
-import { findChrome } from './chrome.mjs';
+import { CHROME_ARGS, findChrome } from './chrome.mjs';
 const [file, out, cut] = process.argv.slice(2);
-const browser = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const browser = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: CHROME_ARGS });
 const page = await browser.newPage();
 await page.setViewport({ width: 1200, height: 300 });
 page.on('pageerror', (e) => console.log('pageerror', e.message));

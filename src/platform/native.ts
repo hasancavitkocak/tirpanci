@@ -96,6 +96,11 @@ export interface SaveData {
   vehicle?: string;
   /** The trailer (bought) left off the tractor. */
   trailerOff?: boolean;
+  /**
+   * The level numbering the save is in: unset = the first one, where Karadere's jobs were 9-13 (two
+   * jobs were added to Yeşilyamaç as 9 and 10, Karadere's became 11-15; see loadSave).
+   */
+  levelIds?: number;
 }
 
 export const DEFAULT_SAVE: SaveData = {
@@ -110,6 +115,7 @@ export const DEFAULT_SAVE: SaveData = {
   equipment: { ...DEFAULT_EQUIPMENT, owned: [...DEFAULT_EQUIPMENT.owned] },
   noAds: false,
   daily: { last: '', streak: 0 },
+  levelIds: 2,
 };
 
 const KEY = 'kral-tirpan-save';
@@ -119,11 +125,32 @@ export async function loadSave(): Promise<SaveData> {
     const raw = isNative ? (await Preferences.get({ key: KEY })).value : localStorage.getItem(KEY);
     if (!raw) return structuredClone(DEFAULT_SAVE);
     const d = JSON.parse(raw) as Partial<SaveData>;
+    if (!d.levelIds) renumberLevels(d);
     const base = structuredClone(DEFAULT_SAVE);
     return { ...base, ...d, upgrades: { ...NO_UPGRADES, ...d.upgrades }, equipment: { ...base.equipment, ...d.equipment }, daily: { ...base.daily, ...d.daily } };
   } catch {
     return structuredClone(DEFAULT_SAVE);
   }
+}
+
+/**
+ * A save from before Yeşilyamaç's two new jobs (9 and 10): Karadere's 9-13 moved up to 11-15 (their
+ * bests and mowing times with them), and the progress past Yeşilyamaç's end with them.
+ */
+function renumberLevels(d: Partial<SaveData>): void {
+  const move = <T>(rec: Record<number, T> | undefined) => {
+    if (!rec) return rec;
+    const out: Record<number, T> = {};
+    for (const [k, v] of Object.entries(rec)) {
+      const id = Number(k);
+      out[id >= 9 && id <= 13 ? id + 2 : id] = v;
+    }
+    return out;
+  };
+  d.best = move(d.best);
+  d.mownAt = move(d.mownAt);
+  if ((d.unlocked ?? 1) >= 9) d.unlocked = (d.unlocked ?? 1) + 2;
+  d.levelIds = 2;
 }
 
 export async function writeSave(d: SaveData): Promise<void> {

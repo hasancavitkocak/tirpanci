@@ -2,9 +2,9 @@
 // Needs the dev server running. Usage: node scripts/build-worker.mjs [baseUrl]
 import { writeFileSync } from 'node:fs';
 import puppeteer from 'puppeteer-core';
-import { findChrome } from './chrome.mjs';
+import { CHROME_ARGS, findChrome } from './chrome.mjs';
 const base = process.argv[2] ?? 'http://localhost:5190/';
-const b = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+const b = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: CHROME_ARGS });
 const p = await b.newPage();
 p.on('pageerror', (e) => console.log('pageerror', e.message));
 p.on('console', (m) => ['error', 'warning'].includes(m.type()) && console.log(m.type(), m.text()));

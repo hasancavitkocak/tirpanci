@@ -1,7 +1,7 @@
 // Dev: menu background screenshot.
 import puppeteer from 'puppeteer-core';
-import { findChrome } from './chrome.mjs';
-const b = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+import { CHROME_ARGS, findChrome } from './chrome.mjs';
+const b = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: CHROME_ARGS });
 const p = await b.newPage();
 await p.setViewport({ width: 412, height: 860 });
 await p.goto('http://localhost:5190/?quality=medium');

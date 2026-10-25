@@ -119,7 +119,9 @@ export class ShopPreview {
     }
     this.angle += Math.min(0.1, dt) * 0.5;
     this.turntable.rotation.y = this.angle;
-    this.camera.position.set(0, this.lookY + this.radius * 0.38, this.radius);
+    // (Framed for a wide strip: a squarer box, the phone held sideways, needs the camera further back to keep its width in view.)
+    const back = this.radius * Math.max(1, 1.9 / this.camera.aspect);
+    this.camera.position.set(0, this.lookY + back * 0.38, back);
     this.camera.lookAt(0, this.lookY, 0);
     r.render(this.scene, this.camera);
   }

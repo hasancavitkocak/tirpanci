@@ -1,8 +1,8 @@
 // iOS: run after `npx cap add ios` (on the Mac that builds it, e.g. Codemagic) to give the generated
 // project the game's own settings: its icon and launch picture (assets-src/ios), full screen with no
-// status bar, every orientation on iPhone and iPad, the AdMob app id (Google's test one while the ads
-// are test ads: see src/platform/ads.ts), no export-compliance question (only standard encryption),
-// and the version from package.json with the build number given.
+// status bar, held sideways only (landscape, either way round) on iPhone and iPad, the AdMob app id
+// (Google's test one while the ads are test ads: see src/platform/ads.ts), no export-compliance
+// question (only standard encryption), and the version from package.json with the build number given.
 // Usage: node scripts/ios-setup.mjs [buildNumber]
 import { copyFileSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 
@@ -18,13 +18,13 @@ const set = (key, xml) => {
   plist = plist.replace(re, '');
   plist = plist.replace(/<\/dict>\s*<\/plist>\s*$/, `\t<key>${key}</key>\n\t${xml}\n</dict>\n</plist>\n`);
 };
-const orientations = '<array>\n\t\t<string>UIInterfaceOrientationPortrait</string>\n\t\t<string>UIInterfaceOrientationLandscapeLeft</string>\n\t\t<string>UIInterfaceOrientationLandscapeRight</string>\n\t</array>';
+const orientations = '<array>\n\t\t<string>UIInterfaceOrientationLandscapeLeft</string>\n\t\t<string>UIInterfaceOrientationLandscapeRight</string>\n\t</array>';
 set('CFBundleDisplayName', '<string>Kral Tırpan</string>');
 set('UIStatusBarHidden', '<true/>');
 set('UIViewControllerBasedStatusBarAppearance', '<false/>');
 set('UIRequiresFullScreen', '<true/>');
 set('UISupportedInterfaceOrientations', orientations);
-set('UISupportedInterfaceOrientations~ipad', orientations.replace('<string>UIInterfaceOrientationPortrait</string>', '<string>UIInterfaceOrientationPortrait</string>\n\t\t<string>UIInterfaceOrientationPortraitUpsideDown</string>'));
+set('UISupportedInterfaceOrientations~ipad', orientations);
 set('ITSAppUsesNonExemptEncryption', '<false/>');
 set('GADApplicationIdentifier', '<string>ca-app-pub-3940256099942544~1458002511</string>');
 writeFileSync(plistPath, plist);
