@@ -87,7 +87,15 @@ html:has(#loading.show:not(.has-art):not(.no-art)), html:has(#loading.show:not(.
 #menu .menu-go .btn.art-go span { font-size: clamp(12px, 3.4vw, 16px); }
 /* The money in the top right corner (where games keep it), the no-ads offer under it; the starter pack
    under the tasks on the left. */
-#menu .menu-bottom .wallet { position: absolute; top: calc(12px + var(--safe-t)); right: calc(12px + var(--safe-r)); z-index: 2; font-size: 15px; padding: 6px 14px 6px 8px; background: rgba(20, 40, 10, 0.6); border: 2px solid rgba(255, 215, 90, 0.8); box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3); }
+/* The menu's money: a wooden plate (as the shop's tabs), a big gold coin over its left end, the sum in
+   cream, and a green + on the right for the store. */
+#menu .menu-bottom .wallet.menu-wallet { position: absolute; top: calc(12px + var(--safe-t)); right: calc(12px + var(--safe-r)); z-index: 2; gap: 3px; padding: 4px 4px 4px 26px; min-width: 0; border-radius: 20px; font-size: 13px; color: #fff6dc; background: linear-gradient(180deg, #a8713a 0%, #8a5527 48%, #6e4019 100%); border: 2px solid #4a2a0e; box-shadow: inset 0 2px 0 rgba(255, 220, 160, 0.45), inset 0 -2px 0 rgba(0, 0, 0, 0.25), 0 3px 0 #3a1f08, 0 6px 12px rgba(0, 0, 0, 0.3); text-shadow: 0 1px 0 #3a1f08; }
+#menu .menu-wallet .coin { position: absolute; left: -10px; top: 50%; transform: translateY(-50%); width: 32px; height: 32px; background: radial-gradient(circle at 36% 32%, #fff3b0 0 12%, #ffd84a 30%, #e9a514 70%, #c27c08 100%); box-shadow: inset 0 0 0 3px #b8720a, inset 0 0 0 5px #ffd96a, 0 2px 0 #7a4a06, 0 3px 6px rgba(0, 0, 0, 0.35); }
+#menu .menu-wallet .coin::after { content: '₺'; position: absolute; inset: 0; display: grid; place-items: center; font-weight: 900; font-size: 16px; color: #a8650a; text-shadow: 0 1px 0 #ffe9a0; }
+#menu .menu-wallet .money { flex: 1; text-align: right; font-weight: 900; font-variant-numeric: tabular-nums; letter-spacing: 0.3px; }
+#menu .menu-wallet small { font-size: 10px; font-weight: 900; opacity: 0.85; margin-right: 4px; }
+.wallet-plus { width: 24px; height: 24px; border: 0; border-radius: 50%; padding: 0; background: linear-gradient(180deg, #8de04a, #3f9a1f); color: #fff; font: inherit; font-size: 18px; font-weight: 900; line-height: 22px; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 2px 0 #24590c; text-shadow: 0 1px 0 #24590c; cursor: pointer; }
+.wallet-plus:active { transform: translateY(2px); box-shadow: 0 0 0 #24590c; }
 #menu #btn-noads { top: calc(56px + var(--safe-t)); right: calc(12px + var(--safe-r)); }
 #menu .corner-btn.starter-pack { top: calc(56px + var(--safe-t)); left: calc(12px + var(--safe-l)); right: auto; }
 #menu .corner-btn.tasks-btn { left: calc(12px + var(--safe-l)); }
@@ -149,6 +157,9 @@ html:has(#loading.show:not(.has-art):not(.no-art)), html:has(#loading.show:not(.
 .shop-card .pic img.ok { opacity: 1; }
 .shop-card .pic .pic-icon { width: 44px; height: 44px; color: #b9a983; }
 .shop-card .pic:has(img.ok) .pic-icon { display: none; }
+/* A hitch's state, small in the picture's top corner (the picture left to be seen). */
+.shop-card .hitch-badge { position: absolute; left: 4px; top: 4px; background: #8b7a55; color: #fff; font-size: 9px; font-weight: 900; border-radius: 6px; padding: 2px 5px; letter-spacing: 0.3px; }
+.shop-card .hitch-badge.on { background: #3d7a26; }
 .shop-card .pic-badge { position: absolute; right: 6px; bottom: 6px; background: var(--orange); color: #fff; font-size: 11px; font-weight: 900; border-radius: 6px; padding: 2px 5px; }
 .shop-card b { font-size: 14px; line-height: 1.15; }
 .shop-card small { color: #7a6e55; font-size: 12px; line-height: 1.25; flex: 1; }
@@ -284,6 +295,41 @@ body.look-hint.playing:not(.driving):not(.freecam) #look-hint { display: flex; }
 /* Daily tasks: the button (top left in the menu) and the list. */
 .corner-btn.tasks-btn { left: 12px; right: auto; background: linear-gradient(180deg, #fff6df, #f3dfb0); color: #4a3510; box-shadow: 0 3px 0 #b99a5a, 0 6px 14px rgba(0, 0, 0, 0.3); }
 .corner-btn.tasks-btn .ic { color: #3d7a26; }
+/* Fındık Harmanı, the side job: under the starter pack (in its place once that is gone); a small round
+   chip on its corner counts down to the next harvest (or the drying), second by second, or shows ! when
+   there is something to do (pulsing). */
+#menu .corner-btn.harvest-btn { top: calc(100px + var(--safe-t)); left: calc(12px + var(--safe-l)); right: auto; background: linear-gradient(180deg, #fff6df, #f3dfb0); color: #4a3510; box-shadow: 0 3px 0 #b99a5a, 0 6px 14px rgba(0, 0, 0, 0.3); overflow: visible; }
+#menu .corner-btn.harvest-btn.up { top: calc(56px + var(--safe-t)); }
+.harvest-btn .hv-ico { width: 32px; height: 32px; margin: -6px 0 -6px -6px; filter: drop-shadow(0 2px 1px rgba(0, 0, 0, 0.3)); }
+.hv-btn-text { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; line-height: 1.05; }
+.hv-chip { align-self: flex-start; min-width: 22px; height: 18px; padding: 0 8px; box-sizing: border-box; border-radius: 9px; white-space: nowrap; background: #3d7a26; color: #fff; font-size: 11px; font-weight: 900; line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; box-shadow: 0 1px 0 #24520f; }
+.hv-chip:empty { display: none; }
+.harvest-btn.ready .hv-chip { background: #e4472b; box-shadow: 0 1px 0 #9e2a14; }
+.harvest-btn.ready { animation: hv-pulse 1.2s ease-in-out infinite; }
+@keyframes hv-pulse { 50% { transform: scale(1.06); } }
+/* Its card: the nut and the title side by side, the steps as small chips, a round clock while waiting,
+   buttons of a normal size. */
+.card.offer.harvest-offer { position: relative; width: min(400px, 100%); gap: 8px; padding: 14px 18px 16px; max-height: 100%; overflow-y: auto; }
+.harvest-offer .close-x { position: absolute; top: 8px; right: 8px; margin: 0; width: 34px; height: 34px; }
+.hv-head { display: flex; align-items: center; gap: 10px; align-self: flex-start; }
+.hv-head h2 { margin: 0; font-size: 21px; }
+.hv-head .sub { margin: 0; text-align: left; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: #3d7a26; opacity: 1; }
+.hv-badge { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; background: #fff; box-shadow: 0 2px 0 #e2d6b8; flex: 0 0 auto; }
+.hv-badge .hv-ico { width: 36px; height: 36px; }
+.harvest-offer #harvest-body { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; }
+.harvest-offer .hv-steps { gap: 4px; }
+.harvest-offer .hv-steps li { font-size: 11px; padding: 4px 8px; }
+.harvest-offer .hv-steps li.done::before { content: '✓ '; }
+.harvest-offer .hv-hint { font-size: 14px; line-height: 1.3; }
+.hv-clock { display: flex; align-items: center; gap: 10px; background: #fff; border-radius: 40px; padding: 5px 16px 5px 5px; box-shadow: 0 2px 0 #e2d6b8; }
+.hv-clock i { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; background: #3d7a26; color: #fff; font-style: normal; font-size: 20px; }
+.hv-clock span { display: flex; flex-direction: column; line-height: 1.1; font-size: 11px; font-weight: 800; color: #8b7a55; }
+.hv-clock b { font-size: 22px; color: #2b3a1a; font-variant-numeric: tabular-nums; }
+.harvest-offer #harvest-body .btn { width: auto; min-width: 210px; max-width: 100%; padding: 9px 22px; font-size: 16px; border-radius: 12px; }
+.harvest-offer #harvest-body .btn.ad { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px 6px 8px; font-size: 14px; min-height: 0; }
+.harvest-offer #harvest-body .btn.ad .ad-play { width: 26px; height: 26px; }
+.btn.hv-go { background: linear-gradient(180deg, #7ccf3e, #3f9a1f); box-shadow: 0 3px 0 #2b6e12; color: #fff; font-weight: 900; text-shadow: 0 1px 0 #24590c; letter-spacing: 0.3px; }
+.harvest-offer .hv-price { margin-left: 6px; }
 .corner-badge { min-width: 18px; padding: 0 5px; border-radius: 9px; background: #e4472b; color: #fff; font-size: 11px; line-height: 18px; text-align: center; }
 .corner-badge:empty { display: none; }
 .task-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }

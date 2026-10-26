@@ -2,13 +2,13 @@ import './styles.css';
 import './hud.css';
 import * as THREE from 'three';
 import { GameAudio } from './audio/audio';
-import { BushKind, DAILY, ENGINE, EXTRAS, HIVE, LEVELS, LINE_TYPES, LevelDef, MACHINES, NO_UPGRADES, PLAYER, REQUEST_TEXT, THEME_NAME, TRIMMER, Theme, UPGRADES, WEATHER_ICON, Weather, VEHICLES, DECOR, PAINTS } from './game/config';
+import { BushKind, DAILY, ENGINE, EXTRAS, HIVE, LEVELS, LINE_TYPES, LevelDef, MACHINES, NO_UPGRADES, PLAYER, REQUEST_TEXT, THEME_NAME, TRIMMER, Theme, UPGRADES, WEATHER_ICON, WEATHER_NAME, Weather, VEHICLES, DECOR, PAINTS } from './game/config';
 import { CarryOver, Result, Session } from './game/session';
 import { PRIMES_NEEDED, PullResult } from './game/starter';
 import { Input } from './input/input';
 import { Visor } from './ui/visor';
 import { initAds, maybeInterstitial, setAdsRemoved, showRewarded } from './platform/ads';
-import { COIN_PACKS, STARTER, STARTER_ID, buyProduct, buyRemoveAds, ownsRemoveAds, ownsStarter, productPrices, removeAdsPrice, restoreRemoveAds } from './platform/store';
+import { COIN_PACKS, HARVEST_NOW, STARTER, STARTER_ID, buyProduct, buyRemoveAds, ownsRemoveAds, ownsStarter, productPrices, removeAdsPrice, restoreRemoveAds } from './platform/store';
 import { DEFAULT_SAVE, SaveData, haptic, initPlatform, loadSave, setVibration, writeSave } from './platform/native';
 import { preloadBushTextures } from './render/hazelnut';
 import { preloadGround } from './render/scenery';
@@ -23,7 +23,9 @@ import { GoldKind, goldArt } from './ui/goldArt';
 import { ShopPreview } from './render/shopPreview';
 import { ALL_DONE_BONUS, JobDone, TaskDef, dayTasks, taskCount } from './game/tasks';
 import { activeEvents, eventPay } from './game/events';
-import { REGIONS, setPosted } from './game/village';
+import { REGIONS, setPosted, village } from './game/village';
+import { HARVEST, HarvestState, beansKg, capacityOf, dryWithAd, harvestHint, harvestNeeds, harvestOn, harvestSacks, loadSack, newHarvest, sellNuts, spreadSack, suckCell, tickHarvest } from './game/harvest';
+import { HEAP_R, harmanCells, harvestSpots, inSpot, loadSpot, pickPiles, sackPile, tarpSpot } from './render/harvest';
 import { SAGA_MAPS } from './ui/sagaMaps';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -88,13 +90,34 @@ function picture(files: string[], fallback: string): string {
  */
 const PULL_PX = 108;
 /**
+ * The harvest: seconds a sack takes to load or spread (held) and between the hose's sucks; how far the
+ * hose reaches from the patos and its mouth to a heap (m).
+ */
+const SACK_PACE = 0.55;
+/** The village the harvest is in (Yeşilyamaç). */
+const HARVEST_REGION = 1;
+/** The job list's tab for the harvest. */
+const HARVEST_TAB = -1;
+/** A time left as a clock, hours:minutes:seconds (47:59:59). */
+const clock = (ms: number): string => {
+  const t = Math.max(0, Math.ceil(ms / 1000));
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(Math.floor(t / 3600))}:${p(Math.floor(t / 60) % 60)}:${p(t % 60)}`;
+};
+const SUCK_PACE = 0.5;
+const HOSE_REACH = 14;
+const SUCK_REACH = 1.6;
+/** Seconds the camera stays turned round the vehicle, driving on untouched, before it comes back behind. */
+const ORBIT_HOLD = 4;
+
+/**
  * First person, the look down at the line with the trimmer in hand (radians): the screen held sideways
  * is short, so further down than the hands' own pitch to keep the head in view.
  */
 const TRIMMER_PITCH = -0.75;
 
 /** Shop pictures in public/textures (shop-<id>.webp), preloaded at start. */
-const SHOP_PICTURES = ['patpat', 'traktor', 'romork', 'emektar', 'usta', 'sirt', 'yuvarlak', 'koseli', 'burgulu', 'kulaklik', 'siperlik', 'depo', 'kalin', 'kafa', 'motor', 'cizme'];
+const SHOP_PICTURES = ['patpat', 'traktor', 'romork', 'patos', 'emektar', 'usta', 'sirt', 'yuvarlak', 'koseli', 'burgulu', 'kulaklik', 'siperlik', 'depo', 'kalin', 'kafa', 'motor', 'cizme'];
 
 /** Development: every field playable without unlocking. Set to false before release. */
 const UNLOCK_ALL = true;
@@ -141,6 +164,17 @@ class Game {
   private lastCluck = 0;
   /** A held context action is down (fitting line). */
   private actionHeld = false;
+  /** Which held action is held (the harvest's ÇUVAL YÜKLE, BOŞALT VE SER). */
+  private heldId = '';
+  /** The harvest in this job: its patos turning, its hose in the worker's hands, sucking now; a held action's pace. */
+  private patosRunning = false;
+  private hoseInHand = false;
+  private sucking = 0;
+  private harvestT = 0;
+  /** Seconds since the camera was last turned round the vehicle. */
+  private orbitIdle = 0;
+  /** The harvest is drawn and played in this job (Yeşilyamaç, once its gardens are done). */
+  private harvestHere = false;
   /** The context actions now shown (to rebuild the buttons only when they change). */
   private actionKey = '';
   /** Daily reward on offer (TL) while the daily screen is open. */
@@ -243,17 +277,42 @@ class Game {
 
   /** Serbest gez: in the village without a job. */
   private roaming = false;
+  /** The job about to start was taken on while roaming (it starts with the trimmer in the vehicle). */
+  private fromRoam = false;
+  /**
+   * Fındık Harmanı played (started from its tab): its steps told and its buttons shown. Serbest gez
+   * is the player's own: a harvest under way is seen there but asks nothing.
+   */
+  private harvesting = false;
+  /** Entered from the harvest's tab (the fields' gates and tips keep quiet; from Serbest gez they do not). */
+  private harvestTab = false;
+  /** The harvest's step last told (a warning when it changes to one that needs it). */
+  private guideKey = '';
+  /** A line under the shop's tabs: what a purchase or a hitch did, or why it cannot be had. */
+  private shopNote: { text: string; kind: '' | 'warn' | 'good' } | null = null;
+  /** Where closing the shop goes back to, when not the menu (the harvest's card that sent the player there). */
+  private shopBack: (() => void) | null = null;
+  /** The store's price for starting a harvest at once, once asked. */
+  private harvestPrice = '';
 
   /** Pictures decoded ahead of the screens that show them (held so they stay decoded). */
   private readonly warmed: HTMLImageElement[] = [];
 
-  /** The trailer bought and hitched, behind the tractor driven. */
+  /** The patos bought and hitched (instead of the trailer), behind the tractor driven. */
+  private get patosHitched(): boolean {
+    return this.save.vehicle === 'traktor' && !!this.save.vehicles?.includes('patos') && !!this.save.patosOn;
+  }
+
+  /** Something on the tractor's hitch: the trailer or the patos (and which, for the scene). */
   private get trailerOn(): boolean {
-    return this.save.vehicle === 'traktor' && !!this.save.vehicles?.includes('romork') && !this.save.trailerOff;
+    WorldView.towed = this.patosHitched ? 'patos' : 'romork';
+    return this.patosHitched || (this.save.vehicle === 'traktor' && !!this.save.vehicles?.includes('romork') && !this.save.trailerOff);
   }
 
   /** Menu background: the worker with his trimmer standing in front of the pat pat, on the harman at home. */
   private menuSession(): Session {
+    // (The menu's yard is just the yard: no harvest drawn there, whatever the last job left.)
+    WorldView.harvest = false;
     const s = new Session(LEVELS[0], NO_UPGRADES);
     // The vehicle chosen in the shop stands there.
     s.field.tractor = this.save.vehicle === 'traktor';
@@ -337,6 +396,8 @@ class Game {
     this.updateTasksBadge();
     this.updateEvents();
     this.offerDaily();
+    this.updateHarvestBtn();
+    this.offerHarvest();
   }
 
   // ---------------------------------------------------------------- daily reward, remove ads
@@ -526,20 +587,37 @@ class Game {
     this.show('regrow');
   }
 
+  /**
+   * A job's card (picked on the map, or a coffee-house notice): the customer with what they say, and what
+   * the job is — its pay, the field's size, how heavy the grass, what is in it, the weather, the
+   * customer's wish and tip, the best done there; KABUL ET starts it.
+   */
   private openCall(lv: LevelDef): void {
     if (this.readyIn(lv)) return this.offerRegrow(lv);
     this.regrowFor = lv;
     const c = lv.client;
     $('call-face').innerHTML = picture([`${c.face}.webp`], 'i-person');
-    $('call-name').textContent = `${c.name} arıyor…`;
-    $('call-place').innerHTML = `${lv.place} · ${THEME_NAME[lv.theme]} ${icon(WEATHER_ICON[this.weatherOf(lv)])}`;
+    $('call-name').textContent = lv.id < 100 ? `${lv.id}. ${lv.name}` : lv.name;
+    $('call-place').innerHTML = `${c.name} · ${lv.place} · ${THEME_NAME[lv.theme]}`;
     $('call-text').textContent = `“${c.call}”`;
-    $('call-request').textContent = c.request === 'none' ? '' : `İstek: ${REQUEST_TEXT[c.request]} · Bahşiş ${c.tip} TL`;
+    const pay = eventPay(lv, new Date());
+    const w = this.weatherOf(lv);
+    const load = lv.giant ? 'Dev ot' : (lv.grassLoad ?? 1) >= 1.25 ? 'Ağır ot' : (lv.grassLoad ?? 1) < 0.9 ? 'Hafif ot' : 'Normal ot';
+    const has = [lv.stones ? `${lv.stones} taş` : '', lv.hives ? 'Arı kovanı' : '', lv.snakes ? 'Yılan' : '', lv.banks ? 'Şev' : '', lv.stream ? 'Dere' : '', lv.hose ? 'Hortum' : ''].filter(Boolean);
+    const best = this.save.best[lv.id];
+    $('call-facts').innerHTML = [
+      `<span class="pay">${pay === lv.pay ? '' : `<s>${lv.pay}</s> `}${pay.toLocaleString('tr-TR')} TL</span>`,
+      `<span>${Math.round(lv.width * lv.depth).toLocaleString('tr-TR')} m²</span>`,
+      `<span>${load}</span>`,
+      `<span>${icon(WEATHER_ICON[w])} ${WEATHER_NAME[w]}</span>`,
+      ...has.map((t) => `<span>${t}</span>`),
+      c.request === 'none' ? '' : `<span>İstek: ${REQUEST_TEXT[c.request]} · +${c.tip} TL</span>`,
+      best ? `<span class="best">En iyi: ${'★'.repeat(best.stars)}${'☆'.repeat(3 - best.stars)}</span>` : '',
+    ].join('');
     $('btn-call-ok').onclick = () => {
       $('call').classList.remove('show');
       void this.startWithLoader(lv);
     };
-    this.audio.ring();
     this.show('call');
   }
 
@@ -637,14 +715,20 @@ class Game {
     list.innerHTML = '';
     list.scrollTop = 0;
     // The villages are maps with a path through their jobs; the coffee house's jobs a list.
-    list.className = tab === 0 ? 'level-grid' : 'saga';
-    $('levels').classList.toggle('saga-on', tab !== 0);
+    list.className = tab === 0 || tab === HARVEST_TAB ? 'level-grid' : 'saga';
+    $('levels').classList.toggle('saga-on', tab !== 0 && tab !== HARVEST_TAB);
     const head = (text: string, sub = '') => {
       const h = document.createElement('div');
       h.className = 'lv-head';
       h.innerHTML = `<b>${text}</b>${sub ? `<small>${sub}</small>` : ''}`;
       list.appendChild(h);
     };
+    // (The harvest has no tab any more: the menu's Fındık Harmanı button and card.)
+    if (tab === HARVEST_TAB) {
+      this.levelTab = HARVEST_REGION;
+      this.openLevels();
+      return;
+    }
     if (tab === 0) {
       // The coffee house's board: odd jobs in the neighbours' gardens.
       head('Köy Kahvesi İlanları', 'Her gün yeni ilanlar. Alınmayan ilanlar ertesi gün yenilenir.');
@@ -684,8 +768,11 @@ class Game {
       return;
     }
     const focus = this.drawSaga(list, tab);
+    const map = list.firstElementChild as HTMLElement;
+    list.classList.toggle('wide-map', map.classList.contains('wide'));
     this.show('levels');
-    list.scrollTop = Math.max(0, (focus / 100) * list.firstElementChild!.clientHeight - list.clientHeight * 0.55);
+    if (map.classList.contains('wide')) list.scrollLeft = Math.max(0, (focus.x / 100) * map.clientWidth - list.clientWidth * 0.5);
+    else list.scrollTop = Math.max(0, (focus.y / 100) * map.clientHeight - list.clientHeight * 0.55);
   }
 
   /**
@@ -694,6 +781,7 @@ class Game {
    */
   private dragToScroll(el: HTMLElement): void {
     let startY = 0, startTop = 0, lastY = 0, lastT = 0, speed = 0, moved = false, down = false, glide = 0;
+    let startX = 0, startLeft = 0, lastX = 0, speedX = 0;
     el.addEventListener('pointerdown', (e) => {
       if (e.pointerType !== 'mouse' || !el.classList.contains('saga')) return;
       cancelAnimationFrame(glide);
@@ -701,26 +789,35 @@ class Game {
       moved = false;
       startY = lastY = e.clientY;
       startTop = el.scrollTop;
+      startX = lastX = e.clientX;
+      startLeft = el.scrollLeft;
+      speedX = 0;
       lastT = performance.now();
       speed = 0;
     });
     window.addEventListener('pointermove', (e) => {
       if (!down) return;
-      if (Math.abs(e.clientY - startY) > 6) moved = true;
+      if (Math.abs(e.clientY - startY) > 6 || Math.abs(e.clientX - startX) > 6) moved = true;
       el.scrollTop = startTop - (e.clientY - startY);
+      el.scrollLeft = startLeft - (e.clientX - startX);
       const now = performance.now();
       speed = (lastY - e.clientY) / Math.max(1, now - lastT);
+      speedX = (lastX - e.clientX) / Math.max(1, now - lastT);
       lastY = e.clientY;
+      lastX = e.clientX;
       lastT = now;
     });
     window.addEventListener('pointerup', () => {
       if (!down) return;
       down = false;
       let v = speed * 16;
+      let vx = speedX * 16;
       const step = () => {
-        if (Math.abs(v) < 0.5) return;
+        if (Math.abs(v) < 0.5 && Math.abs(vx) < 0.5) return;
         el.scrollTop += v;
+        el.scrollLeft += vx;
         v *= 0.93;
+        vx *= 0.93;
         glide = requestAnimationFrame(step);
       };
       step();
@@ -742,10 +839,10 @@ class Game {
    * jobs done with their stars, the next one with the worker's pin on it, those not yet open greyed
    * and padlocked (the first of them with its price to open it now) under a grey mist. On the artist's
    * map (see sagaMaps.ts) the jobs sit on its road; without one a road is drawn on plain green. Each
-   * job is a wooden badge with its number. Gives where the
-   * next job is (percent of the map's height from the top) for the scroll.
+   * job is a wooden badge with its number and what it pays. Gives where the next job is (percent of the
+   * map across and down) for the scroll.
    */
-  private drawSaga(list: HTMLElement, tab: number): number {
+  private drawSaga(list: HTMLElement, tab: number): { x: number; y: number } {
     const jobs = LEVELS.filter((l) => (l.region ?? 1) === tab);
     const region = REGIONS.find((r) => r.id === tab)!;
     const open = (lv: LevelDef) => UNLOCK_ALL || lv.id <= this.save.unlocked;
@@ -795,13 +892,13 @@ class Game {
     const firstLocked = jobs.find((l) => !open(l));
     // The worker's pin: on the first open job not done yet.
     const nextJob = jobs.find((l) => open(l) && !this.save.best[l.id]);
-    let focus = pts[0].y;
+    let focus = pts[0];
     jobs.forEach((lv, i) => {
       const locked = !open(lv);
       const best = this.save.best[lv.id];
       const wait = locked ? 0 : this.readyIn(lv);
       const next = lv === nextJob;
-      if (next || (!nextJob && (lv === firstLocked || (!firstLocked && i === last)))) focus = pts[i].y;
+      if (next || (!nextJob && (lv === firstLocked || (!firstLocked && i === last)))) focus = pts[i];
       const b = document.createElement('button');
       b.className = `saga-node${locked ? ' locked' : ''}${best ? ' done' : ''}${next ? ' next' : ''}${wait ? ' growing' : ''}${lv.id === fresh ? ' fresh' : ''}${pts[i].x < 50 ? ' pin-left' : ''}`;
       b.style.left = `${pts[i].x}%`;
@@ -810,8 +907,8 @@ class Game {
       b.innerHTML = `${next ? '<img class="sn-pin" src="./harita/pin.webp" alt="">' : ''}
         <span class="sn-disc"><b>${locked ? '<img class="sn-lock" src="./harita/kilit.webp" alt="">' : lv.id}</b></span>
         ${locked ? '' : `<span class="sn-stars">${starRow}</span>`}
-        <span class="sn-name">${lv.name}</span>
-        ${lv === firstLocked ? `<span class="sn-tag price">${this.unlockLabel(lv)}</span>` : wait ? `<span class="sn-tag wait">${icon('i-clock')} ${formatWait(wait)}</span>` : ''}`;
+        ${next ? `<span class="sn-name">${lv.name}</span>` : ''}
+        ${lv === firstLocked ? `<span class="sn-tag price">${this.unlockLabel(lv)}</span>` : wait ? `<span class="sn-tag wait">${icon('i-clock')} ${formatWait(wait)}</span>` : locked ? '' : this.payChip(lv)}`;
       b.onclick = () => {
         this.audio.unlock();
         this.audio.ui();
@@ -883,6 +980,12 @@ class Game {
   private applyLook(): void {
     WorldView.paintHue = PAINTS.find((p) => p.id === this.save.paint)?.hue ?? null;
     WorldView.decor = (this.save.decor ?? []).filter((d) => !this.save.decorOff?.includes(d));
+  }
+
+  /** A job's pay on the map, under its badge (an event's raise in pink). */
+  private payChip(lv: LevelDef): string {
+    const pay = eventPay(lv, new Date());
+    return `<span class="sn-tag pay${pay === lv.pay ? '' : ' event'}">${pay.toLocaleString('tr-TR')} TL</span>`;
   }
 
   /** A job's pay for the list: raised by an event, it shows in gold with the old pay struck through. */
@@ -1015,12 +1118,17 @@ class Game {
       t.onclick = () => {
         this.audio.ui();
         this.shopTab = id;
+        this.shopNote = null;
         this.openShop();
       };
       bar.appendChild(t);
     }
     const list = $('shop-list');
     list.innerHTML = '';
+    const note = $('shop-note');
+    note.textContent = this.shopNote?.text ?? '';
+    note.className = `shop-note ${this.shopNote?.kind ?? ''}`;
+    note.style.display = this.shopNote ? '' : 'none';
     const eq = this.save.equipment;
     const card = (pic: string, name: string, desc: string, extra: string, label: string, enabled: boolean, onBuy: () => void, selected = false) => {
       const c = document.createElement('div');
@@ -1154,21 +1262,39 @@ class Game {
       for (const v of VEHICLES) {
         const has = owned.includes(v.id);
         if (v.attach) {
-          // The trailer: bought once (with the tractor), then hitched on or left off.
-          const hitched = has && !this.save.trailerOff;
-          const canBuy = owned.includes('traktor') && this.save.money >= v.price;
-          const label = has ? (hitched ? 'ÇIKAR' : 'TAK') : owned.includes('traktor') ? `${v.price.toLocaleString('tr-TR')} TL` : 'ÖNCE TRAKTÖR';
-          card(pic(v.id, 'i-tractor'), v.name, v.desc, '', label, has || canBuy, () => {
+          // The trailer and the patos: bought once (the tractor first), then hitched on or left off; one at a time.
+          const patos = v.id === 'patos';
+          const hitched = has && (patos ? !!this.save.patosOn : !this.save.trailerOff && !this.save.patosOn);
+          const tractor = owned.includes('traktor');
+          const canBuy = tractor && this.save.money >= v.price;
+          const label = has ? (hitched ? 'ÇIKAR' : 'TAK') : tractor ? `${v.price.toLocaleString('tr-TR')} TL` : 'ÖNCE TRAKTÖR';
+          const state = has ? `<span class="hitch-badge${hitched ? ' on' : ''}">${hitched ? (using === 'traktor' ? 'TAKILI' : 'TAKILI · TRAKTÖRÜ SEÇ') : 'TAKILI DEĞİL'}</span>` : '';
+          card(pic(v.id, 'i-tractor') + state, v.name, v.desc, '', label, has || canBuy || !tractor, () => {
+            if (!has && !tractor) {
+              this.shopNote = { text: `${v.name} sadece traktöre takılır: önce traktörü al`, kind: 'warn' };
+              return;
+            }
             if (!has) {
               if (!canBuy) return;
               this.save.money -= v.price;
               this.save.vehicles = [...owned, v.id];
-              this.save.trailerOff = false;
               this.audio.coin();
+            } else this.audio.ui();
+            // Hitched (just bought or put on): the other one off; or taken off.
+            const on = !has || !hitched;
+            const other = patos ? owned.includes('romork') && !this.save.trailerOff && !this.save.patosOn : !!this.save.patosOn;
+            if (patos) {
+              this.save.patosOn = on;
+              if (on) this.save.trailerOff = true;
             } else {
-              this.save.trailerOff = hitched;
-              this.audio.ui();
+              this.save.trailerOff = !on;
+              if (on) this.save.patosOn = false;
             }
+            // Said plainly: what is on the hitch now, what came off, and the tractor to be picked.
+            const off = on && other ? ` ${patos ? 'Römork' : 'Patos'} çıkarıldı (ikisi birden takılmaz).` : '';
+            const pick = on && using !== 'traktor' ? ' Traktörü SEÇ: arkasında gelir.' : '';
+            const carry = !on && !patos ? ' Traktör artık çuval taşımaz.' : on && patos ? ' Çuval taşımak için römorku tak ya da patpatı seç.' : '';
+            this.shopNote = { text: `${v.name} ${on ? 'takıldı' : 'çıkarıldı'}.${off}${pick}${carry}`, kind: on ? 'good' : '' };
             if (this.mode === 'menu') this.view.load(this.menuSession(), this.models, true);
             else if (this.shopInGame) this.applyVehicle();
           }, hitched);
@@ -1185,6 +1311,11 @@ class Game {
             this.audio.coin();
           } else this.audio.ui();
           this.save.vehicle = v.id;
+          const towed = this.save.patosOn && owned.includes('patos') ? 'patos' : owned.includes('romork') && !this.save.trailerOff ? 'römork' : '';
+          this.shopNote = {
+            text: v.id === 'traktor' ? `Traktör seçildi.${towed ? ` Arkasında ${towed} takılı.` : ' Arkasında bir şey takılı değil.'}` : `${v.name} seçildi.${owned.includes('traktor') ? ' Römork ve patos traktörde kalır.' : ''}`,
+            kind: 'good',
+          };
           // On the menu: the yard behind it shows the vehicle chosen; in a job it stands there at once.
           if (this.mode === 'menu') this.view.load(this.menuSession(), this.models, true);
           else if (this.shopInGame) this.applyVehicle();
@@ -1250,6 +1381,7 @@ class Game {
     on('btn-tasks', () => this.openTasks());
     on('btn-tasks-close', () => this.showMenu());
     on('btn-store', () => this.openStore());
+    on('btn-wallet-plus', () => this.openStore());
     on('btn-store-close', () => (this.shopInGame ? this.resume() : this.showMenu()));
     on('btn-store-restore', () => void this.restorePurchases('btn-store-restore'));
     on('btn-offer-buy', () => void this.buyNoAds());
@@ -1263,12 +1395,32 @@ class Game {
     on('btn-regrow-ad', () => void this.watchAdToRegrow());
     on('btn-ad-fuel', () => void this.watchAdToFuel());
     on('btn-levels-close', () => this.show('menu'));
-    on('btn-shop', () => this.openShop());
+    on('btn-shop', () => {
+      this.shopNote = null;
+      this.shopBack = null;
+      this.openShop();
+    });
     on('btn-shop-close', () => {
-      // From the yard: back to the job (resume closes it); from the menu: back to the menu.
+      // From the yard: back to the job (resume closes it); from the harvest's card: back to it; from the menu: back to the menu.
+      const back = this.shopBack;
+      this.shopBack = null;
       if (this.shopInGame) this.resume();
+      else if (back) back();
       else this.show('menu');
     });
+    on('btn-harvest', () => this.openHarvest());
+    on('btn-harvest-close', () => $('harvest-offer').classList.remove('show'));
+    // The menu's harvest button counts down (and its card, open, with it).
+    window.setInterval(() => {
+      if (this.mode !== 'menu') return;
+      this.updateHarvestBtn();
+      // The card's clock; at nought the card shows what comes next.
+      for (const el of document.querySelectorAll<HTMLElement>('#harvest-body [data-until]')) {
+        const left = Number(el.dataset.until) - this.now();
+        el.textContent = clock(left);
+        if (left <= 0) this.drawHarvest($('harvest-body'));
+      }
+    }, 1000);
     on('btn-roam', () => void this.startRoam());
     on('btn-settings', () => this.openSettings());
     // From the pause menu: the settings over the game, back to the pause menu when done.
@@ -1652,11 +1804,13 @@ class Game {
    * (the vehicle in the garage, the trimmer left in it), in first person; walk, drive, look round, the
    * shop by the house. No objective, gauges, time or pay; the pause card's Ana Menü ends it.
    */
-  private async startRoam(): Promise<void> {
+  private async startRoam(harvest = false): Promise<void> {
     const tab = this.levelTab ?? 1;
     const def = LEVELS.find((l) => (l.region ?? 1) === tab) ?? LEVELS[0];
-    const place = REGIONS.find((r) => r.id === tab)?.name ?? 'Köy';
+    const place = harvest ? 'Fındık Harmanı' : (REGIONS.find((r) => r.id === tab)?.name ?? 'Köy');
     this.roaming = true;
+    this.harvesting = this.harvestTab = harvest;
+    this.guideKey = '';
     this.lastJob = null;
     await this.startWithLoader(def, `${place} hazırlanıyor…`);
   }
@@ -1674,7 +1828,16 @@ class Game {
     if (this.roaming) {
       this.session.intro = null;
       this.session.roaming = true;
+    } else if (this.fromRoam) {
+      // On from Serbest gez where it was: the trimmer in the vehicle without line, as a job's start.
+      const s = this.session;
+      s.intro = 'take';
+      s.hasTrimmer = false;
+      s.line = 0;
+      s.broken = true;
     }
+    this.fromRoam = false;
+    if (!this.roaming) this.harvesting = this.harvestTab = false;
     document.body.classList.toggle('roam', this.roaming);
     // The vehicle bought and chosen in the shop.
     this.session.field.tractor = this.save.vehicle === 'traktor';
@@ -1690,6 +1853,22 @@ class Game {
     WorldView.unlockedUpTo = this.save.unlocked;
     this.applyLook();
     WorldView.waitText = Object.fromEntries(LEVELS.map((l) => [l.id, this.readyIn(l) ? `Ot uzuyor: ${formatWait(this.readyIn(l))}` : 'Hazır']));
+    // The harvest, in Yeşilyamaç once its gardens are done.
+    const hv = this.harvest();
+    this.harvestHere = this.session.field.region.id === HARVEST_REGION && !!hv && hv.stage !== 'idle';
+    // Serbest gez with a harvest of the player's left half done: its steps told as from its tab.
+    if (this.roaming && this.harvestHere && harvestOn(hv)) this.harvesting = true;
+    // A new harvest's sacks: two places by the village's tracks, picked afresh for each harvest.
+    if (this.harvestHere && hv && hv.stage === 'collect' && !hv.piles) {
+      const p = pickPiles(this.session.field, Math.random);
+      if (p) {
+        hv.piles = p;
+        void writeSave(this.save);
+      }
+    }
+    this.session.field.harvestPiles = hv?.piles;
+    WorldView.harvest = this.harvestHere;
+    this.patosRunning = this.hoseInHand = false;
     this.view.load(this.session, this.models);
     // Every job starts in first person, at the worker's eyes on the harman (the eye button still
     // switches to the camera behind him for the job).
@@ -1727,15 +1906,522 @@ class Game {
     chip.textContent = lv.client.request === 'none' ? '' : `${lv.client.name}: ${REQUEST_TEXT[lv.client.request]}`;
     this.updateStarterUi();
     // The job: which field (it is marked on the map), for whom.
-    if (this.roaming) this.toast('Serbest gez: köyü istediğin gibi dolaş. Çıkmak için duraklat › Ana Menü', 'good');
+    // (The harvest: its objective says what to do, nothing more on top of it.)
+    if (this.roaming && this.harvesting) {
+      this.guideKey = this.harvestGuide(this.session).key;
+      if (!this.harvestTab) this.toast('Serbest gez: yarım kalan hasadın var, sıradaki adım üstte yazıyor', 'good');
+    } else if (this.roaming) this.toast('Serbest gez: tırpan evde, köy senin. Bir tarlanın kapısında BU İŞE GEÇ ile iş başlar', 'good');
     else this.toast(`Bugünkü iş: ${lv.name} (${lv.client.name}). Yeri HARİTA'da işaretli`, 'good', 'job', 6);
+  }
+
+  /** The harvest is open: Yeşilyamaç's gardens done (or every job open while developing). */
+  private get harvestOpen(): boolean {
+    return UNLOCK_ALL || this.save.unlocked > HARVEST.gardens[HARVEST.gardens.length - 1];
+  }
+
+  /** What the player has for the patos. */
+  private get harvestHas(): { patos: boolean; tractor: boolean } {
+    const v = this.save.vehicles ?? [];
+    return { patos: v.includes('patos'), tractor: v.includes('traktor') };
+  }
+
+  /** The harvest's state (null: never started; the player starts one from its tab). */
+  private harvest(): HarvestState | null {
+    if (!this.harvestOpen) return null;
+    const h = this.save.harvest;
+    // (Earlier versions put a harvest out by themselves: one nobody has touched is taken back.)
+    if (h && !h.started && h.stage === 'collect' && !h.load && !h.spread) this.save.harvest = undefined;
+    return this.save.harvest ?? null;
+  }
+
+  /**
+   * Every frame of a job in Yeşilyamaç: the harvest's time passing, the load on the vehicle, the held
+   * ÇUVAL YÜKLE / BOŞALT VE SER (a sack every SACK_PACE), the patos's hose sucking the harman's nuts up,
+   * and the scene drawn from it.
+   */
+  private harvestStep(s: Session, dt: number): void {
+    const h = this.harvestHere ? this.harvest() : null;
+    if (!h) return;
+    const now = this.now();
+    if (tickHarvest(h, now)) {
+      void writeSave(this.save);
+      if (h.stage === 'idle') this.toast('Fındık harmanı hazır! Ana menüde FINDIK HARMANI\'ndan başlat', 'good');
+      else if (this.harvesting) this.toast(harvestHint(h, now, this.harvestHas), 'good');
+    }
+    if (this.harvesting) {
+      const g = this.harvestGuide(s);
+      if (g.key !== this.guideKey) {
+        this.guideKey = g.key;
+        // A step that needs it (stop and get off): the objective itself flashes red, no message more.
+        if (g.alert) {
+          const el = $('objective');
+          el.classList.remove('alert');
+          void el.offsetWidth;
+          el.classList.add('alert');
+          haptic('medium');
+        }
+      }
+    }
+    const f = s.field;
+    f.cargo = h.load;
+    f.cargoCap = capacityOf(f.tractor, !!f.trailer && !this.patosHitched);
+    // A held action: a sack a beat.
+    const held = this.actionHeld ? this.heldId : '';
+    this.harvestT = held === 'sack' || held === 'spread' ? this.harvestT + dt : this.hoseInHand ? this.harvestT : 0;
+    if ((held === 'sack' || held === 'spread') && this.harvestT >= SACK_PACE) {
+      this.harvestT = 0;
+      const g = this.harvestGarden(s);
+      const ok = held === 'sack' ? g !== null && loadSack(h, g, f.cargoCap) : spreadSack(h, now);
+      if (ok) {
+        haptic('light');
+        this.audio.ui();
+        void writeSave(this.save);
+        if (h.stage === 'drying') this.toast(`Bütün fındık harmanda. Yaş fındık kurumadan patosa verilmez: ${HARVEST.dryHours / 24} gün (ya da ${HARVEST.dryAds} reklamla hemen)`, 'good');
+        else if (held === 'sack' && h.load >= f.cargoCap) this.toast(`Araç doldu (${h.load} çuval): bin, harmana götür`, 'warn');
+        else if (held === 'sack' && g !== null && !h.waiting[g]) this.toast(h.load < f.cargoCap && Object.values(h.waiting).some((n) => n > 0) ? 'Buradaki çuvallar bitti: öteki bahçeye git ya da harmana götür' : 'Çuvalların hepsi araçta: harmana götür', 'good');
+        else if (held === 'spread' && !h.load) this.toast('Araç boşaldı: kalan çuvallar için bahçelere dön', 'good');
+      }
+    }
+    // Driving off: the patos stops, the hose is put back.
+    if (s.driving || !this.patosHitched || h.stage !== 'thresh') this.patosRunning = this.hoseInHand = false;
+    if (this.view.world) this.view.world.patosRunning = this.patosRunning;
+    this.sucking = Math.max(0, this.sucking - dt);
+    let hand: THREE.Vector3 | null = null;
+    if (this.hoseInHand) {
+      // The hose's mouth: in the hands, a little ahead and low.
+      const mx = s.x + Math.sin(s.yaw) * 0.9;
+      const mz = s.z + Math.cos(s.yaw) * 0.9;
+      hand = new THREE.Vector3(mx, f.height(mx, mz) + 0.35, mz);
+      const p = this.patosPos(s);
+      if (p && Math.hypot(p.x - s.x, p.z - s.z) > HOSE_REACH) this.toast('Hortum o kadar uzanmıyor: patosa yaklaş', 'warn', 'hose', 4);
+      else if (this.patosRunning) {
+        this.harvestT += dt;
+        if (this.harvestT >= SUCK_PACE) {
+          this.harvestT = 0;
+          const done = new Set(h.sucked ?? []);
+          let best = -1;
+          // (From the heap's middle: its foot, smaller as it goes, and the reach beyond it.)
+          let bd = HEAP_R * 0.6 + SUCK_REACH;
+          harmanCells(f).forEach((c, i) => {
+            const d = Math.hypot(c.x - mx, c.z - mz);
+            if (!done.has(i) && d < bd) {
+              bd = d;
+              best = i;
+            }
+          });
+          if (best >= 0 && suckCell(h, best, now)) {
+            this.sucking = 0.5;
+            if (h.stage === 'beans') {
+              this.patosRunning = this.hoseInHand = false;
+              void writeSave(this.save);
+              this.toast(`Bitti! ${beansKg(h)} kg tane fındık brandada. Kuruması ${HARVEST.dryHours / 24} gün (ya da ${HARVEST.dryAds} reklamla hemen)`, 'good');
+            } else if (done.size % 8 === 0) void writeSave(this.save);
+          }
+        }
+      }
+    }
+    this.audio.setPatos(this.patosRunning ? 1 : 0, this.sucking > 0 ? 1 : 0);
+    if (this.view.world?.harvest) this.view.world.harvest.patosOwned = this.harvestHas.patos;
+    this.view.world?.updateHarvest(h, hand, this.sucking > 0, performance.now() / 1000);
+  }
+
+  /** The garden whose sacks the worker stands by (field coordinates), with sacks still there. */
+  private harvestGarden(s: Session): number | null {
+    const h = this.save.harvest;
+    if (!h || h.stage !== 'collect') return null;
+    for (const g of HARVEST.gardens) {
+      // By the pile, or by the vehicle's place on the track beside it (either side of the vehicle).
+      const p = sackPile(s.field, g);
+      const sp = loadSpot(s.field, g);
+      if (p && sp && (h.waiting[g] ?? 0) > 0 && (Math.hypot(p.x - s.x, p.z - s.z) < 4 || Math.hypot(sp.x - s.x, sp.z - s.z) < 4)) return g;
+    }
+    return null;
+  }
+
+  /** The middle of the vehicle's load (the trailer behind the tractor, the pat pat's box behind its seat). */
+  private loadBed(s: Session): { x: number; z: number } {
+    const f = s.field;
+    const ax = f.trailerAxle();
+    if (ax) return { x: ax.x + Math.sin(ax.yaw) * 0.3, z: ax.z + Math.cos(ax.yaw) * 0.3 };
+    const v = f.vehicle;
+    return { x: v.x - Math.sin(v.yaw) * 0.5, z: v.z - Math.cos(v.yaw) * 0.5 };
+  }
+
+  /** The patos backed into its place: its middle in the PATOS mark, facing the way the mark does (its tow bar out). */
+  private patosParked(s: Session): boolean {
+    const a = this.patosPos(s) as { x: number; z: number; yaw?: number } | null;
+    if (!a) return false;
+    const sp = harvestSpots(s.field).patos;
+    const turn = Math.atan2(Math.sin((a.yaw ?? 0) - sp.yaw), Math.cos((a.yaw ?? 0) - sp.yaw));
+    return inSpot(sp, a.x, a.z, 0.4) && Math.abs(turn) < 0.45;
+  }
+
+  /** The patos (its axle) where it stands, field coordinates (null: not hitched). */
+  private patosPos(s: Session): { x: number; z: number } | null {
+    return this.patosHitched ? s.field.trailerAxle() : null;
+  }
+
+  /** The harvest's buttons where the worker stands. */
+  private harvestActions(s: Session, acts: Parameters<Game['renderActions']>[0]): void {
+    const h = this.harvestHere ? this.harvest() : null;
+    if (!h || s.driving || !harvestOn(h)) return;
+    const f = s.field;
+    const atHarman = Math.hypot(s.x - f.harman.x, s.z - f.harman.z) < f.harman.r + 4;
+    const t = tarpSpot(f);
+    const atTarp = Math.hypot(s.x - t.x, s.z - t.z) < 4;
+    const garden = this.harvestGarden(s);
+    if (garden !== null) {
+      const p = sackPile(f, garden)!;
+      // The vehicle's bed in the yellow ÇUVAL YÜKLE mark beside the pile.
+      void p;
+      const bed = this.loadBed(s);
+      if (!inSpot(loadSpot(f, garden)!, bed.x, bed.z, 0.6)) acts.push({ id: 'sack-far', icon: 'i-tractor', label: 'ARACI YANAŞTIR', sub: 'kasası sarı alana', run: () => this.toast('Patpatın kasasını ya da römorku çuvalların yanındaki sarı ÇUVAL YÜKLE alanına getir', 'warn') });
+      else if (!f.cargoCap) acts.push({ id: 'sack-no', icon: 'i-tractor', label: 'RÖMORK LAZIM', sub: 'traktöre römork tak', run: () => this.toast('Traktör çuvalı römorkla taşır: Dükkân › Araç › Römork', 'warn') });
+      else acts.push({ id: 'sack', icon: 'i-hand', label: 'ÇUVAL YÜKLE', sub: `${h.load}/${f.cargoCap} · basılı tut`, hold: true, progress: h.load / f.cargoCap });
+    }
+    const ta = f.trailerAxle();
+    const byLoad = s.nearVehicle || (!!ta && Math.hypot(ta.x - s.x, ta.z - s.z) < 3.5);
+    const bed = this.loadBed(s);
+    const spots = harvestSpots(f);
+    // (Only by the harman: at a garden the held ÇUVAL YÜKLE must not be rebuilt under the finger.)
+    if (h.stage === 'collect' && h.load > 0 && byLoad && atHarman && !inSpot(spots.unload, bed.x, bed.z, 0.6))
+      acts.push({ id: 'unload-far', icon: 'i-tractor', label: 'BOŞALTMA YERİNE ÇEK', sub: 'harmanın yanındaki sarı alan', run: () => this.toast('Kasayı harmanın yanındaki sarı BOŞALTMA alanına getir', 'warn') });
+    if (h.stage === 'collect' && h.load > 0 && byLoad && inSpot(spots.unload, bed.x, bed.z, 0.6))
+      acts.push({ id: 'spread', icon: 'i-hand', label: 'BOŞALT VE SER', sub: `${h.spread}/${harvestSacks()} çuval · basılı tut`, hold: true, progress: h.spread / harvestSacks() });
+    if ((h.stage === 'drying' && atHarman) || (h.stage === 'beans' && (atTarp || atHarman)))
+      acts.push({ id: 'dry-ad', icon: 'i-play', label: 'HEMEN KURUT', sub: `reklam ${(h.ads ?? 0) + 1}/${HARVEST.dryAds}`, run: () => void this.dryByAd() });
+    if (h.stage === 'thresh' && this.patosHitched) {
+      const p = this.patosPos(s);
+      const near = !!p && Math.hypot(p.x - s.x, p.z - s.z) < 3.5;
+      const placed = this.patosParked(s);
+      if (near && !placed) acts.push({ id: 'patos-far', icon: 'i-tractor', label: 'PATOSU YERİNE ÇEK', sub: 'geri geri sarı PATOS alanına', run: () => this.toast('Patosu harmanın yanındaki sarı PATOS alanına geri geri park et', 'warn') });
+      if (near && placed) acts.push({ id: 'patos', icon: 'i-power', label: this.patosRunning ? 'PATOSU DURDUR' : 'PATOSU ÇALIŞTIR', sub: 'traktör kuyruk mili', run: () => (this.patosRunning = !this.patosRunning) });
+      if (this.patosRunning && near && !this.hoseInHand) acts.push({ id: 'hose', icon: 'i-hand', label: 'HORTUMU AL', sub: 'fındığın üstünde gez', run: () => (this.hoseInHand = true) });
+      if (this.hoseInHand) acts.push({ id: 'hose-off', icon: 'i-hand', label: 'HORTUMU BIRAK', sub: `çekilen %${Math.round(((h.sucked?.length ?? 0) / HARVEST.cells) * 100)}`, run: () => (this.hoseInHand = false) });
+    }
+    if (h.stage === 'sell' && (atTarp || atHarman))
+      acts.push({ id: 'sell', icon: 'i-coins', label: 'TÜCCARA SAT', sub: `${beansKg(h)} kg · ${(beansKg(h) * HARVEST.pricePerKg).toLocaleString('tr-TR')} TL`, run: () => this.sellHarvest() });
+  }
+
+  /** The menu's Fındık Harmanı button: its chip counts down to the next harvest (or the drying), or says what waits for the player (HAZIR, PATOS, SATIŞ). */
+  private updateHarvestBtn(): void {
+    const b = $('btn-harvest');
+    b.style.display = this.harvestOpen ? '' : 'none';
+    if (!this.harvestOpen) return;
+    b.classList.toggle('up', $('btn-starter').style.display === 'none');
+    const h = this.harvest();
+    const now = this.now();
+    if (h) tickHarvest(h, now);
+    let chip = 'HAZIR';
+    let ready = true;
+    if (h && h.stage !== 'idle') {
+      ready = h.stage === 'thresh' || h.stage === 'sell';
+      chip =
+        h.stage === 'rest' ? clock((h.next ?? now) - now)
+        : h.stage === 'collect' ? `${h.spread}/${harvestSacks()}`
+        : h.stage === 'drying' || h.stage === 'beans' ? clock((h.until ?? now) - now)
+        : h.stage === 'thresh' ? 'PATOS'
+        : 'SATIŞ';
+    }
+    $('harvest-badge').textContent = chip;
+    b.classList.toggle('ready', ready);
+  }
+
+  /** On the menu: the harvest's card, once each time a new harvest can be started. */
+  private offerHarvest(): void {
+    if (!this.harvestOpen || $('daily').classList.contains('show')) return;
+    const h = this.harvest();
+    if (h) tickHarvest(h, this.now());
+    const round = this.save.harvestRound ?? 0;
+    if ((h && h.stage !== 'idle') || this.save.harvestOffered === round) return;
+    this.save.harvestOffered = round;
+    void writeSave(this.save);
+    this.openHarvest();
+  }
+
+  private openHarvest(): void {
+    $('harvest-offer').classList.add('show');
+    this.drawHarvest($('harvest-body'));
+  }
+
+  /** Off to the harvest (the card closed). */
+  private goHarvest(): void {
+    $('harvest-offer').classList.remove('show');
+    this.levelTab = HARVEST_REGION;
+    void this.startRoam(true);
+  }
+
+  /**
+   * Fındık Harmanı's card (the side job, from the menu): before a harvest, what it needs (the tractor and
+   * the patos) and HASADI BAŞLAT; between harvests, how long until the next one, or start it at once
+   * (bought); under way, its steps, what to do and HASADA DEVAM; the drying sped up by ads.
+   */
+  private drawHarvest(box: HTMLElement): void {
+    box.innerHTML = '';
+    const h = this.harvest();
+    const now = this.now();
+    if (h) tickHarvest(h, now);
+    const add = (html: string, cls: string, run: () => void, disabled = false) => {
+      const b = document.createElement('button');
+      b.className = cls;
+      b.innerHTML = html;
+      b.disabled = disabled;
+      b.onclick = () => {
+        this.audio.unlock();
+        this.audio.ui();
+        run();
+      };
+      box.appendChild(b);
+      return b;
+    };
+    if (!h || !harvestOn(h)) {
+      const need = harvestNeeds(this.harvestHas);
+      const has = (n: string) => !need.includes(n);
+      const resting = h?.stage === 'rest';
+      box.insertAdjacentHTML(
+        'beforeend',
+        (need.length
+          ? `<ol class="hv-steps">
+          <li class="${has('Traktör') ? 'done' : 'now'}">Traktör</li>
+          <li class="${has('Patos') ? 'done' : 'now'}">Patos${has('Patos') ? '' : ` · ${HARVEST.patosPrice.toLocaleString('tr-TR')} TL`}</li>
+          <li class="done">Patpat ya da römork</li>
+        </ol>`
+          : '') +
+          (resting ? this.clockHtml('Yeni hasada', h.next ?? now) : '') +
+          `<p class="hv-hint">${
+            need.length ? `Hasattan önce ${need.join(' ve ')} lazım: kurumuş fındık patossuz harmanda kalır`
+            : resting ? 'Beklemek istemezsen hemen başlat'
+            : `Hazır! ${harvestSacks()} çuval köyün yollarından birinin kenarında seni bekliyor (her hasatta başka yerde)`
+          }</p>`,
+      );
+      if (need.length) {
+        add(`ÖNCE ${need[0].toLocaleUpperCase('tr')} AL`, 'btn hv-go', () => {
+          $('harvest-offer').classList.remove('show');
+          this.shopTab = 'arac';
+          this.shopNote = { text: `Fındık harmanı için ${need.join(' ve ')} lazım`, kind: 'warn' };
+          this.shopBack = () => {
+            this.show('menu');
+            this.openHarvest();
+          };
+          this.openShop();
+        });
+        return;
+      }
+      const start = () => {
+        this.save.harvest = newHarvest();
+        void writeSave(this.save);
+        this.goHarvest();
+      };
+      if (!resting) {
+        add('HASADI BAŞLAT', 'btn hv-go', start);
+        return;
+      }
+      // Waiting for the next: or started at once, bought.
+      const buy = add(`HEMEN BAŞLAT <b class="hv-price">${this.harvestPrice || HARVEST_NOW.devPrice}</b>`, 'btn gold', () => {
+        void buyProduct(HARVEST_NOW.id, true).then((ok) => {
+          if (ok) start();
+        });
+      });
+      if (!this.harvestPrice)
+        void productPrices([HARVEST_NOW.id]).then((p) => {
+          this.harvestPrice = p[HARVEST_NOW.id] ?? '';
+          const el = buy.querySelector('.hv-price');
+          if (el && this.harvestPrice) el.textContent = this.harvestPrice;
+        });
+      return;
+    }
+    const steps: [string, string][] = [
+      ['collect', 'Çuvallar'],
+      ['drying', 'Kuruma'],
+      ['thresh', 'Patos'],
+      ['beans', 'Branda'],
+      ['sell', 'Satış'],
+    ];
+    const at = steps.findIndex(([k]) => k === h.stage);
+    box.insertAdjacentHTML(
+      'beforeend',
+      `<ol class="hv-steps">${steps.map(([, t], i) => `<li class="${i < at ? 'done' : i === at ? 'now' : ''}">${t}</li>`).join('')}</ol>` +
+        (h.stage === 'drying' || h.stage === 'beans' ? this.clockHtml(h.stage === 'drying' ? 'Yaş fındık kuruyor' : 'Tane fındık kuruyor', h.until ?? now) : '') +
+        `<p class="hv-hint">${h.stage === 'drying' || h.stage === 'beans' ? 'Kurumadan patosa verilmez' : harvestHint(h, now, this.harvestHas)}</p>`,
+    );
+    add('HASADA DEVAM', 'btn hv-go', () => this.goHarvest());
+    if (h.stage === 'drying' || h.stage === 'beans')
+      add(`<span class="ad-play">${icon('i-play')}</span><span class="ad-text">Hemen kurut: reklam ${(h.ads ?? 0) + 1}/${HARVEST.dryAds}</span><span class="ad-tag">REKLAM</span>`, 'btn ad', () => void this.dryByAd());
+  }
+
+  /** A round clock counting down to `until` (ticked by the menu's timer), under a line saying what it waits for. */
+  private clockHtml(what: string, until: number): string {
+    return `<div class="hv-clock"><i>⏱</i><span>${what}<b data-until="${until}">${clock(until - this.now())}</b></span></div>`;
+  }
+
+  /**
+   * The way along the village's tracks from the worker to `to` (on a track): the metres left, and a point
+   * some 12 m on to aim at. Null when either is off the tracks (then as the crow flies).
+   */
+  private trackTo(s: Session, to: { x: number; z: number }): { x: number; z: number; left: number } | null {
+    const f = s.field;
+    const O = f.origin;
+    let pts: { x: number; z: number }[] | null = null;
+    let ti = 0;
+    let td = 6;
+    for (const r of Object.values(village(f.region).routes))
+      r.forEach((q, i) => {
+        const d = Math.hypot(q.x - O.x - to.x, q.z - O.z - to.z);
+        if (d < td) {
+          td = d;
+          pts = r;
+          ti = i;
+        }
+      });
+    const route = pts as { x: number; z: number }[] | null;
+    if (!route) return null;
+    let vi = 0;
+    let vd = 25;
+    route.forEach((q, i) => {
+      const d = Math.hypot(q.x - O.x - s.x, q.z - O.z - s.z);
+      if (d < vd) {
+        vd = d;
+        vi = i;
+      }
+    });
+    if (vd >= 25) return null;
+    const step = ti >= vi ? 1 : -1;
+    let left = vd;
+    for (let i = vi; i !== ti; i += step) left += Math.hypot(route[i + step].x - route[i].x, route[i + step].z - route[i].z);
+    const ai = step > 0 ? Math.min(ti, vi + 12) : Math.max(ti, vi - 12);
+    return { x: route[ai].x - O.x, z: route[ai].z - O.z, left: Math.round(left) };
+  }
+
+  /** A rewarded ad for the drying (a third of the time off; the third one dries it). */
+  private async dryByAd(): Promise<void> {
+    const h = this.save.harvest;
+    if (!h) return;
+    if (!(await showRewarded('Kuruma hızlandı!'))) return;
+    dryWithAd(h, this.now());
+    tickHarvest(h, this.now());
+    void writeSave(this.save);
+    this.toast(harvestHint(h, this.now(), this.harvestHas), 'good');
+    if ($('harvest-offer').classList.contains('show')) this.drawHarvest($('harvest-body'));
+  }
+
+  /** The merchant buys the clean nuts. */
+  private sellHarvest(): void {
+    const h = this.save.harvest;
+    if (!h) return;
+    const pay = sellNuts(h, this.now());
+    if (!pay) return;
+    this.save.money += pay;
+    this.save.harvestRound = (this.save.harvestRound ?? 0) + 1;
+    this.audio.coin();
+    this.audio.success();
+    haptic('medium');
+    this.updateMoney();
+    void writeSave(this.save);
+    this.toast(`Hasat bitti! Tüccar fındığı aldı: +${pay.toLocaleString('tr-TR')} TL. Yeni hasat ${HARVEST.everyDays} gün sonra (ana menüde FINDIK HARMANI)`, 'good');
+  }
+
+  /**
+   * Fındık Harmanı's next step for where the player stands, what they drive and what is on its hitch:
+   * the objective's line (an arrow to `to`), and a warning (`alert`) the moment one is needed, as
+   * stopping to get off and load by hand.
+   */
+  private harvestGuide(s: Session): { key: string; head: string; sub: string; to?: { x: number; z: number }; alert?: string } {
+    const h = this.save.harvest;
+    const now = this.now();
+    if (!h || !harvestOn(h)) return { key: h?.stage ?? 'none', head: '', sub: '' };
+    const f = s.field;
+    const bed = this.loadBed(s);
+    const dist = (p: { x: number; z: number }) => Math.round(Math.hypot(p.x - s.x, p.z - s.z));
+    const shop = 'Evin önünde DÜKKAN › Araç';
+    const tr = f.tractor;
+    // On foot, away from the vehicle: to it first.
+    const board = (key: string, why: string) =>
+      s.nearVehicle
+        ? { key: `${key}-b`, head: tr ? 'Traktöre bin' : 'Patpata bin', sub: why }
+        : { key: `${key}-w`, head: `${tr ? 'Traktörüne' : 'Patpatına'} git (${dist(f.vehicle)} m)`, sub: why, to: f.vehicle };
+    const ta = f.trailerAxle();
+    const byLoad = s.nearVehicle || (!!ta && Math.hypot(ta.x - s.x, ta.z - s.z) < 3.5);
+    switch (h.stage) {
+      case 'collect': {
+        const cap = capacityOf(tr, !!f.trailer && !this.patosHitched);
+        // No room for sacks (the patos or nothing on the tractor's hitch): how far the harman is, and what to change.
+        const rest = harvestSacks() - h.spread;
+        const head = `Harmanda ${h.spread}/${harvestSacks()} çuval: ${rest} çuval daha getir`;
+        if (!cap)
+          return this.patosHitched
+            ? { key: 'c-patos', head, sub: `Yaş fındık hepsi serilince kurur. Çuvallar patosa yüklenmez: ${shop}: römorku TAK ya da patpatı SEÇ`, alert: 'Traktörde patos var: çuval için römork ya da patpat lazım' }
+            : { key: 'c-trailer', head, sub: `Yaş fındık hepsi serilince kurur. Traktörde römork yok: ${shop}: römorku TAK ya da patpatı SEÇ`, alert: 'Traktör çuvalı römorkla taşır' };
+        const waiting = HARVEST.gardens.filter((g) => (h.waiting[g] ?? 0) > 0);
+        if (h.load < cap && waiting.length) {
+          // The nearest pile with sacks left.
+          const near = (id: number) => {
+            const sp = loadSpot(f, id)!;
+            return Math.hypot(sp.x - bed.x, sp.z - bed.z);
+          };
+          const g = waiting.reduce((a, b) => (near(b) < near(a) ? b : a));
+          const sp = loadSpot(f, g)!;
+          const left = waiting.reduce((a, id) => a + (h.waiting[id] ?? 0), 0);
+          if (inSpot(sp, bed.x, bed.z, 0.6)) {
+            if (s.driving) return { key: `c-off-${g}`, head: 'Dur ve araçtan in', sub: 'Çuvalları elle yükleyeceksin: İN butonuna bas', alert: 'Yerindesin! Dur ve araçtan in, çuvalları elle yükle' };
+            const pile = sackPile(f, g)!;
+            if (Math.hypot(pile.x - s.x, pile.z - s.z) >= 4 && Math.hypot(sp.x - s.x, sp.z - s.z) >= 4) return { key: `c-walk-${g}`, head: `Çuvalların yanına yürü (${dist(pile)} m)`, sub: 'Yanlarına gidince ÇUVAL YÜKLE çıkar', to: pile };
+            return { key: `c-load-${g}`, head: 'ÇUVAL YÜKLE butonuna basılı tut', sub: `Araçta ${h.load}/${cap} çuval · burada ${h.waiting[g]} çuval var` };
+          }
+          if (s.driving) {
+            const r = this.trackTo(s, sp);
+            return { key: `c-drive-${g}`, head: `Çuvallara git (${r?.left ?? dist(sp)} m)`, sub: `Yolu takip et · kasayı yol kenarındaki sarı ÇUVAL YÜKLE alanına getir · ${left} çuval bekliyor`, to: r ?? sp };
+          }
+          return board(`c-${g}`, `${left} çuval yol kenarında bekliyor: araçla gidip kasayı sarı alana getir`);
+        }
+        // Loaded (full, or the last sacks): to the harman's BOŞALTMA mark.
+        const u = harvestSpots(f).unload;
+        const more = waiting.length ? ' · sonra kalan çuvallara dön' : '';
+        if (inSpot(u, bed.x, bed.z, 0.6)) {
+          if (s.driving) return { key: 'u-off', head: 'Dur ve araçtan in', sub: 'Çuvalları harmana elle boşaltacaksın: İN butonuna bas', alert: 'Boşaltma yerindesin! Dur ve araçtan in' };
+          if (!byLoad) return { key: 'u-walk', head: 'Kasanın yanına yürü', sub: 'Yanına gidince BOŞALT VE SER çıkar', to: bed };
+          return { key: 'u-spread', head: 'BOŞALT VE SER butonuna basılı tut', sub: `Araçta ${h.load} çuval · harmanda ${h.spread}/${harvestSacks()}${more}` };
+        }
+        if (s.driving) {
+          const r = this.trackTo(s, f.harman);
+          return { key: 'u-drive', head: `Harmana götür (${r && dist(f.harman) > 15 ? r.left : dist(u)} m)`, sub: `Kasayı harmanın yanındaki sarı BOŞALTMA alanına getir${more}`, to: r && dist(f.harman) > 15 ? r : u };
+        }
+        return board('u', `${h.load} çuval araçta: harmana götür, kasayı sarı BOŞALTMA alanına getir`);
+      }
+      case 'drying':
+        return { key: 'dry', head: `Yaş fındık kuruyor: ${formatWait(Math.max(0, (h.until ?? now) - now))}`, sub: `Kurumadan patosa verilmez · harmanda HEMEN KURUT (${HARVEST.dryAds} reklam)` };
+      case 'thresh': {
+        if (!this.harvestHas.tractor) return { key: 't-notr', head: 'Fındık kurudu: patos için traktör lazım', sub: `${shop}: Traktör` };
+        if (!this.harvestHas.patos) return { key: 't-nopatos', head: 'Fındık kurudu: patos lazım', sub: `${shop}: Patos (sadece traktöre takılır)` };
+        if (!tr) return { key: 't-pick', head: 'Patos traktörle çalışır: traktöre geç', sub: `${shop}: Traktörü SEÇ, Patosu TAK` };
+        if (!this.patosHitched) return { key: 't-hitch', head: 'Patosu traktöre tak', sub: `${shop}: Patos › TAK (römork çıkar)` };
+        const ps = harvestSpots(f).patos;
+        if (!this.patosParked(s)) {
+          if (s.driving) return { key: 't-park', head: `Fındığı patosa ver: patosu geri geri park et (${dist(ps)} m)`, sub: 'Sarı PATOS alanına, patosun çeki kolu dışarı bakacak', to: ps };
+          return board('t-park', 'Patosu harmanın yanındaki sarı PATOS alanına geri geri park et');
+        }
+        if (s.driving) return { key: 't-off', head: 'Patos yerinde: traktörden in', sub: 'Sonra PATOSU ÇALIŞTIR', alert: 'Patos yerinde! Dur ve traktörden in' };
+        const p = this.patosPos(s)!;
+        if (Math.hypot(p.x - s.x, p.z - s.z) >= 3.5 && !this.hoseInHand)
+          return { key: 't-walk', head: `Patosun yanına yürü (${dist(p)} m)`, sub: this.patosRunning ? 'Yanında HORTUMU AL çıkar' : 'Yanında PATOSU ÇALIŞTIR çıkar', to: p };
+        if (!this.patosRunning) return { key: 't-run', head: 'PATOSU ÇALIŞTIR butonuna bas', sub: 'Traktörün kuyruk mili döndürür' };
+        if (!this.hoseInHand) return { key: 't-hose', head: 'HORTUMU AL butonuna bas', sub: 'Sonra hortumla yığına yürü' };
+        return { key: 't-suck', head: `Hortumla yığının etrafında gez: %${Math.round(((h.sucked?.length ?? 0) / HARVEST.cells) * 100)}`, sub: 'Tane fındık brandaya akar, kabuklar savrulur', to: f.harman };
+      }
+      case 'beans':
+        return { key: 'beans', head: `Tane fındık brandada kuruyor: ${formatWait(Math.max(0, (h.until ?? now) - now))}`, sub: `Harmanda ya da brandanın yanında HEMEN KURUT (${HARVEST.dryAds} reklam)` };
+      case 'sell':
+        return { key: 'sell', head: 'Tüccar geldi: TÜCCARA SAT', sub: `${beansKg(h)} kg · harmanda ya da brandanın yanında`, to: tarpSpot(f) };
+    }
+    return { key: 'none', head: '', sub: '' };
   }
 
   /** The shop from the yard: the job waits (paused, without the pause card) until it is closed. */
   private openShopInGame(): void {
     if (this.mode !== 'playing') return;
     this.pauseForShop();
-    this.shopTab = 'koy';
+    this.shopTab = this.harvesting || (harvestOn(this.save.harvest) && this.save.harvest?.stage === 'thresh') ? 'arac' : 'koy';
+    this.shopNote = null;
+    this.shopBack = null;
     this.openShop();
   }
 
@@ -1776,6 +2462,7 @@ class Game {
     this.audio.stopEngine();
     this.audio.patpat(false);
     this.audio.stopAmbience();
+    this.audio.stopPatos();
     this.audio.setBees(0);
     this.audio.setSpray(0);
     this.audio.setTraffic(0);
@@ -1796,6 +2483,7 @@ class Game {
     this.audio.stopEngine();
     this.audio.patpat(false);
     this.audio.stopAmbience();
+    this.audio.stopPatos();
     this.audio.setBees(0);
     this.audio.setSpray(0);
     this.audio.setTraffic(0);
@@ -1987,7 +2675,7 @@ class Game {
           this.audio.patpat(true);
           haptic('medium');
           this.updateStarterUi();
-          this.toast('Direksiyonu çevir, GAZ ve FREN pedallarıyla sür', 'good', 'board', 120);
+          if (!this.harvesting) this.toast('Direksiyonu çevir, GAZ ve FREN pedallarıyla sür', 'good', 'board', 120);
           break;
         case 'alight':
           this.audio.patpat(false);
@@ -2372,12 +3060,15 @@ class Game {
       if (drive) {
         moveX = moveZ = 0;
         this.lookYaw = s.yaw;
-        // Dragging on the right turns the camera round the pat pat; it drifts back behind when let go.
+        // Dragging turns the camera round the vehicle, and it stays where it was turned; only driving on
+        // (faster than a walk) without a finger on the screen for a few seconds brings it slowly back behind.
         this.view.driveOrbit -= look.dx * 0.006;
-        if (look.dx === 0) this.view.driveOrbit *= Math.exp(-dt * 0.8);
+        this.orbitIdle = this.input.looking || look.dx !== 0 ? 0 : this.orbitIdle + dt;
+        if (this.orbitIdle > ORBIT_HOLD && Math.abs(s.field.vehicle.speed) > 2) this.view.driveOrbit *= Math.exp(-dt * 0.5);
         this.view.driveOrbit = Math.max(-Math.PI, Math.min(Math.PI, this.view.driveOrbit));
         // The engine revs with the speed in the gear it is in (high near its top, low after a shift up).
-        this.audio.patpat(true, Math.min(1, Math.abs(s.field.vehicle.speed) / 4 + Math.max(0, drive.throttle) * 0.3), Math.min(1, Math.abs(s.field.vehicle.speed) / s.field.dims.forward));
+        // (A heavy load up a slope: the engine works hard and slow.)
+        this.audio.patpat(true, Math.min(1, Math.abs(s.field.vehicle.speed) / 4 + Math.max(0, drive.throttle) * 0.3 + s.cargoStrain * 0.45), Math.min(1, Math.abs(s.field.vehicle.speed) / s.field.dims.forward));
         // The gear: into first or reverse as a pedal is pressed from standing, or across from one to
         // the other; back to neutral once stopped with the pedals let go.
         const dir = Math.abs(drive.throttle) > 0.15 ? Math.sign(drive.throttle) : 0;
@@ -2429,8 +3120,9 @@ class Game {
       // (Heard only near it: from 12 m off, rising by the bank.)
       this.audio.setWater(Math.max(0, 1 - streamDistance(s.field, s.x, s.z) / 12));
       this.ambientSounds(s, dt);
-      // Face shield: dirtied by the cut grass in first person.
-      this.visor.visible = this.view.mode === 'fpv';
+      // Face shield: the standard one comes down with the trimmer in hand (in first person), dirtied by
+      // the cut grass; not while roaming, driving or walking without the trimmer.
+      this.visor.visible = this.view.mode === 'fpv' && s.hasTrimmer && !s.roaming && !s.driving;
       // The face shield dirties slowly (the pro one about half as fast again).
       // In the first garden it dirties faster until the player has been told to wipe it once.
       const learn = this.level.id === LEVELS[0].id && !this.visorHinted ? 2.5 : 1;
@@ -2446,6 +3138,7 @@ class Game {
       document.body.classList.toggle('fuel-empty', s.fuel <= 0 && !s.running && !this.save.noAds);
       $('btn-rethread').style.setProperty('--p', String(s.rethread));
       document.body.classList.toggle('line-broken', s.hasTrimmer && (s.broken || (s.line < TRIMMER.lineMin && s.spool < 0.01)));
+      this.harvestStep(s, dt);
       this.updateIntro(s);
       document.body.classList.toggle('tangled', s.tangle > 0.3);
       $('rethread-label').textContent = s.tangle > 0.3 ? 'TEMİZLE' : 'MİSİNA TAK';
@@ -2500,7 +3193,10 @@ class Game {
           e.preventDefault();
           e.stopPropagation();
           this.audio.unlock();
-          if (a.hold) this.actionHeld = true;
+          if (a.hold) {
+            this.actionHeld = true;
+            this.heldId = a.id;
+          }
           else {
             this.audio.ui();
             haptic('medium');
@@ -2547,6 +3243,7 @@ class Game {
     const gate = this.gateNear(s);
     if (gate?.kind === 'buy') acts.push({ id: 'unlock', icon: 'i-lock', label: 'BÖLÜMÜ AÇ', sub: this.unlockLabel(gate.lv), run: () => void this.buyUnlock(gate.lv) });
     if (gate?.kind === 'switch') acts.push({ id: 'switch', icon: 'i-map', label: 'BU İŞE GEÇ', sub: gate.lv.name, run: () => void this.switchJob(gate.lv) });
+    this.harvestActions(s, acts);
     this.renderActions(acts);
     let text = '';
     // The vehicle by name (the pat pat carries the trimmer in its trailer; nothing rides on the tractor).
@@ -2580,8 +3277,12 @@ class Game {
       text = p > 0 ? `Misina sarılıyor: %${p}<small>Bırakma, birazdan biter</small>` : 'Misina takılı değil<small>MİSİNA TAK butonuna basılı tut</small>';
       text += `<span class="obj-bar"><i style="width:${p}%"></i></span>`;
     }
-    // (Roaming: no job to point to.)
-    if (this.roaming) text = '';
+    // (Roaming: no job to point to; the harvest's next step if there is one.)
+    if (this.roaming) {
+      const g = this.harvesting ? this.harvestGuide(s) : null;
+      text = g?.head ? `${g.to ? this.arrowTo(s, g.to.x, g.to.z) : ''}${g.head}${g.sub ? `<small>${g.sub}</small>` : ''}` : '';
+    }
+    document.body.classList.toggle('harvest-hint', this.roaming && !!text);
     const el = $('objective');
     if (el.innerHTML !== text) {
       el.innerHTML = text;
@@ -2604,6 +3305,8 @@ class Game {
    * money there and then (returned, for its button); for the others, say which comes first.
    */
   private gateNear(s: Session): { lv: LevelDef; kind: 'buy' | 'switch' } | null {
+    // (The harvest from its tab has its own steps, and by the sacks they are the harvest's: the fields' gates say nothing then.)
+    if (this.harvestTab || this.harvestGarden(s) !== null) return null;
     const f = s.field;
     const p = s.driving ? f.head(f.vehicle.x, f.vehicle.z, f.vehicle.yaw, f.vehicle.art) : { x: s.x, z: s.z };
     // The nearest gate within reach.
@@ -2653,7 +3356,9 @@ class Game {
       if (!go) return;
     }
     this.lastJob = s.carryOver();
-    // (From Serbest gez: the job starts from here, a job like any other.)
+    // From Serbest gez: the job starts from here as any job does, the trimmer brought in the vehicle
+    // (none was carried round the village): take it out and fit line.
+    this.fromRoam = this.roaming;
     this.roaming = false;
     document.body.classList.remove('roam');
     void this.startWithLoader(lv);

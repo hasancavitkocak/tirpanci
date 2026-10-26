@@ -7,6 +7,7 @@
  * Idle lopes irregularly; load from cutting drags the rpm down; the spinning line adds an air whine.
  */
 import { PatpatEngine, TRACTOR_FILES } from './patpatEngine';
+import { PatosSound } from './patos';
 import { DieselEngine } from './diesel';
 import { Bed, Kit, Surface, Tractor, beeBed, cluck, dog, ezan, farBus, hoseCut, rainBed, snakeHiss, splash, sprayBed, step, sting, thunder, trafficBed } from './village';
 
@@ -193,6 +194,24 @@ export class GameAudio {
 
   setSpray(level: number): void {
     this.beds?.spray.set(level * 0.12);
+  }
+
+  /** The patos: its drum turning (0..1) and its hose sucking (0..1) (a recording: audio/patos.ts). */
+  private patosSound: PatosSound | null = null;
+  private patosAt = 0;
+  setPatos(running: number, sucking: number): void {
+    const k = this.kit;
+    if (!k || (!running && !this.patosSound)) return;
+    this.patosSound ??= new PatosSound(k);
+    const now = performance.now();
+    const dt = Math.min(0.1, (now - (this.patosAt || now)) / 1000);
+    this.patosAt = now;
+    this.patosSound.set(running, sucking, dt);
+  }
+
+  /** The patos quiet (the job left). */
+  stopPatos(): void {
+    this.patosSound?.silence();
   }
 
   setTraffic(level: number): void {

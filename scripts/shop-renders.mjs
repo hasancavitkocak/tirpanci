@@ -1,14 +1,15 @@
 // Dev: the shop's pictures of the vehicles and yard things, rendered from the game's own models (the
-// pat pat, the tractor and the trailer on their tyres, the gazebo, the kennel, the flower pots, the
+// pat pat, the tractor and the trailer on their tyres, the patos, the gazebo, the kennel, the flower pots, the
 // clothes line), transparent, three
 // quarters from the front. Writes public/textures/shop-<id>.webp (512 x 283, as the other shop pictures).
-// Usage (dev server running): node scripts/shop-renders.mjs [baseUrl]
+// Usage (dev server running): node scripts/shop-renders.mjs [baseUrl] [ids, e.g. patos,traktor: only these written]
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import puppeteer from 'puppeteer-core';
 import { CHROME_ARGS, findChrome } from './chrome.mjs';
 
 const base = process.argv[2] ?? 'http://localhost:5173/';
+const only = process.argv[3]?.split(',');
 const browser = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: CHROME_ARGS });
 const page = await browser.newPage();
 page.on('pageerror', (e) => console.log('pageerror', e.message));
@@ -22,6 +23,7 @@ const shots = await page.evaluate(async () => {
   const { TrailerRig } = await import('/src/render/trailer.ts');
   const { PATPAT, TRACTOR, TRAILER } = await import('/src/game/config.ts');
   const { flowerPots, clothesline } = await import('/src/render/props.ts');
+  const { PatosRig } = await import('/src/render/harvest.ts');
   const m = await loadModels();
   const W = 1200;
   const H = 664;
@@ -68,6 +70,8 @@ const shots = await page.evaluate(async () => {
   // The trailer on its two tyres (the tractor's front ones).
   const tl = new TrailerRig({ body: m.trailer[0], tyre: m.tractorFront[0] });
   out.romork = shot(tl.group, -0.75);
+  // The patos on its wheels, its tow bar to the front.
+  out.patos = shot(new PatosRig(m.patos?.[0]).group, -0.75);
   out['koy-cardak'] = shot(fitted(m.gazebo[0].scene, 3), -0.6);
   out['koy-kulube'] = shot(fitted(m.kennel[0].scene, 1.1), -0.6);
   out['koy-saksi'] = shot(flowerPots(3), -0.5);
@@ -77,16 +81,18 @@ const shots = await page.evaluate(async () => {
 });
 await browser.close();
 mkdirSync('test-output/shop-renders', { recursive: true });
-for (const [id, url] of Object.entries(shots)) writeFileSync(`test-output/shop-renders/${id}.png`, Buffer.from(url.split(',')[1], 'base64'));
+for (const [id, url] of Object.entries(shots)) if (!only || only.includes(id)) writeFileSync(`test-output/shop-renders/${id}.png`, Buffer.from(url.split(',')[1], 'base64'));
 // Trimmed to what was drawn and fitted into 512 x 283, as webp.
 execFileSync('python', ['-I', '-X', 'utf8', '-c', `
 import glob, os
 from PIL import Image
+only = os.environ.get('ONLY')
 for p in glob.glob('test-output/shop-renders/*.png'):
+    if only and os.path.basename(p)[:-4] not in only.split(','): continue
     im = Image.open(p).convert('RGBA'); im = im.crop(im.getbbox())
     W, H = 512, 283; k = min((W - 16) / im.width, (H - 12) / im.height)
     im = im.resize((round(im.width * k), round(im.height * k)), Image.LANCZOS)
     out = Image.new('RGBA', (W, H), (0, 0, 0, 0)); out.paste(im, ((W - im.width) // 2, (H - im.height) // 2), im)
     out.save('public/textures/shop-' + os.path.basename(p)[:-4] + '.webp', quality=90)
     print('shop-' + os.path.basename(p)[:-4] + '.webp', im.size)
-`], { stdio: 'inherit' });
+`], { stdio: 'inherit', env: { ...process.env, ONLY: only?.join(',') ?? '' } });

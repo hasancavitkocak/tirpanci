@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { Lensflare, LensflareElement } from 'three/examples/jsm/objects/Lensflare.js';
 import { makeNoise, makeRng } from '../game/rng';
 
 /**
@@ -48,6 +49,66 @@ export function skyDome(panorama?: THREE.Texture, turn = 0, look?: { top: string
   m.renderOrder = -1;
   m.frustumCulled = false;
   return m;
+}
+
+/**
+ * The sun in the sky (the painted sky has none): a bright disc in a warm glow, a sprite out on the sky
+ * dome where the light comes from (`dir`, world), the dome turned by `turn`. Added to the dome.
+ */
+export function sunSprite(dir: THREE.Vector3, turn: number, glow = 1): THREE.Sprite {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const x = c.getContext('2d')!;
+  const g = x.createRadialGradient(128, 128, 0, 128, 128, 128);
+  g.addColorStop(0, 'rgba(255, 255, 250, 1)');
+  g.addColorStop(0.09, 'rgba(255, 252, 235, 1)');
+  g.addColorStop(0.13, 'rgba(255, 236, 180, 0.75)');
+  g.addColorStop(0.3, 'rgba(255, 214, 140, 0.25)');
+  g.addColorStop(0.6, 'rgba(255, 200, 120, 0.07)');
+  g.addColorStop(1, 'rgba(255, 200, 120, 0)');
+  x.fillStyle = g;
+  x.fillRect(0, 0, 256, 256);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, fog: false, toneMapped: false, blending: THREE.AdditiveBlending, opacity: Math.min(1, glow) }));
+  // On the dome (r 650), a little inside it; its glow some 18 degrees across.
+  s.position.copy(dir).normalize().applyAxisAngle(new THREE.Vector3(0, 1, 0), -turn).multiplyScalar(600);
+  s.scale.setScalar(190);
+  s.renderOrder = -1;
+  return s;
+}
+
+/**
+ * The sun's glare in the camera's lens when it is looked towards: a big warm bloom round it and a
+ * trail of faint coloured rings towards the middle of the screen. Hidden when a house or a tree stands
+ * in front of the sun (three's Lensflare tests its middle against the depth). At `dir` (world), 600 m off.
+ */
+export function sunFlare(dir: THREE.Vector3): Lensflare {
+  const disc = (stops: [number, string][]) => {
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const x = c.getContext('2d')!;
+    const g = x.createRadialGradient(64, 64, 0, 64, 64, 64);
+    for (const [t, col] of stops) g.addColorStop(t, col);
+    x.fillStyle = g;
+    x.fillRect(0, 0, 128, 128);
+    return new THREE.CanvasTexture(c);
+  };
+  const bloom = disc([[0, 'rgba(255,255,245,1)'], [0.12, 'rgba(255,240,200,0.8)'], [0.35, 'rgba(255,210,140,0.25)'], [1, 'rgba(255,190,120,0)']]);
+  const ghost = disc([[0, 'rgba(255,255,255,0.22)'], [0.7, 'rgba(255,255,255,0.35)'], [0.88, 'rgba(255,255,255,0.75)'], [1, 'rgba(255,255,255,0)']]);
+  const lf = new Lensflare();
+  lf.addElement(new LensflareElement(bloom, 260, 0, new THREE.Color(0.75, 0.68, 0.55)));
+  for (const [size, dist, col] of [
+    [50, 0.3, [0.5, 0.6, 0.35]],
+    [80, 0.5, [0.3, 0.45, 0.6]],
+    [36, 0.65, [0.6, 0.45, 0.25]],
+    [120, 0.9, [0.35, 0.55, 0.4]],
+    [60, 1.15, [0.55, 0.4, 0.6]],
+  ] as [number, number, number[]][])
+    lf.addElement(new LensflareElement(ghost, size, dist, new THREE.Color(col[0], col[1], col[2])));
+  lf.position.copy(dir).normalize().multiplyScalar(600);
+  lf.frustumCulled = false;
+  return lf;
 }
 
 /**

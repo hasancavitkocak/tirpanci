@@ -71,11 +71,17 @@ export const COIN_PACKS: { id: string; coins: number; name: string; devPrice: st
 export const STARTER_ID = 'baslangic_paketi';
 export const STARTER = { coins: 15_000, devPrice: '₺129,99', days: 3 };
 
+/**
+ * Fındık Harmanı started at once instead of waiting for the next one (consumable). Create it as a
+ * consumable in-app product with this id in Google Play Console and App Store Connect.
+ */
+export const HARVEST_NOW = { id: 'hasat_hemen', devPrice: '₺29,99' };
+
 /** Store prices for products ("₺99,99"), by id; the dev prices in a development browser build. */
 export async function productPrices(ids: string[]): Promise<Record<string, string>> {
   if (!native) {
     if (!import.meta.env.DEV) return {};
-    return Object.fromEntries(ids.map((id) => [id, COIN_PACKS.find((p) => p.id === id)?.devPrice ?? STARTER.devPrice]));
+    return Object.fromEntries(ids.map((id) => [id, COIN_PACKS.find((p) => p.id === id)?.devPrice ?? (id === HARVEST_NOW.id ? HARVEST_NOW.devPrice : STARTER.devPrice)]));
   }
   try {
     const { products } = await NativePurchases.getProducts({ productIdentifiers: ids, productType: PURCHASE_TYPE.INAPP });

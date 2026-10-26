@@ -6,10 +6,11 @@ import { backpackPart, cutTriangles, isBakedLine, isEngine, prepare } from './tr
 import { PatpatRig } from './patpat';
 import { TractorRig } from './tractor';
 import { TrailerRig } from './trailer';
+import { HarvestView, PatosRig } from './harvest';
 import { brambleObject } from './bramble';
 import { shootBush } from './shootBush';
 import { hazelnutBush } from './hazelnut';
-import { MEADOW_PATCHES, PAINTED_GROUND, groundTextures, hills, skyDome } from './scenery';
+import { MEADOW_PATCHES, PAINTED_GROUND, groundTextures, hills, skyDome, sunFlare, sunSprite } from './scenery';
 import { boulderGeometry, graveGeometry, mosqueGroup, stoneWall, yaylaHutGroup } from './landmarks';
 import { WEATHER } from './weather';
 import { StreamView } from './stream';
@@ -19,6 +20,8 @@ import { clothesline, depotGroup, flowerPots, gazebo, haystackGroup, houseGroup,
 
 /** How far the terrain extends beyond the village on each side. */
 const MARGIN = 45;
+/** The trailer's load bed (TrailerRig's group: on the ground under its axle, +z to its drawbar): its floor's height and its length and width, metres. */
+const TRAILER_BED = { floorY: 1.08, z0: -0.7, z1: 1.3, width: 1.6 };
 /**
  * The view from the seat (first person, driving): the eye over the seat (m) and behind it, and how far
  * the look is tipped down (the y of a unit look ahead), so the steering wheel shows at the bottom.
@@ -214,6 +217,12 @@ export class WorldView {
   /** The pat pat as drawn (its head carries the engine the exhaust smoke comes from). */
   patRig: PatpatRig | TractorRig | null = null;
   trailerRig: TrailerRig | null = null;
+  /** The patos, towed instead of the trailer (WorldView.towed). */
+  patosRig: PatosRig | null = null;
+  /** The harvest's sacks, nuts, tarp and hose (in Yeşilyamaç: WorldView.harvest). */
+  harvest: HarvestView | null = null;
+  /** What rides in the pat pat's trailer and is put away while sacks are loaded there. */
+  private cargoHides: THREE.Object3D[] = [];
 
   /** A field opened (bought): its chain and padlock come off, its board loses the KİLİTLİ band. */
   unlockField(id: number, name: string): void {
@@ -274,6 +283,10 @@ export class WorldView {
   static decor: string[] = [];
   /** Per level: the line under its name on the board ("Hazır", or how long until it has grown back). */
   static waitText: Record<number, string> = {};
+  /** What the tractor tows: the trailer or the patos (both bought, one hitched at a time). */
+  static towed: 'romork' | 'patos' = 'romork';
+  /** The harvest is on in this village (it is drawn). */
+  static harvest = false;
   /** One object per bramble patch (shrinks as it is cut down). */
   private readonly brambles: THREE.Object3D[] = [];
   /** Materials of each bush (cloned per bush) so a bush hiding the worker can be faded. */
@@ -289,7 +302,15 @@ export class WorldView {
     this.sunDir = look.sunDir;
     // The painted sky (sunny and clear) only on a fine day; rain and fog keep the drawn grey sky.
     const panorama = f.level.weather === 'sunny' ? models.panorama : undefined;
-    g.add(skyDome(panorama, ((models.panoramaTurn ?? 0) * Math.PI) / 180, { top: look.skyTop, haze: look.haze, sun: look.sunDir, glow: look.glow }));
+    const turn = ((models.panoramaTurn ?? 0) * Math.PI) / 180;
+    const sky = skyDome(panorama, turn, { top: look.skyTop, haze: look.haze, sun: look.sunDir, glow: look.glow });
+    // The sun itself where the light comes from (a fine day or the evening; not through rain or fog).
+    if (look.glow >= 1) {
+      sky.add(sunSprite(look.sunDir, turn, look.glow));
+      // And its glare in the lens when looked towards (gone behind a house or a tree).
+      g.add(sunFlare(look.sunDir));
+    }
+    g.add(sky);
     // The hills start inside the terrain's edge and rise from its height there, clamped to the terrain;
     // round its middle, an ellipse as long as the village.
     const tr = terrainRect(f);
@@ -505,6 +526,9 @@ export class WorldView {
     g.add(this.lane.group, puddleMeshes(f, (x, z) => worldHeight(f, x, z)));
     const harman = harmanMesh(f, (x, z) => worldHeight(f, x, z));
     if (harman) g.add(harman);
+    // The harvest's things (drawn from its state each frame: updateHarvest).
+    this.harvest = WorldView.harvest ? new HarvestView(f, (x, z) => worldHeight(f, x, z), models.sack?.[0]) : null;
+    if (this.harvest) g.add(this.harvest.group);
     // The yard: a wire-mesh fence round the house and the harman with a sliding iron gate, haystacks
     // and a woodpile.
     // One fence per unbroken run of segments.
@@ -670,6 +694,7 @@ export class WorldView {
     this.patRig?.update(v.speed * dt, v.art, v.steer);
     this.patRig?.kasa.updateMatrixWorld(true);
     this.trailerRig?.update(v.speed * dt);
+    this.patosRig?.update(v.speed * dt, this.patosRunning, dt);
     for (let i = this.bushShake.length - 1; i >= 0; i--) {
       const s = this.bushShake[i];
       s.t += dt;
@@ -698,10 +723,15 @@ export class WorldView {
       this.patRig = rig;
       // The trailer, when hitched behind the tractor.
       this.trailerRig = null;
-      if (tractor && f.trailer && models.trailer?.[0]) {
+      this.patosRig = null;
+      if (tractor && f.trailer && WorldView.towed === 'patos') {
+        this.patosRig = new PatosRig(models.patos?.[0]);
+        g.add(this.patosRig.group);
+      } else if (tractor && f.trailer && models.trailer?.[0]) {
         this.trailerRig = new TrailerRig({ body: models.trailer[0], tyre: models.tractorFront![0] });
         g.add(this.trailerRig.group);
       }
+      this.cargoHides = [depot];
       // The fuel can and the spare line ride in the trailer, behind the seat.
       depot.position.set(-0.3, rig.floorY, -0.5);
       depot.rotation.y = Math.PI / 2;
@@ -740,6 +770,7 @@ export class WorldView {
         rig.kasa.add(load);
         load.visible = trimmerInTrailer;
         this.trailerTrimmer = load;
+        this.cargoHides.push(load);
       }
       g.add(rig.kasa, rig.head);
       rig.place(f, (x, z) => worldHeight(f, x, z));
@@ -755,9 +786,11 @@ export class WorldView {
     const trimmer = this.trailerTrimmer?.visible ?? false;
     if (old) this.group.remove(old.kasa, old.head);
     if (this.trailerRig) this.group.remove(this.trailerRig.group);
+    if (this.patosRig) this.group.remove(this.patosRig.group);
     this.trailerTrimmer = null;
     this.patRig = null;
     this.trailerRig = null;
+    this.patosRig = null;
     this.buildVehicle(this.field, models, trimmer);
   }
 
@@ -772,6 +805,24 @@ export class WorldView {
     this.gate[0].rotation.y = -Math.atan2(d.z, d.x);
   }
 
+  /** The patos's drum turning (its tractor's shaft on). */
+  patosRunning = false;
+
+  /**
+   * The harvest each frame (game/harvest.ts): the load in the pat pat's box or the trailer (what else rides
+   * in the box put away under it), the harman, the tarp, the hose to `hand` and the nuts pouring.
+   */
+  updateHarvest(h: import('../game/harvest').HarvestState | null, hand: THREE.Vector3 | null, sucking: boolean, time: number): void {
+    if (!this.harvest) return;
+    const r = this.patRig;
+    let bed: Parameters<HarvestView['update']>[1] = null;
+    if (this.trailerRig) bed = { obj: this.trailerRig.group, floorY: TRAILER_BED.floorY, z0: TRAILER_BED.z0, z1: TRAILER_BED.z1, width: TRAILER_BED.width, cols: 2, rows: 4 };
+    else if (r && !('hitch' in r)) bed = { obj: r.kasa, floorY: r.floorY, z0: -1.1, z1: -0.35, width: 1.2, cols: 3, rows: 2, along: true };
+    const loaded = (h?.load ?? 0) > 0;
+    for (const o of this.cargoHides) if (loaded) o.visible = false;
+    this.harvest.update(h, bed, this.patosRig, hand, sucking, time);
+  }
+
   /** The pat pat on the ground where it is: pitched and rolled to the terrain under its wheels. */
   private placeVehicle(dt: number, camera: THREE.Vector3 | null): void {
     const f = this.field;
@@ -784,6 +835,7 @@ export class WorldView {
       r.kasa.updateMatrixWorld(true);
       this.trailerRig.place(f, (x, z) => worldHeight(f, x, z), r.hitch.getWorldPosition(new THREE.Vector3()).y);
     }
+    this.patosRig?.place(f, (x, z) => worldHeight(f, x, z));
   }
 
   /** Fade bushes that stand between the camera and the worker. */

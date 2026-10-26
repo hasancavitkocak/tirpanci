@@ -1,4 +1,4 @@
-import { BRAMBLE, BUSH_KINDS, BushKind, DEFAULT_EQUIPMENT, ENGINE, Equipment, FINISH_AT, HEN, HIVE, HOSE, LevelDef, PATPAT, PLAYER, PRICES, SLOPE, SNAKE, STARS_AT, STONE_SNAP, TRIMMER, Upgrades, WET_LOAD, gearStats, TRACTOR_LOCK, TRACTOR_WHEELBASE, TRAILER } from './config';
+import { BRAMBLE, BUSH_KINDS, CARGO, BushKind, DEFAULT_EQUIPMENT, ENGINE, Equipment, FINISH_AT, HEN, HIVE, HOSE, LevelDef, PATPAT, PLAYER, PRICES, SLOPE, SNAKE, STARS_AT, STONE_SNAP, TRIMMER, Upgrades, WET_LOAD, gearStats, TRACTOR_LOCK, TRACTOR_WHEELBASE, TRAILER } from './config';
 import { Field } from './field';
 import { PullResult, Starter } from './starter';
 
@@ -309,6 +309,8 @@ export class Session {
     return true;
   }
 
+  /** How hard the load makes the vehicle work now (0..1: heavy and uphill), for its engine's sound. */
+  cargoStrain = 0;
   /** The pat pat's throttle (-1 reverse .. 1) as last driven: its smoke follows how hard it is worked. */
   patThrottle = 0;
 
@@ -402,10 +404,17 @@ export class Session {
     // as on the road: crawling there only made the trips longer).
     const deep = this.field.patpatWheels().some((w) => (this.field.puddleAt(w.x, w.z)?.r ?? 0) > 0.8);
     const ford = deep ? 0.6 : 1;
+    // A load of sacks (Field.cargo, a share of what it takes): slower, slower away, and a climb with it
+    // slower still (up to a crawl full uphill); its brakes take longer too.
+    const load = this.field.cargoCap ? Math.min(1, this.field.cargo / this.field.cargoCap) : 0;
+    const gr = this.field.grade(v.x, v.z);
+    const climb = load ? Math.max(0, -gr.g * (gr.dx * Math.sin(v.yaw) + gr.dz * Math.cos(v.yaw)) * Math.sign(v.speed || d.throttle || 1)) : 0;
+    const heavy = (1 - CARGO.slow * load) * Math.max(CARGO.crawl, 1 - load * climb * CARGO.climb);
+    this.cargoStrain = load * Math.min(1, 0.4 + climb * 3) * Math.min(1, Math.abs(d.throttle) * 1.5);
     // The gas asks for a speed: half gas, half the vehicle's top; easing off, it slows to that.
-    const want = (d.throttle >= 0 ? d.throttle * this.field.dims.forward : d.throttle * PATPAT.reverse) * ford;
+    const want = (d.throttle >= 0 ? d.throttle * this.field.dims.forward : d.throttle * PATPAT.reverse) * ford * heavy;
     const braking = Math.sign(want) !== Math.sign(v.speed) && Math.abs(v.speed) > 0.05;
-    const rate = (braking ? PATPAT.brake : PATPAT.accel) * dt;
+    const rate = (braking ? PATPAT.brake * (1 - CARGO.brake * load) : PATPAT.accel * (1 - CARGO.pull * load)) * dt;
     v.speed += Math.max(-rate, Math.min(rate, want - v.speed));
     v.steer += (d.steer - v.steer) * Math.min(1, dt * 5);
     if (this.field.tractor) return this.tractorStep(dt);
@@ -701,7 +710,8 @@ export class Session {
 
     // --- Refill at the depot (fuel and line cost money, deducted from the pay). The message says what
     // was actually refilled, once the worker has finished there (or walks away).
-    if (this.atDepot) {
+    // (Serbest gez: the trimmer is at home, nothing to fill.)
+    if (this.atDepot && !this.roaming) {
       let did = false;
       if (this.fuel < this.gear.tank - 0.001) {
         const add = Math.min(0.35 * dt, this.gear.tank - this.fuel);

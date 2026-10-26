@@ -96,6 +96,13 @@ export interface SaveData {
   vehicle?: string;
   /** The trailer (bought) left off the tractor. */
   trailerOff?: boolean;
+  /** The patos (bought) hitched to the tractor instead of the trailer. */
+  patosOn?: boolean;
+  /** The hazelnut harvest's state (game/harvest.ts), once Yeşilyamaç's gardens are done. */
+  harvest?: import('../game/harvest').HarvestState;
+  /** Harvests sold so far, and the one the menu last offered a new harvest after (it pops up once). */
+  harvestRound?: number;
+  harvestOffered?: number;
   /**
    * The level numbering the save is in: unset = the first one, where Karadere's jobs were 9-13 (two
    * jobs were added to Yeşilyamaç as 9 and 10, Karadere's became 11-15; see loadSave).

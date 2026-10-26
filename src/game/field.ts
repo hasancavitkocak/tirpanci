@@ -172,6 +172,8 @@ export class Field {
   /** The village's ends and west edge, field coordinates. */
   readonly map: { minX: number; minZ: number; maxZ: number };
   /** The other fields of the village (closed: fenced, their gates shut), field coordinates. */
+  /** Where this harvest's sacks wait (HarvestState.piles), when there is one under way here. */
+  harvestPiles?: Record<number, import('./harvest').PilePlace>;
   readonly others: { level: LevelDef; minX: number; maxX: number; minZ: number; maxZ: number; entryX: number }[] = [];
   private roadGrid: Map<number, number[]> | null = null;
   private blockedCache: { minX: number; maxX: number; minZ: number; maxZ: number }[] | null = null;
@@ -185,6 +187,9 @@ export class Field {
   readonly fences: { ax: number; az: number; bx: number; bz: number }[] = [];
   /** The village this field is in. */
   readonly region: Region;
+  /** Sacks of hazelnuts on the vehicle and how many it takes (the harvest: game/harvest.ts); the load slows it. */
+  cargo = 0;
+  cargoCap = 0;
   /** The stone bridge over the stream and the mill beside it, in this field's coordinates (null: none). */
   readonly bridge: Bridge | null;
   readonly mill: (Pt & { rot: number }) | null;
@@ -976,7 +981,7 @@ export class Field {
   }
 
   /** A point of the pat pat may be here. */
-  private pointFree(px: number, pz: number): boolean {
+  pointFree(px: number, pz: number): boolean {
     if (this.bushes.some((b) => Math.hypot(b.x - px, b.z - pz) < BUSH_KINDS[b.kind].block * (b.kind === 'ocak' ? 0.8 : b.scale))) return false;
     if (this.hives.some((h) => Math.hypot(h.x - px, h.z - pz) < HIVE.block)) return false;
     // The stream's boulders (the tractor's big wheels climb over them).

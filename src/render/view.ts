@@ -82,7 +82,8 @@ export class View {
   readonly scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(50, 1, 0.1, 900);
   quality: Quality;
-  private world: WorldView | null = null;
+  /** The scene of the job (the harvest is drawn there). */
+  world: WorldView | null = null;
   private grass: GrassView | null = null;
   private worker: WorkerView | null = null;
   critters: CrittersView | null = null;
@@ -328,7 +329,8 @@ export class View {
     this.wasDriving = s.driving;
     this.worker.headTurn = this.headTurn;
     this.worker.carrying = !this.menu && s.hasTrimmer && !s.driving;
-    if (this.world.trailerTrimmer) this.world.trailerTrimmer.visible = !this.worker.carrying;
+    // (Roaming the trimmer stays at home: none in the vehicle either.)
+    if (this.world.trailerTrimmer) this.world.trailerTrimmer.visible = !this.worker.carrying && !s.roaming;
     // The yellow refill ring (beside the vehicle) only when fuel or line is running out, on foot with the
     // trimmer (not with it left in the vehicle, nor roaming without a job).
     this.world.depotRing.visible = !this.menu && !s.driving && s.hasTrimmer && !s.roaming && (s.fuel < s.gear.tank * 0.25 || s.spool < TRIMMER.rethreadUse || (s.broken && !s.intro));

@@ -265,6 +265,12 @@ export interface VehicleDims {
   forward: number;
 }
 
+/**
+ * A full load of sacks on the vehicle (the harvest): its top speed down by `slow`, pulling away by
+ * `pull`, braking by `brake`; a climb with it slows it by the slope times `climb`, to no less than `crawl`.
+ */
+export const CARGO = { slow: 0.35, pull: 0.55, brake: 0.35, climb: 4, crawl: 0.3 };
+
 export const PATPAT = {
   forward: 4.2, reverse: 1.5, accel: 1.8, brake: 4.5, maxArt: 0.7, artRate: 1.3,
   joint: 1.26, rearAxle: 0.65, headAxle: 0.36, headFront: 0.46,
@@ -431,7 +437,7 @@ export const LINE_TYPES: (EquipDef<LineTypeId> & { load: number; wear: number })
 
 export const EXTRAS: EquipDef<ExtraId>[] = [
   { id: 'kulaklik', name: 'Kulaklık', desc: 'Motor sesi kısılır, kuşları ve dereyi duyarsın', price: 300 },
-  { id: 'siperlik', name: 'Pro Siperlik', desc: 'Ot sıçraması yarı yarıya az kirletir', price: 550 },
+  { id: 'siperlik', name: 'Pro Siperlik', desc: 'Standart siperliğin yerine: ot sıçraması yarı yarıya az kirletir', price: 550 },
 ];
 
 export interface Equipment {
@@ -487,7 +493,8 @@ export const DAILY = [100, 150, 200, 250, 300, 400, 600];
 export const VEHICLES: { id: string; name: string; desc: string; price: number; soon?: boolean; attach?: boolean }[] = [
   { id: 'patpat', name: 'Patpat', desc: 'Köyün emektarı. Belinden kırma, her yola girer.', price: 0 },
   { id: 'traktor', name: 'Traktör', desc: 'Daha hızlı, yokuşta daha güçlü. Uzak tarlalara çabuk gidersin.', price: 30000 },
-  { id: 'romork', name: 'Römork', desc: 'Traktörün arkasına takılır. Yakında odun taşıyacaksın.', price: 12000, attach: true },
+  { id: 'romork', name: 'Römork', desc: 'Traktörün arkasına takılır. Fındık çuvalı taşır (16 çuval).', price: 12000, attach: true },
+  { id: 'patos', name: 'Patos', desc: 'Fındık harman makinesi. Traktöre takılır; hortumla fındığı çeker, temizleyip brandaya döker.', price: 45000, attach: true },
 ];
 
 /** The village made nicer: paints for the pat pat (one at a time) and things for the yard (all bought stay). */

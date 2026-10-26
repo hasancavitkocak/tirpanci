@@ -184,8 +184,9 @@ export class Input {
     let x = this.stickX;
     let y = this.stickY;
     const k = this.keys;
-    if (k.has('KeyA')) x -= 1;
-    if (k.has('KeyD')) x += 1;
+    // (Playing in the browser, for now: the arrows as WASD, on foot and driving. To come out before release.)
+    if (k.has('KeyA') || k.has('ArrowLeft')) x -= 1;
+    if (k.has('KeyD') || k.has('ArrowRight')) x += 1;
     if (k.has('KeyW') || k.has('ArrowUp')) y -= 1;
     if (k.has('KeyS') || k.has('ArrowDown')) y += 1;
     const l = Math.hypot(x, y);
@@ -305,6 +306,11 @@ export class Input {
     const r = this.pad.getBoundingClientRect();
     const half = r.width * 0.42;
     this.padSweep = Math.max(-1, Math.min(1, (e.clientX - (r.left + r.width / 2)) / half));
+  }
+
+  /** A finger (or the mouse) is down looking round. */
+  get looking(): boolean {
+    return this.lookId !== null;
   }
 
   private down(e: PointerEvent): void {
