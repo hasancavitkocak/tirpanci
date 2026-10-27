@@ -661,3 +661,74 @@ body.roam.harvest-hint #objective { display: block !important; }
 .hv-hint { margin: 0; text-align: center; font-weight: 800; color: #2b3a1a; }
 .harvest-card .btn.art-go { width: 220px; }
 .harvest-card .btn.ad { max-width: 320px; }
+
+/* ---------------------------------------------------------------- the minimal top bar
+   One small dark glass panel at the top left, only what matters now: the job's progress (a thin line
+   and its per cent), and, trimmer in hand, the fuel, the line and the engine's heat as small chips
+   (red and blinking when one runs low or hot); the time and the knocks small under them; the
+   customer's wish a small chip. Driving, none of it: the way is told by the objective, a thin
+   navigation pill at the top middle (arrow, where, how far). The minimap is gone (HARİTA has the map).
+   One message at a time, under the pill. */
+#minimap { display: none; }
+.hud-top { align-items: flex-start; }
+.hud-top .hud-btns { margin-left: auto; }
+.hud-top .hud-mid { flex: 0 1 auto; width: min(250px, 36vw); gap: 5px; padding: 6px 8px; border-radius: 12px; background: rgba(14, 18, 12, 0.55); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+.hud-mid .progress { --h: auto; height: 7px; border: 0; border-image: none; border-radius: 4px; background: rgba(255, 255, 255, 0.18); filter: none; box-shadow: none; overflow: visible; margin-right: 38px; }
+.hud-mid .progress-slot { border-radius: 4px; }
+.hud-mid .progress-slot #progress-fill { border-radius: 4px; background: linear-gradient(90deg, #8fd14f, #5aa52a); box-shadow: none; }
+.hud-mid .progress-goal { width: 2px; margin-left: -1px; background: #ffd23a; box-shadow: none; top: -2px; bottom: -2px; }
+.hud-mid #progress-text { position: absolute; left: calc(100% + 6px); top: 50%; transform: translateY(-50%); font-size: 12px; text-shadow: none; }
+.hud-mid .gauges { gap: 6px; }
+.hud-mid .gauge, .hud-mid .gauge.line { --h: auto; flex: 1; height: auto; padding: 0; gap: 4px; border: 0; border-image: none; border-radius: 0; background: none; box-shadow: none; filter: none; backdrop-filter: none; }
+.hud-mid .gauge .gi { position: static; width: 15px; height: 15px; background-size: contain; }
+.hud-mid .gauge .bar { height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.18); box-shadow: none; min-width: 14px; }
+.hud-mid .gauge.temp .bar { background: linear-gradient(90deg, #4fb3ff, #8fd14f 35%, #ffcf3a 70%, var(--danger) 85%); }
+.hud-mid .gauge.temp .bar div { box-shadow: 0 0 0 100vw rgba(30, 30, 30, 0.85); }
+.hud-mid .gauge small { font-size: 10px; font-weight: 800; }
+.hud-mid .gauge.temp.hot { filter: none; }
+.hud-mid .gauge.temp.hot .bar { box-shadow: 0 0 0 1px var(--danger), 0 0 6px var(--danger); }
+.hud-info { font-size: 10.5px; font-weight: 700; opacity: 0.85; text-shadow: none; }
+.request-chip { align-self: flex-start; margin: 0; font-size: 10.5px; padding: 2px 7px; border-radius: 8px; background: rgba(60, 120, 40, 0.75); }
+/* Driving: nothing in the panel (the way is in the pill); on foot without the trimmer, no gauges. */
+body.driving .hud-top .hud-mid, body.roam .hud-top .hud-mid { display: none; }
+body.bare .hud-mid .gauges { display: none; }
+body.no-progress .hud-mid .progress { display: none; }
+/* The objective: a thin navigation pill at the top middle. */
+.objective, body .objective { top: calc(10px + var(--safe-t)); width: auto; max-width: min(46vw, 420px); padding: 6px 14px; border-radius: 20px; font-size: 14px; font-weight: 800; background: rgba(14, 18, 12, 0.72); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); line-height: 1.25; }
+.objective .ic { width: 18px; height: 18px; vertical-align: -4px; color: #ffd23a; }
+.objective small { font-size: 11px; font-weight: 600; opacity: 0.8; margin-top: 1px; }
+/* Once the player knows the game: the pill's second line only where it says what to do (the harvest). */
+body.obj-brief .objective small { display: none; }
+.objective .obj-bar { height: 6px; margin: 5px 2px 1px; }
+@keyframes obj-alert { 50% { background: rgba(200, 40, 25, 0.95); transform: translateX(-50%) scale(1.05); } }
+/* The one message: under the pill, small. */
+#toasts { top: calc(56px + var(--safe-t)); }
+.toast { font-size: 13px; padding: 6px 12px; border-radius: 12px; max-width: min(52vw, 440px); }
+.toast.good { background: rgba(14, 18, 12, 0.72); border-left: 3px solid #8fd14f; }
+.toast.warn { background: rgba(120, 24, 14, 0.85); border-left: 3px solid #ffb347; }
+/* The actions: under the panel. */
+.actions { top: calc(92px + var(--safe-t)); }
+
+/* ---------------------------------------------------------------- the settings: a wooden board like the
+   other windows, narrow, the menu behind it dimmed and blurred; sound and vibration on one row, the
+   quality and the weather as segmented rows, how to play folding open inside (scrolling there), the
+   rarely used restore / reset as small links, TAMAM a normal size. */
+#settings.screen.dim { background: rgba(14, 20, 8, 0.62); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+.card.settings.pano { width: min(640px, 100%); max-height: 100%; box-sizing: border-box; display: grid; grid-template-columns: 1fr 1fr; column-gap: 16px; row-gap: 6px; grid-auto-rows: max-content; padding: 0 4px; border-width: 52px 58px 54px 57px; border-image: url(/harita/pano-yatay.webp) 260 295 270 285 fill stretch; overflow-y: auto; overscroll-behavior: contain; align-content: start; }
+.card.settings.pano > h2 { grid-column: 1 / 3; margin: 0; font-size: 19px; text-align: center; }
+/* Sound and quality on the left, vibration and weather on the right; the rest across. */
+.card.settings.pano > .howto, .card.settings.pano > .set-links, #btn-settings-close { grid-column: 1 / 3; }
+.card.settings.pano .setting { font-size: 13.5px; font-weight: 800; color: #4a2a0c; min-height: 30px; }
+.card.settings.pano .setting.column { gap: 3px; }
+.card.settings.pano .setting small { font-size: 10.5px; color: #6a4a28; line-height: 1.2; }
+.card.settings.pano .segmented { background: rgba(120, 80, 30, 0.18); padding: 2px; }
+.card.settings.pano .segmented button { padding: 4px 2px; font-size: 12px; color: #4a2a0c; white-space: nowrap; }
+.card.settings.pano #set-weather button[data-w="auto"] { flex: 2.2; }
+.card.settings.pano .segmented button .ic { width: 17px; height: 17px; }
+.card.settings.pano .segmented button.on { background: #fff8e6; }
+.card.settings.pano #set-sfx { flex: 1; max-width: 150px; }
+.card.settings.pano .howto { background: rgba(255, 248, 230, 0.6); padding: 5px 10px; font-size: 12px; color: #4a2a0c; }
+.set-links { display: flex; justify-content: center; gap: 24px; order: 9; }
+.set-links .link-btn { font-size: 11.5px; font-weight: 800; color: #6a4a28; text-decoration: underline; background: none; border: 0; padding: 0; cursor: pointer; }
+.set-links .link-btn.danger { color: #b0301c; }
+#btn-settings-close { justify-self: center; width: auto; min-width: 190px; padding: 7px 26px; font-size: 15px; order: 8; }

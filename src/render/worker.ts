@@ -86,7 +86,38 @@ function stripRootMotion(clip: THREE.AnimationClip): void {
   }
 }
 
-/** Motion blur of spinning line: transparent centre, faint orange swirl, thin bright ring at the tips. */
+/**
+ * The line turning slowly: each strand's tip seen with a short smear behind it (two comet arcs on the
+ * tips' circle, fading back from the tip). Turned with the strands.
+ */
+function lineTrailTexture(): THREE.Texture {
+  const S = 256;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d')!;
+  const cx = S / 2;
+  for (const start of [0, Math.PI]) {
+    for (let k = 0; k < 24; k++) {
+      // From the tip (at `start`) back against the turn, fading.
+      const a0 = start - (k / 24) * 1.4;
+      g.strokeStyle = `rgba(255, 215, 90, ${0.9 * (1 - k / 24) ** 1.3})`;
+      g.lineWidth = 10 - k * 0.3;
+      g.beginPath();
+      g.arc(cx, cx, S * 0.42, a0 - 0.07, a0);
+      g.stroke();
+      g.strokeStyle = `rgba(255, 220, 120, ${0.35 * (1 - k / 24)})`;
+      g.lineWidth = 4;
+      g.beginPath();
+      g.arc(cx, cx, S * 0.3, a0 - 0.07, a0);
+      g.stroke();
+    }
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/** Motion blur of spinning line at speed: a bright ring where the tips travel, streaked, faint inside. */
 function lineBlurTexture(): THREE.Texture {
   // A spinning nylon line is almost invisible: a faint ring where the tips travel, a hint of the
   // line colour, and nearly nothing towards the hub.
@@ -95,16 +126,27 @@ function lineBlurTexture(): THREE.Texture {
   c.width = c.height = S;
   const g = c.getContext('2d')!;
   const cx = S / 2;
-  const fill = g.createRadialGradient(cx, cx, S * 0.08, cx, cx, S * 0.5);
-  fill.addColorStop(0, 'rgba(255, 200, 150, 0)');
-  fill.addColorStop(0.7, 'rgba(255, 210, 170, 0.06)');
-  fill.addColorStop(0.9, 'rgba(255, 190, 130, 0.32)');
-  fill.addColorStop(0.97, 'rgba(255, 170, 100, 0.45)');
-  fill.addColorStop(1, 'rgba(255, 170, 100, 0)');
+  const fill = g.createRadialGradient(cx, cx, S * 0.06, cx, cx, S * 0.5);
+  fill.addColorStop(0, 'rgba(255, 220, 160, 0)');
+  fill.addColorStop(0.6, 'rgba(255, 220, 160, 0)');
+  fill.addColorStop(0.82, 'rgba(255, 210, 120, 0.06)');
+  fill.addColorStop(0.92, 'rgba(255, 200, 90, 0.5)');
+  fill.addColorStop(0.97, 'rgba(255, 235, 170, 0.85)');
+  fill.addColorStop(1, 'rgba(255, 190, 90, 0)');
   g.fillStyle = fill;
   g.beginPath();
   g.arc(cx, cx, S * 0.5, 0, Math.PI * 2);
   g.fill();
+  // Streaks round the circle (the two strands smeared): lighter arcs near the rim.
+  g.lineCap = 'round';
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    g.strokeStyle = `rgba(255, 230, 150, ${0.25 + (i % 2) * 0.2})`;
+    g.lineWidth = 2.2;
+    g.beginPath();
+    g.arc(cx, cx, S * (0.42 + (i % 3) * 0.025), a, a + 0.9);
+    g.stroke();
+  }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
@@ -124,13 +166,19 @@ class TrimmerView {
   private readonly shaft: THREE.Mesh;
   private readonly lines = new THREE.Group();
   private readonly blur: THREE.Mesh;
+  /** The strands' smears while turning slowly. */
+  private readonly trail: THREE.Mesh;
+  private time = 0;
   private readonly custom: boolean;
   /** Handlebar mount; counter-tilted so the grips stay upright when the shaft slopes down. */
   private readonly barMount = new THREE.Group();
   private spinAngle = 0;
-  /** The artist body as cut, or the procedural motor parts. */
-  private model: THREE.Object3D | null = null;
+  /** The procedural motor parts (no artist body). */
   private readonly motor: THREE.Mesh[] = [];
+  /** The artist body's engine and tank (a child of the model). */
+  private engineModel: THREE.Object3D | null = null;
+  /** Carried on the back instead (sırt motoru): never drawn on the shaft. */
+  private engineDropped = false;
 
   constructor(model?: GLTF, barModel?: GLTF) {
     this.custom = !!model;
@@ -164,9 +212,12 @@ class TrimmerView {
       part(new THREE.CylinderGeometry(0.055, 0.05, 0.05, 10), '#e2661b', this.head, 0, 0.04, 0);
     }
     // Two strands of nylon line (seen when idling) ...
-    const lineMat = new THREE.MeshLambertMaterial({ color: '#ff7a10', emissive: '#4a1800' });
+    const lineMat = new THREE.MeshStandardMaterial({ color: '#ffb21a', emissive: '#5a2a00', roughness: 0.35, metalness: 0 });
+    // Out of the spool along +X to 1 (scaled to the line's length): sagging and kinked a little at its end.
+    const strand = new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0.35, -0.012, 0.02), new THREE.Vector3(0.7, -0.035, 0.035), new THREE.Vector3(0.88, -0.05, 0.02), new THREE.Vector3(1, -0.075, 0.05)]);
+    const strandGeo = new THREE.TubeGeometry(strand, 12, 0.0065, 5, false);
     for (let i = 0; i < 2; i++) {
-      const l = new THREE.Mesh(new THREE.CylinderGeometry(0.0022, 0.0022, 1, 4).rotateZ(Math.PI / 2).translate(0.5, 0, 0), lineMat);
+      const l = new THREE.Mesh(strandGeo, lineMat);
       l.rotation.y = i * Math.PI;
       this.lines.add(l);
     }
@@ -179,6 +230,12 @@ class TrimmerView {
     );
     this.blur.position.y = 0.03;
     this.head.add(this.blur);
+    this.trail = new THREE.Mesh(
+      new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ map: lineTrailTexture(), transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }),
+    );
+    this.trail.position.y = 0.02;
+    this.head.add(this.trail);
   }
 
   /**
@@ -191,13 +248,17 @@ class TrimmerView {
     // Body: shaft along +X in the model -> +Z here (rotate -90° about Y), hook point at the origin.
     const hook = v(R.body.hook);
     const s = R.hookToHead / hook.distanceTo(v(R.body.head));
-    const body = cutTriangles(cutTriangles(prepare(model.scene), isBakedLine, true), isSecondTank);
+    const whole = cutTriangles(cutTriangles(prepare(model.scene), isBakedLine, true), isSecondTank);
+    // The engine and tank (behind the hook) apart from the rest: first person leaves them out.
+    const engine = cutTriangles(whole.clone(true), (c) => !isEngine(c));
+    const body = cutTriangles(whole, isEngine);
+    body.add(engine);
+    this.engineModel = engine;
     body.rotation.y = -Math.PI / 2;
     body.scale.setScalar(s);
     const toFrame = (p: THREE.Vector3) => new THREE.Vector3(-p.z, p.y, p.x).sub(new THREE.Vector3(-hook.z, hook.y, hook.x)).multiplyScalar(s);
     body.position.copy(toFrame(new THREE.Vector3()));
     this.body.add(body);
-    this.model = body;
     this.exhaust.position.copy(toFrame(v(R.body.exhaust)));
 
     // Handlebar: clamped on the shaft, throttle grip on the worker's right (-X here, facing +Z).
@@ -226,8 +287,18 @@ class TrimmerView {
 
   /** The engine is on his back (sırt motoru): the shaft starts at the hook, nothing behind it. */
   dropEngine(): void {
-    if (this.model) cutTriangles(this.model, isEngine);
-    for (const m of this.motor) m.visible = false;
+    this.engineDropped = true;
+    this.engineVisible = false;
+  }
+
+  /**
+   * The engine on the shaft shown or not: first person leaves it out (it is at the hip, out of sight
+   * looking down at the head; drawn, it swung into the middle of the view turning and on banks).
+   */
+  set engineVisible(v: boolean) {
+    const on = v && !this.engineDropped;
+    if (this.engineModel) this.engineModel.visible = on;
+    for (const m of this.motor) m.visible = on;
   }
 
   get hasHandlebar(): boolean {
@@ -256,14 +327,21 @@ class TrimmerView {
     const want = Math.max(0, (spin - CLUTCH) / (1 - CLUTCH));
     this.headSpeed += (want - this.headSpeed) * Math.min(1, dt * (want > this.headSpeed ? 6 : 1.8));
     const w = this.headSpeed;
+    this.time += dt;
     this.spinAngle += dt * w * 160;
     this.lines.rotation.y = this.spinAngle;
     this.lines.scale.set(radius, 1, 1);
-    // Strands visible while the head turns slowly, blurred into a faint disc when it is fast.
-    this.lines.visible = w < 0.25 && radius > 0;
-    this.blur.visible = w > 0.15 && radius > 0;
+    // Standing and turning slowly the strands are seen (smeared behind as they turn); faster, only the
+    // ring the tips draw, bright at its rim and flickering.
+    this.lines.visible = w < 0.35 && radius > 0;
+    this.trail.visible = w > 0.03 && w < 0.6 && radius > 0;
+    this.trail.rotation.y = this.spinAngle;
+    this.trail.scale.setScalar(Math.max(0.01, radius));
+    (this.trail.material as THREE.MeshBasicMaterial).opacity = Math.min(1, w * 10) * Math.min(1, (0.6 - w) * 4);
+    this.blur.visible = w > 0.25 && radius > 0;
     this.blur.scale.setScalar(Math.max(0.01, radius));
-    (this.blur.material as THREE.MeshBasicMaterial).opacity = Math.min(1, (w - 0.15) * 2.2);
+    this.blur.rotation.y = this.spinAngle * 0.37;
+    (this.blur.material as THREE.MeshBasicMaterial).opacity = Math.min(1, (w - 0.25) * 2.5) * (0.85 + 0.15 * Math.sin(this.time * 47));
     this.head.rotation.y = yaw;
   }
 }

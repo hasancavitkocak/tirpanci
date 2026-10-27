@@ -32,7 +32,7 @@ export const TRIMMER_RIG = {
   barRise: 1.75,
   gripSpan: 0.56,
   /** First person: distance between the gloves' grips and where they sit in front of the eyes. */
-  fpvGripSpan: 0.42,
+  fpvGripSpan: 0.52,
   fpvHands: [0.05, -0.29, -0.7],
 } as const;
 

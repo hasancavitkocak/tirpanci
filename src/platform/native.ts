@@ -101,6 +101,8 @@ export interface SaveData {
   /** The hazelnut harvest's state (game/harvest.ts), once Yeşilyamaç's gardens are done. */
   harvest?: import('../game/harvest').HarvestState;
   /** Harvests sold so far, and the one the menu last offered a new harvest after (it pops up once). */
+  /** How many times the driving tip has been shown (the first few boardings only). */
+  driveTips?: number;
   harvestRound?: number;
   harvestOffered?: number;
   /**

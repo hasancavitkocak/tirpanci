@@ -5,7 +5,7 @@ import { Models } from './models';
 import { FpvRig } from './fpvRig';
 import { Particles } from './particles';
 import { HEAD_LIFT, TRIMMER_RIG } from './trimmerRig';
-import { PATPAT, SLOPE, TRIMMER } from '../game/config';
+import { PATPAT, PLAYER, SLOPE, TRIMMER } from '../game/config';
 import { DRIVER_EYE, SKY_HORIZON, WorldView, worldHeight } from './world';
 import { WorkerView } from './worker';
 import { MOBILE } from '../platform/device';
@@ -26,6 +26,8 @@ export type Quality = 'low' | 'medium' | 'high';
 
 /** The first-person hands are placed as seen with this downward look (radians). */
 const FPV_HANDS_PITCH = -0.55;
+/** How much of the trimmer head's side swing the eyes follow in first person (the hands and bar turn the rest). */
+const FPV_SWING_FOLLOW = 0.7;
 /** The hands rise with the look no higher than this. */
 const FPV_HANDS_MAX_PITCH = -0.35;
 
@@ -131,6 +133,8 @@ export class View {
    * the pat pat's head is going, a little ahead of it while steering.
    */
   private headTurn = 0;
+  /** The eyes' heading in first person (the worker's, turned with the trimmer's swing). */
+  private fpvYaw = 0;
   private wasDriving = false;
   private shake = 0;
   private smokeAcc = 0;
@@ -308,9 +312,9 @@ export class View {
   emitCut(x: number, z: number, n: number, radius: number, tall: number): void {
     const s = this.session;
     if (!s) return;
-    const count = Math.min(22, Math.round((n / 4) * (2.2 + tall)));
-    // The head spins anticlockwise seen from above.
-    this.particles.emitClippings(x, s.field.height(x, z), z, radius, count, 1, Math.min(1, tall));
+    const count = Math.min(30, Math.round((n / 4) * (3 + tall)));
+    // The head spins anticlockwise seen from above; the bits are thrown forward too, the way he faces.
+    this.particles.emitClippings(x, s.field.height(x, z), z, radius, count, 1, Math.min(1, tall), { x: Math.sin(s.yaw), z: Math.cos(s.yaw) });
   }
 
   shakeBushAt(x: number, z: number): void {
@@ -358,7 +362,8 @@ export class View {
     this.worker.seat = this.world.chassis;
     this.worker.seatPlace = { z: s.field.dims.seat, lift: s.field.dims.seatLift };
     this.worker.update(dt, s, ground);
-    this.grass.sync(this.time, s.headX, s.headZ, s.throttle);
+    // The line spinning (the engine's revs, the line on and in hand): the grass round the head moves.
+    this.grass.sync(this.time, s.headX, s.headZ, s.running && s.hasTrimmer && !s.broken ? s.rpm : 0);
     this.exhaustSmoke(dt, s);
     this.patpatSmoke(dt, s);
     this.critters?.update(dt, this.time, s.x, s.z);
@@ -387,6 +392,7 @@ export class View {
     if (!rig || !this.worker) return;
     const on = this.mode === 'fpv' && this.worker.carrying;
     rig.visible = on;
+    this.worker.trimmer.engineVisible = !on;
     if (!on) return;
     // Eyes position, worker's heading (an object facing (sin yaw, cos yaw) along -Z has rotation.y = yaw + PI)
     // and the default downward look.
@@ -394,10 +400,13 @@ export class View {
     // The hands follow the look part of the way, so they stay in view looking down; looking up they
     // stay low (the machine would otherwise swing up in front of the face).
     const follow = FPV_HANDS_PITCH + (this.pitch - FPV_HANDS_PITCH) * (this.pitch > FPV_HANDS_PITCH ? 0.85 : 0.55);
-    this.fpvBody.rotation.set(Math.min(follow, FPV_HANDS_MAX_PITCH), s.yaw + Math.PI, 0, 'YXZ');
+    this.fpvBody.rotation.set(Math.min(follow, FPV_HANDS_MAX_PITCH), this.fpvYaw + Math.PI, 0, 'YXZ');
     this.fpvBody.updateMatrixWorld(true);
     // A lifted head is drawn no higher than well below the eyes.
-    const lifted = ground(s.headX, s.headZ) + 0.05 + s.lift * HEAD_LIFT;
+    // Down a bank, the head held at the feet's level (above the grass falling away, as a mower holds it
+    // there): the machine then sits in the hands as on the level, never swung up into the eyes.
+    const feet = ground(s.x, s.z);
+    const lifted = Math.max(ground(s.headX, s.headZ), feet - 0.15) + 0.05 + s.lift * HEAD_LIFT;
     const target = new THREE.Vector3(s.headX, Math.min(lifted, this.camera.position.y - 0.75), s.headZ);
     // On a slope the head, on the ground, comes up towards the eyes going uphill (filling the view) and
     // drops away going downhill (the shaft swinging the engine up in front of the face). Drawn, its
@@ -416,15 +425,30 @@ export class View {
         target.z = eye.z + dz * k;
       }
     }
-    const headCam = this.fpvBody.worldToLocal(target.clone());
-    rig.update(headCam, Math.atan2(headCam.x, -headCam.z));
-    rig.root.updateMatrixWorld(true);
-    const clamp = rig.clamp.getWorldPosition(new THREE.Vector3());
-    const dir = target.clone().sub(clamp).normalize();
+    // Where the head is held at rest: straight ahead (the same side offset), on level ground under the feet.
+    const fwd0 = new THREE.Vector3(Math.sin(this.fpvYaw), 0, Math.cos(this.fpvYaw));
+    const rest = new THREE.Vector3(s.x, ground(s.x, s.z) + 0.05, s.z)
+      .addScaledVector(fwd0, PLAYER.reach)
+      .add(new THREE.Vector3(-fwd0.z, 0, fwd0.x).multiplyScalar(PLAYER.headSide));
     const body = this.worker.trimmer.body;
-    body.position.copy(target).addScaledVector(dir, -TRIMMER_RIG.hookToHead);
-    body.lookAt(target);
-    body.updateMatrixWorld(true);
+    const place = () => {
+      this.fpvBody.updateMatrixWorld(true);
+      const headCam = this.fpvBody.worldToLocal(target.clone());
+      rig.update(headCam, this.fpvBody.worldToLocal(rest.clone()));
+      rig.root.updateMatrixWorld(true);
+      const clamp = rig.clamp.getWorldPosition(new THREE.Vector3());
+      const dir = target.clone().sub(clamp).normalize();
+      body.position.copy(target).addScaledVector(dir, -TRIMMER_RIG.hookToHead);
+      body.lookAt(target);
+      body.updateMatrixWorld(true);
+    };
+    place();
+  }
+
+  /** How far in front of the eyes the trimmer's engine is (m; behind them: below 0). */
+  engineClear(): number {
+    const t = this.worker?.trimmer;
+    return t ? -this.camera.worldToLocal(t.exhaust.getWorldPosition(new THREE.Vector3())).z : Infinity;
   }
 
   /** The pat pat's wheels mark the ground as it rolls (and splash through the stream). */
@@ -627,8 +651,10 @@ export class View {
       // Eyes of the worker: slight head bob while walking, looking down at the trimmer head.
       this.bob += s.speed * dt * 4.2;
       const bobY = Math.abs(Math.sin(this.bob)) * 0.035 * Math.min(1, s.speed / 1.5);
-      const fx = Math.sin(s.yaw);
-      const fz = Math.cos(s.yaw);
+      // With the trimmer in hand the eyes follow the head's swing half way (a right swing: yaw down).
+      this.fpvYaw = s.yaw - (s.hasTrimmer && this.worker?.carrying ? s.sweep * FPV_SWING_FOLLOW : 0);
+      const fx = Math.sin(this.fpvYaw);
+      const fz = Math.cos(this.fpvYaw);
       // A fall: the view drops to the ground and rolls over, then he gets back up.
       const t = SLOPE.fallTime - s.fallen;
       const down = s.fallen > 0 ? Math.min(1, t / 0.3) * Math.min(1, s.fallen / 0.7) : 0;

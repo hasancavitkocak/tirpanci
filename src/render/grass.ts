@@ -83,11 +83,16 @@ const vertex = /* glsl */ `
     float w = sin(uTime * 1.6 + aPos.x * 0.55 + aPos.z * 0.35) * 0.07 + sin(uTime * 3.3 + aPos.x * 2.1) * 0.02;
     p.x += w * bend;
     p.z += w * 0.4 * bend;
-    // Air wash from the spinning head pushes nearby grass outwards.
+    // Air wash from the spinning head: the grass round it pushed outwards and shaking, already at a
+    // little throttle (too slow to cut, the line still stirs it), more and further out at full.
     vec2 d = aPos.xz - uHead.xy;
     float dist = length(d);
-    float push = uHead.z * smoothstep(0.9, 0.2, dist) * bend * 0.25;
-    p.xz += normalize(d + vec2(0.0001)) * push;
+    float spin = sqrt(uHead.z);
+    float near = smoothstep(0.6 + 0.5 * spin, 0.15, dist);
+    float push = spin * near * bend * 0.25;
+    vec2 out_ = normalize(d + vec2(0.0001));
+    float shake = sin(uTime * 34.0 + aPos.x * 17.0 + aPos.z * 11.0) * spin * near * bend * 0.09;
+    p.xz += out_ * push + vec2(-out_.y, out_.x) * shake;
     vec4 mvPosition = viewMatrix * vec4(aPos + p, 1.0);
     gl_Position = projectionMatrix * mvPosition;
     vY = y;

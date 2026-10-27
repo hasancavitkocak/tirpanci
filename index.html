@@ -209,7 +209,7 @@
     </section>
 
     <section id="settings" class="screen dim">
-      <div class="card settings">
+      <div class="card settings pano">
         <h2>Ayarlar</h2>
         <label class="setting"><span>Ses</span><input id="set-sfx" type="range" min="0" max="100" step="5" /></label>
         <label class="setting"><span>Titreşim</span><input id="set-vibration" type="checkbox" class="switch" /></label>
@@ -221,7 +221,7 @@
             <button data-q="medium">Orta</button>
             <button data-q="high">Yüksek</button>
           </div>
-          <small>Otomatik: telefonuna göre seçer, kasarsa düşürür. Çim ve ağaçlar bir sonraki bahçede değişir.</small>
+          <small>Otomatik: telefonuna göre seçer, kasarsa düşürür.</small>
         </div>
         <div class="setting column">
           <span>Hava durumu</span>
@@ -231,7 +231,7 @@
             <button data-w="rain" aria-label="Yağmurlu"><svg class="ic"><use href="#i-rain"/></svg></button>
             <button data-w="fog" aria-label="Sisli"><svg class="ic"><use href="#i-fog"/></svg></button>
           </div>
-          <small>Yağmurda ıslak ot ağır biçilir; siste uzağı göremezsin.</small>
+          <small>Yağmurda ot ağır biçilir; siste uzağı göremezsin.</small>
         </div>
         <details class="howto">
           <summary>Nasıl oynanır?</summary>
@@ -254,9 +254,11 @@
             <li><b>Dükkan</b> (menüde ya da evin yanında): tırpan, misina, donanım, araçlar, boya, avlu süsleri. <b>Mağaza:</b> para paketleri ve reklamsız oyun.</li>
           </ul>
         </details>
-        <button id="btn-restore" class="btn ghost">Satın Alımları Geri Yükle</button>
-        <button id="btn-reset" class="btn ghost danger">İlerlemeyi Sıfırla</button>
-        <button id="btn-settings-close" class="btn">Tamam</button>
+        <div class="set-links">
+          <button id="btn-restore" class="link-btn">Satın alımları geri yükle</button>
+          <button id="btn-reset" class="link-btn danger">İlerlemeyi sıfırla</button>
+        </div>
+        <button id="btn-settings-close" class="btn art-go"><span>TAMAM</span></button>
       </div>
     </section>
 
@@ -273,7 +275,7 @@
       <div class="hud-top">
         <canvas id="minimap" width="96" height="96"></canvas>
         <div class="hud-mid">
-          <div class="progress"><div class="progress-slot"><div id="progress-fill"></div><div class="progress-goal"></div><b id="progress-text">%0</b></div></div>
+          <div class="progress"><div class="progress-slot"><div id="progress-fill"></div><div class="progress-goal"></div></div><b id="progress-text">%0</b></div>
           <div class="gauges">
             <div class="gauge fuel" title="Benzin"><i class="gi"></i><div class="bar"><div id="fuel-fill"></div></div></div>
             <div class="gauge line" title="Misina"><i class="gi"></i><div class="bar"><div id="line-fill"></div></div><small id="spool-text"></small></div>

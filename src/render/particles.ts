@@ -111,7 +111,34 @@ export class Particles {
    * Cut grass thrown off the spinning line: from points on the cutting circle, flung along the
    * line's direction of travel (tangent, spin `dir` = +1 anticlockwise seen from above), up and out.
    */
-  emitClippings(cx: number, cy: number, cz: number, radius: number, n: number, dir: number, dry: number): void {
+  emitClippings(cx: number, cy: number, cz: number, radius: number, n: number, dir: number, dry: number, fwd?: { x: number; z: number }): void {
+    // Thrown forward too, off the front of the ring (the worker walks into the cut), with a little dust.
+    const fx = fwd?.x ?? 0;
+    const fz = fwd?.z ?? 0;
+    const dust = fwd ? Math.round(n * 0.25) : 0;
+    for (let k = 0; k < dust; k++) {
+      const i = this.next;
+      this.next = (this.next + 1) % MAX;
+      const a = Math.random() * Math.PI * 2;
+      this.pos[i * 3] = cx + fx * radius * 0.8 + Math.cos(a) * radius * 0.5;
+      this.pos[i * 3 + 1] = cy + 0.05 + Math.random() * 0.1;
+      this.pos[i * 3 + 2] = cz + fz * radius * 0.8 + Math.sin(a) * radius * 0.5;
+      this.vel[i * 3] = fx * (0.6 + Math.random()) + (Math.random() - 0.5) * 0.4;
+      this.vel[i * 3 + 1] = 0.3 + Math.random() * 0.5;
+      this.vel[i * 3 + 2] = fz * (0.6 + Math.random()) + (Math.random() - 0.5) * 0.4;
+      this.c.setHSL(0.1, 0.25, 0.55 + Math.random() * 0.1);
+      this.col[i * 3] = this.c.r;
+      this.col[i * 3 + 1] = this.c.g;
+      this.col[i * 3 + 2] = this.c.b;
+      this.size0[i] = this.size[i] = 0.1 + Math.random() * 0.08;
+      this.shape[i] = 0;
+      this.alpha0[i] = this.alpha[i] = 0.35;
+      this.grow[i] = 0.5;
+      this.maxLife[i] = this.life[i] = 0.9 + Math.random() * 0.6;
+      this.drag[i] = 3;
+      this.gravity[i] = 0.05;
+      this.fadeOut[i] = 1;
+    }
     for (let k = 0; k < n; k++) {
       const i = this.next;
       this.next = (this.next + 1) % MAX;
@@ -123,10 +150,10 @@ export class Particles {
       this.pos[i * 3 + 2] = cz + oz * radius * (0.6 + Math.random() * 0.4);
       const sp = 2 + Math.random() * 2.5;
       // Tangent of an anticlockwise turn at angle a (x right, z towards the viewer) is (-sin, cos).
-      this.vel[i * 3] = -oz * dir * sp + ox * 0.6;
+      this.vel[i * 3] = -oz * dir * sp + ox * 0.6 + fx * 1.6;
       // A share of the bits fly high: the satisfying spray (and what dirties the face shield).
       this.vel[i * 3 + 1] = Math.random() < 0.35 ? 2 + Math.random() * 2.2 : 0.7 + Math.random() * 1.6;
-      this.vel[i * 3 + 2] = ox * dir * sp + oz * 0.6;
+      this.vel[i * 3 + 2] = ox * dir * sp + oz * 0.6 + fz * 1.6;
       this.c.setHSL(0.21 + Math.random() * 0.07 - dry * 0.07, 0.5 - dry * 0.15, 0.3 + Math.random() * 0.22 + dry * 0.1);
       this.col[i * 3] = this.c.r;
       this.col[i * 3 + 1] = this.c.g;

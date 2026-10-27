@@ -250,7 +250,7 @@ class Game {
       'İpucu: ocak diplerinde gazı hafiflet, dallara vurma.',
       'İpucu: taşa vuran misina kopar, otun içine dikkatli bak.',
       'İpucu: benzin bitince patpatı yanına getir, bidon kasada.',
-      'İpucu: şevden inerken yavaş yürü, ayağın kayar.',
+      'İpucu: bayırdan inerken yavaş yürü, ayağın kayar.',
       'İpucu: arılar kızınca dereye dal, peşini bırakırlar.',
     ];
     let tip = 0;
@@ -615,7 +615,7 @@ class Game {
     const pay = eventPay(lv, new Date());
     const w = this.weatherOf(lv);
     const load = lv.giant ? 'Dev ot' : (lv.grassLoad ?? 1) >= 1.25 ? 'Ağır ot' : (lv.grassLoad ?? 1) < 0.9 ? 'Hafif ot' : 'Normal ot';
-    const has = [lv.stones ? `${lv.stones} taş` : '', lv.hives ? 'Arı kovanı' : '', lv.snakes ? 'Yılan' : '', lv.banks ? 'Şev' : '', lv.stream ? 'Dere' : '', lv.hose ? 'Hortum' : ''].filter(Boolean);
+    const has = [lv.stones ? `${lv.stones} taş` : '', lv.hives ? 'Arı kovanı' : '', lv.snakes ? 'Yılan' : '', lv.banks ? 'Bayır' : '', lv.stream ? 'Dere' : '', lv.hose ? 'Hortum' : ''].filter(Boolean);
     const best = this.save.best[lv.id];
     $('call-facts').innerHTML = [
       `<span class="pay">${pay === lv.pay ? '' : `<s>${lv.pay}</s> `}${pay.toLocaleString('tr-TR')} TL</span>`,
@@ -1885,6 +1885,8 @@ class Game {
     WorldView.harvest = this.harvestHere;
     this.patosRunning = this.hoseInHand = false;
     this.view.load(this.session, this.models);
+    // After the first few jobs the objective is one line (where, how far): its how-to line only for the harvest.
+    document.body.classList.toggle('obj-brief', Object.keys(this.save.best).length >= 3 && !this.harvesting);
     // Every job starts in first person, at the worker's eyes on the harman (the eye button still
     // switches to the camera behind him for the job).
     this.save.camera = 'fpv';
@@ -1926,7 +1928,7 @@ class Game {
       this.guideKey = this.harvestGuide(this.session).key;
       if (!this.harvestTab) this.toast('Serbest gez: yarım kalan hasadın var, sıradaki adım üstte yazıyor', 'good');
     } else if (this.roaming) this.toast('Serbest gez: tırpan evde, köy senin. Bir tarlanın kapısında BU İŞE GEÇ ile iş başlar', 'good');
-    else this.toast(`Bugünkü iş: ${lv.name} (${lv.client.name}). Yeri HARİTA'da işaretli`, 'good', 'job', 6);
+    else this.toast(`Bugünkü iş: ${lv.name}`, 'good', 'job', 6, 3000);
   }
 
   /** The harvest is open: Yeşilyamaç's gardens done (or every job open while developing). */
@@ -2554,7 +2556,8 @@ class Game {
     this.show('result');
   }
 
-  private toast(text: string, kind: '' | 'warn' | 'good' = '', key?: string, every = 0): void {
+  /** A message under the objective (one at a time); `ms`: how long it stays (else by its length). */
+  private toast(text: string, kind: '' | 'warn' | 'good' = '', key?: string, every = 0, ms?: number): void {
     const now = performance.now();
     if (key && now - (this.toastAt[key] ?? -1e9) < every * 1000) return;
     if (key) this.toastAt[key] = now;
@@ -2564,9 +2567,10 @@ class Game {
     const box = $('toasts');
     box.appendChild(el);
     this.placeToasts();
-    while (box.children.length > 3) box.firstChild?.remove();
+    // One message at a time (the same one again only refreshes it).
+    for (const old of [...box.children]) if (old !== el) old.remove();
     // Long enough to read: by its length (warnings a little longer).
-    const ms = Math.max(2600, 1200 + text.length * 70) * (kind === 'warn' ? 1.3 : 1);
+    ms ??= Math.max(2600, 1200 + text.length * 70) * (kind === 'warn' ? 1.3 : 1);
     el.style.animationDuration = `${ms}ms`;
     setTimeout(() => el.remove(), ms + 100);
   }
@@ -2690,7 +2694,11 @@ class Game {
           this.audio.patpat(true);
           haptic('medium');
           this.updateStarterUi();
-          if (!this.harvesting) this.toast('Direksiyonu çevir, GAZ ve FREN pedallarıyla sür', 'good', 'board', 120);
+          // (Said the first few times only.)
+          if (!this.harvesting && (this.save.driveTips ?? 0) < 3) {
+            this.save.driveTips = (this.save.driveTips ?? 0) + 1;
+            this.toast('Direksiyonu çevir, GAZ ve FREN pedallarıyla sür', 'good', 'board', 120);
+          }
           break;
         case 'alight':
           this.audio.patpat(false);
@@ -2707,7 +2715,7 @@ class Game {
           break;
         case 'slip':
           haptic('light');
-          this.toast('Ayağın kayıyor! Şevde yavaş yürü', 'warn', 'slip', 4);
+          this.toast('Ayağın kayıyor! Bayırda yavaş yürü', 'warn', 'slip', 4);
           break;
         case 'fall':
           this.audio.fall();
@@ -2818,106 +2826,29 @@ class Game {
     }
     $('hud-time').textContent = `${Math.floor(s.time / 60)}:${String(Math.floor(s.time % 60)).padStart(2, '0')}`;
     $('hud-knocks').textContent = String(s.knocks);
-    this.drawMinimap(s);
   }
 
-  /** When fuel or line runs out, an arrow on screen points to the fuel can. */
+  /**
+   * When fuel or line runs out (or, the first job, to the pat pat with the trimmer): the objective's pill
+   * points the way instead of its usual line (the big box in the middle it was is gone).
+   */
+  private guideLine = '';
   private updateGuide(s: Session): void {
     const lineOut = (s.broken && s.spool < TRIMMER.rethreadUse) || (s.line < TRIMMER.lineMin && s.spool < 0.01);
     const fuelOut = s.fuel < s.gear.tank * 0.15;
     // First job: the arrow shows the way to the pat pat with the trimmer in its trailer.
     const toTrailer = s.intro === 'take' && !s.nearVehicle;
     const show = toTrailer || ((lineOut || fuelOut) && !s.atDepot && !s.intro);
-    $('guide').classList.toggle('show', show);
-    if (!show) return;
+    $('guide').classList.remove('show');
+    this.guideLine = '';
+    // (To the pat pat the objective says already.)
+    if (!show || toTrailer || s.driving) return;
     const goal = toTrailer ? s.field.vehicle : s.field.depot;
     const dx = goal.x - s.x;
     const dz = goal.z - s.z;
-    const cam = this.view.camera.getWorldDirection(new THREE.Vector3());
-    // Angle from the camera's forward to the depot, + = to the right.
-    const ang = Math.atan2(cam.x * dz - cam.z * dx, cam.x * dx + cam.z * dz);
-    $('guide-arrow').style.transform = `rotate(${(ang * 180) / Math.PI}deg)`;
     const what = fuelOut && lineOut ? 'Benzin ve misina' : fuelOut ? 'Benzin' : 'Misina';
-    $('guide-text').textContent = toTrailer ? `Pat pat ${Math.round(Math.hypot(dx, dz))} m` : `${what}: bidon ${Math.round(Math.hypot(dx, dz))} m`;
-  }
-
-  private drawMinimap(s: Session): void {
-    const c = $<HTMLCanvasElement>('minimap');
-    const f = s.field;
-    if (c.width !== f.gw || c.height !== f.gd) {
-      c.width = f.gw;
-      c.height = f.gd;
-    }
-    const ctx = c.getContext('2d')!;
-    const img = ctx.createImageData(f.gw, f.gd);
-    const d = img.data;
-    for (let k = 0; k < f.gw * f.gd; k++) {
-      const h = f.grass[k];
-      const o = k * 4;
-      if (!f.mask[k]) {
-        d[o] = 90;
-        d[o + 1] = 70;
-        d[o + 2] = 45;
-      } else if (h <= 0.3) {
-        d[o] = 196;
-        d[o + 1] = 214;
-        d[o + 2] = 120;
-      } else {
-        d[o] = 40;
-        d[o + 1] = 92;
-        d[o + 2] = 30;
-      }
-      d[o + 3] = 255;
-    }
-    ctx.putImageData(img, 0, 0);
-    const sx = f.gw / f.width;
-    const sz = f.gd / f.depth;
-    const px = (x: number) => (x + f.width / 2) * sx;
-    const pz = (z: number) => (z + f.depth / 2) * sz;
-    const bushColor: Record<BushKind, string> = { ocak: '#2a5a1c', mezar: '#d8d4c8', kaya: '#8b8a83' };
-    for (const b of f.bushes) {
-      ctx.fillStyle = bushColor[b.kind];
-      ctx.beginPath();
-      ctx.arc(px(b.x), pz(b.z), b.kind === 'ocak' ? 3.2 : b.kind === 'kaya' ? 3.5 * b.scale : 2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    if (f.hose.length > 1) {
-      ctx.strokeStyle = f.hoseCut ? '#7fb6e0' : '#3fae4a';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      f.hose.forEach((p, i) => (i ? ctx.lineTo(px(p.x), pz(p.z)) : ctx.moveTo(px(p.x), pz(p.z))));
-      ctx.stroke();
-    }
-    ctx.fillStyle = '#f2c230';
-    for (const h of f.hives) ctx.fillRect(px(h.x) - 3, pz(h.z) - 3, 6, 6);
-    ctx.fillStyle = '#ffffff';
-    for (const h of f.hens) {
-      if (h.state === 'gone' || !f.inField(h.x, h.z)) continue;
-      ctx.beginPath();
-      ctx.arc(px(h.x), pz(h.z), 2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.fillStyle = '#5a2a4a';
-    for (const b of f.brambles) {
-      if (b.hp <= 0) continue;
-      ctx.beginPath();
-      ctx.arc(px(b.x), pz(b.z), b.r * sx, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.fillStyle = '#ffd23a';
-    ctx.fillRect(px(f.depot.x) - 3, Math.min(f.gd - 5, pz(f.depot.z)) - 2, 6, 5);
-    const mx = px(s.x);
-    const my = Math.min(f.gd - 3, pz(s.z));
-    ctx.strokeStyle = '#ff3b2a';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(mx, my);
-    ctx.lineTo(mx + Math.sin(s.yaw) * 9, my + Math.cos(s.yaw) * 9);
-    ctx.stroke();
-    ctx.fillStyle = '#ff3b2a';
-    ctx.beginPath();
-    ctx.arc(mx, my, 3.5, 0, Math.PI * 2);
-    ctx.fill();
+    const d = Math.round(Math.hypot(dx, dz));
+    this.guideLine = `${this.arrowTo(s, goal.x, goal.z)}${toTrailer ? `Patpat ${d} m` : `${what} bitiyor: bidon ${d} m`}`;
   }
 
   /**
@@ -3240,6 +3171,9 @@ class Game {
   private updateIntro(s: Session): void {
     document.body.classList.toggle('intro', !!s.intro);
     document.body.classList.toggle('driving', s.driving);
+    // The top bar: the gauges with the trimmer in hand; the progress once the job's field is begun.
+    document.body.classList.toggle('bare', !s.hasTrimmer);
+    document.body.classList.toggle('no-progress', s.roaming || (!s.hasTrimmer && s.field.coverage < 0.005));
     const acts: Parameters<Game['renderActions']>[0] = [];
     if (s.driving) {
       const rolling = Math.abs(s.field.vehicle.speed) > 0.5;
@@ -3302,6 +3236,8 @@ class Game {
       text = g?.head ? `${g.to ? this.arrowTo(s, g.to.x, g.to.z) : ''}${g.head}${g.sub ? `<small>${g.sub}</small>` : ''}` : '';
     }
     document.body.classList.toggle('harvest-hint', this.roaming && !!text);
+    // Running out: the way to the fuel can first.
+    if (this.guideLine) text = this.guideLine;
     // (Only when it changes, and never read back from the page: that, and placing the messages under it
     // every frame, made the browser lay the page out again each frame. The messages follow its size: see
     // the ResizeObserver.)

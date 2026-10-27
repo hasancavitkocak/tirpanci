@@ -50,11 +50,25 @@ export class FpvRig {
 
   /**
    * Place the handlebar so its tube ends meet the glove grips and its clamp axis points along the shaft,
-   * towards the cutting head. `headCam` is the cutting head in camera space; `headAngle` the head's
-   * side angle (radians, + = right) so the hands follow the swing a little.
+   * towards the cutting head. `headCam` is the cutting head in camera space; `restCam` where it is held
+   * at rest (on level ground, straight ahead). The gloves, the bar and the shaft turn together, as one,
+   * about the middle of the grips, from there towards the head (the worker swinging the machine): the
+   * shaft always leaves the bar straight between the hands, never bent off to a side or under a glove.
    */
-  update(headCam: THREE.Vector3, headAngle: number): void {
-    this.sway.rotation.y = -headAngle * 0.45;
+  update(headCam: THREE.Vector3, restCam: THREE.Vector3): void {
+    // (Turned about the middle of the two grips, so the gloves stay where they are on screen.)
+    const pivot = this.hl.clone().add(this.hr).multiplyScalar(0.5);
+    // Round to the side with the head; up and down only half as far, and not much (the gloves tipped
+    // right over, the head high up a bank).
+    const rd = this.tmp.copy(restCam).sub(pivot);
+    const hd = headCam.clone().sub(pivot);
+    const yaw = (v: THREE.Vector3) => Math.atan2(-v.x, -v.z);
+    const pitch = (v: THREE.Vector3) => Math.atan2(v.y, Math.hypot(v.x, v.z));
+    const dp = Math.max(-0.3, Math.min(0.3, (pitch(hd) - pitch(rd)) * 0.5));
+    // (The gloves turned no more than 23 degrees: further, a glove swung round to face the eyes.)
+    const dy = Math.max(-0.4, Math.min(0.4, yaw(hd) - yaw(rd)));
+    this.sway.rotation.set(dp, dy, 0, 'YXZ');
+    this.sway.position.copy(pivot).sub(pivot.clone().applyQuaternion(this.sway.quaternion));
     this.sway.updateMatrix();
     // Work in the sway group's space.
     const head = this.tmp.copy(headCam).applyMatrix4(this.m.copy(this.sway.matrix).invert());
