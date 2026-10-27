@@ -149,7 +149,12 @@ function streamBed(f: Field, heightAt: (x: number, z: number) => number, z0: num
   // As wide as the water (WIDTH * 0.62 each side) and a little up the banks.
   const water = WIDTH * 0.62;
   const half = water + 0.8;
-  const across = 11;
+  // Solid out to past where the ground is cut away for the water (world.ts: water + 0.4), then fading up
+  // the banks: across, nine steps over the solid middle and one more out to each faded edge (with the
+  // steps even, the edge's fade began inside the cut and the sky showed through along the banks).
+  const solid = water + 0.5;
+  const offsets = [-half, ...Array.from({ length: 9 }, (_, k) => -solid + (2 * solid * k) / 8), half];
+  const across = offsets.length;
   const pos: number[] = [];
   const uv: number[] = [];
   const col: number[] = [];
@@ -158,11 +163,14 @@ function streamBed(f: Field, heightAt: (x: number, z: number) => number, z0: num
   for (let z = z0; z <= z1; z += 0.8, row++) {
     const cx = f.streamX(z);
     for (let k = 0; k < across; k++) {
-      const s = -half + (2 * half * k) / (across - 1);
+      const s = offsets[k];
       const x = cx + s;
-      pos.push(x, heightAt(x, z) + 0.03, z);
+      // Up the banks a little under the ground (drawn over it all the same: polygonOffset), so its edge is
+      // never a lip over the coarse ground the eye passes under into the ground cut away for the water.
+      const up = Math.max(0, Math.min(1, (Math.abs(s) - water) / (solid - water)));
+      pos.push(x, heightAt(x, z) + 0.03 - 0.15 * up, z);
       uv.push(x / 2.4, z / 2.4);
-      const edge = Math.min(1, (half - Math.abs(s)) / (half - water));
+      const edge = Math.abs(s) <= solid + 1e-6 ? 1 : 0;
       col.push(1, 1, 1, edge * edge * (3 - 2 * edge));
     }
     if (z + 0.8 <= z1) for (let k = 0; k < across - 1; k++) {

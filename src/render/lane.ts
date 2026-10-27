@@ -6,6 +6,15 @@ import { PAINTED_GROUND, groundTextures } from './scenery';
 
 /** Half the width of the dirt lane, metres (its texture fades into the grass at the edges). */
 export const LANE_HALF = 1.9;
+/** The track's middle, out to this from its line (m), is drawn solid: the ground under it is cut out to less (mask). */
+const SOLID_HALF = LANE_HALF - 0.42;
+/**
+ * How far out from the track's line the ground under it is cut away (m): past the wheel ruts (the pat
+ * pat's and the trailer's, out to about a metre), not further. The ribbon's sides can lie a little over
+ * the coarse ground; cut out under them too, the eye passed under their edge looking across the track
+ * and the sky showed through.
+ */
+const CUT_HALF = 1.15;
 
 /**
  * How far the ground is lowered under the lane at `r` metres from its middle: a worn bed with two deep
@@ -512,8 +521,13 @@ class LaneStrip {
         const v = r * n + k;
         const u = s / LANE_HALF;
         const base = gm + ((gr - gl) / 2) * u + ((gr + gl) / 2 - gm) * u * u;
+        // Towards the sides, on the terrain's own surface (the roads levelled, the ruts worn in): there
+        // the three-sample fit of the unlevelled ground stood up to a hand over it, its edge a lip the eye
+        // passed under looking across the track, into the ground cut away under it.
+        const side = joint ? 0 : smooth(0.9, 1.5, Math.abs(s));
         pos[v * 3] = x;
-        pos[v * 3 + 1] = (joint ? this.ground.height(x, z) : this.ground.surface(x, z, Math.abs(s), base)) + 0.025;
+        const own = joint ? this.ground.height(x, z) : this.ground.surface(x, z, Math.abs(s), base);
+        pos[v * 3 + 1] = (side > 0 ? own + (this.ground.height(x, z) - own) * side : own) + 0.025;
         pos[v * 3 + 2] = z;
         uv.set([k / (n - 1), p.along / TILE], v * 2);
         uvPrint.set([k / (n - 1), r / CHUNK_ROWS], v * 2);
@@ -574,7 +588,9 @@ class LaneStrip {
         .replace('#include <uv_vertex>', '#include <uv_vertex>\nvUvPrint = uvPrint;');
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', '#include <common>\nuniform sampler2D uPrints;\nvarying vec2 vUvPrint;')
-        .replace('#include <map_fragment>', '#include <map_fragment>\nvec3 printed = texture2D(uPrints, vUvPrint).rgb;\ndiffuseColor.rgb *= printed;')
+        // The middle (where the ground under it is not drawn, world.ts) always solid: far off, the texture's
+        // smaller copies blur its soft edges inwards, and the sky showed through the track's sides.
+        .replace('#include <map_fragment>', `#include <map_fragment>\nif (abs(vMapUv.x - 0.5) * 2.0 < ${(SOLID_HALF / LANE_HALF).toFixed(3)}) diffuseColor.a = 1.0;\nvec3 printed = texture2D(uPrints, vUvPrint).rgb;\ndiffuseColor.rgb *= printed;`)
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor *= mix(0.45, 1.0, printed.g);');
     };
     mat.customProgramCacheKey = () => 'lane-prints';
@@ -756,6 +772,41 @@ export class LaneView {
   }
 
   /** Top-down mask of the tracks' middles (where the terrain under them is not drawn) and the area it covers. */
+  /**
+   * Whether a point (field coordinates) is within `margin` metres of where the mask is white (a track's
+   * middle): the terrain's triangles near one are drawn by the material that cuts the track out, the
+   * rest by the one without (whose GPU work is cheaper: no discard).
+   */
+  nearMask(margin: number): (x: number, z: number) => boolean {
+    const strips = this.strips.filter((s) => s.pts.length);
+    if (!strips.length) return () => false;
+    const pad = margin + 3;
+    const minX = Math.min(...strips.map((s) => s.box.minX)) - pad;
+    const maxX = Math.max(...strips.map((s) => s.box.maxX)) + pad;
+    const minZ = Math.min(...strips.map((s) => s.box.minZ)) - pad;
+    const maxZ = Math.max(...strips.map((s) => s.box.maxZ)) + pad;
+    const ppm = 1;
+    const c = document.createElement('canvas');
+    c.width = Math.ceil((maxX - minX) * ppm);
+    c.height = Math.ceil((maxZ - minZ) * ppm);
+    const g = c.getContext('2d', { willReadFrequently: true })!;
+    g.strokeStyle = '#fff';
+    g.lineWidth = (2 * LANE_HALF + 2 * margin) * ppm;
+    g.lineCap = 'round';
+    g.lineJoin = 'round';
+    for (const s of strips) {
+      g.beginPath();
+      s.pts.forEach((q, i) => (i ? g.lineTo((q.x - minX) * ppm, (q.z - minZ) * ppm) : g.moveTo((q.x - minX) * ppm, (q.z - minZ) * ppm)));
+      g.stroke();
+    }
+    const d = g.getImageData(0, 0, c.width, c.height).data;
+    return (x, z) => {
+      const i = Math.floor((x - minX) * ppm);
+      const j = Math.floor((z - minZ) * ppm);
+      return i >= 0 && j >= 0 && i < c.width && j < c.height && d[(j * c.width + i) * 4 + 3] > 0;
+    };
+  }
+
   mask(): { tex: THREE.CanvasTexture; box: THREE.Vector4 } | null {
     const strips = this.strips.filter((s) => s.pts.length);
     if (!strips.length) return null;
@@ -771,7 +822,7 @@ export class LaneView {
     g.fillStyle = '#000';
     g.fillRect(0, 0, c.width, c.height);
     g.strokeStyle = '#fff';
-    g.lineWidth = 2 * (LANE_HALF - 0.55) * ppm;
+    g.lineWidth = 2 * CUT_HALF * ppm;
     // Square ends: the ribbon stops where the track does, the mask must not reach past it.
     g.lineCap = 'butt';
     g.lineJoin = 'round';

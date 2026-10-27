@@ -8,6 +8,7 @@ import { HEAD_LIFT, TRIMMER_RIG } from './trimmerRig';
 import { PATPAT, SLOPE, TRIMMER } from '../game/config';
 import { DRIVER_EYE, SKY_HORIZON, WorldView, worldHeight } from './world';
 import { WorkerView } from './worker';
+import { MOBILE } from '../platform/device';
 import { CrittersView } from './critters';
 import { Rain, WEATHER } from './weather';
 import { MARK_LENGTH, TrackView } from './tracks';
@@ -33,6 +34,13 @@ const QUALITY: Record<Quality, { ratio: number; shadows: boolean; shadowSize: nu
   medium: { ratio: 1.5, shadows: false, shadowSize: 1024, blades: 4, density: 1, wild: 2.4, trees: 14, shoots: 11 },
   high: { ratio: 2, shadows: false, shadowSize: 2048, blades: 6, density: 1.3, wild: 2.4, trees: 22, shoots: 13 },
 };
+
+/**
+ * On a phone, the most pixels a CSS pixel draws at each quality: its screen is so fine (3x) that the
+ * difference above these hardly shows, but the GPU's work (and the phone's heat) grows with the square.
+ * The quality keeps everything else it has (trees, grass, smoothing).
+ */
+const PHONE_RATIO: Record<Quality, number> = { low: 1, medium: 1.3, high: 1.6 };
 
 const TEXTURE_SLOTS = ['map', 'normalMap', 'alphaMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap', 'bumpMap'] as const;
 
@@ -135,6 +143,8 @@ export class View {
   private patStartT = Infinity;
   private patPipe: THREE.Vector3 | null = null;
   private readonly tmp = new THREE.Vector3();
+  /** The sky dome (WorldView's), kept round the camera. */
+  private sky: THREE.Object3D | null = null;
 
   constructor(canvas: HTMLCanvasElement, quality: Quality) {
     this.quality = quality;
@@ -155,7 +165,7 @@ export class View {
   resize(): void {
     const w = window.innerWidth;
     const h = window.innerHeight;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, QUALITY[this.quality].ratio));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MOBILE ? PHONE_RATIO[this.quality] : QUALITY[this.quality].ratio));
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     // Portrait phones need a wider view to see enough of the field around the worker.
@@ -201,6 +211,13 @@ export class View {
     fog.color.set(look.haze);
     fog.near = look.fogNear;
     fog.far = look.fogFar;
+    // On a fine day nothing past the fog is drawn (there it would be only the fog's colour against the
+    // painted sky): the camera sees as far as the fog does. In rain and fog the hills far off in the haze
+    // are part of the look: as far as before. The sky dome, kept round the camera (frame), within that.
+    this.camera.far = session.field.level.weather === 'sunny' ? look.fogFar + 30 : 900;
+    this.camera.updateProjectionMatrix();
+    this.sky = this.world.group.getObjectByName('sky') ?? null;
+    this.sky?.scale.setScalar((this.camera.far * 0.9) / 650);
     (this.scene.background as THREE.Color).set(look.haze);
     this.renderer.toneMappingExposure = look.exposure;
     if (session.field.level.weather === 'rain' && !menu) {
@@ -357,6 +374,10 @@ export class View {
     this.particles.update(dt, ground);
     this.updateCamera(dt, false);
     this.poseFirstPerson(s, ground);
+    if (this.sky) {
+      this.camera.getWorldPosition(this.sky.position);
+      this.sky.updateMatrix();
+    }
     this.renderer.render(this.scene, this.camera);
   }
 

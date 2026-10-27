@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { Lensflare, LensflareElement } from 'three/examples/jsm/objects/Lensflare.js';
 import { makeNoise, makeRng } from '../game/rng';
+import { MOBILE } from '../platform/device';
 
 /**
  * Western Black Sea coast scenery (Düzce, Akçakoca): rolling hills covered in hazelnut orchards and
@@ -76,39 +76,6 @@ export function sunSprite(dir: THREE.Vector3, turn: number, glow = 1): THREE.Spr
   s.scale.setScalar(190);
   s.renderOrder = -1;
   return s;
-}
-
-/**
- * The sun's glare in the camera's lens when it is looked towards: a big warm bloom round it and a
- * trail of faint coloured rings towards the middle of the screen. Hidden when a house or a tree stands
- * in front of the sun (three's Lensflare tests its middle against the depth). At `dir` (world), 600 m off.
- */
-export function sunFlare(dir: THREE.Vector3): Lensflare {
-  const disc = (stops: [number, string][]) => {
-    const c = document.createElement('canvas');
-    c.width = c.height = 128;
-    const x = c.getContext('2d')!;
-    const g = x.createRadialGradient(64, 64, 0, 64, 64, 64);
-    for (const [t, col] of stops) g.addColorStop(t, col);
-    x.fillStyle = g;
-    x.fillRect(0, 0, 128, 128);
-    return new THREE.CanvasTexture(c);
-  };
-  const bloom = disc([[0, 'rgba(255,255,245,1)'], [0.12, 'rgba(255,240,200,0.8)'], [0.35, 'rgba(255,210,140,0.25)'], [1, 'rgba(255,190,120,0)']]);
-  const ghost = disc([[0, 'rgba(255,255,255,0.22)'], [0.7, 'rgba(255,255,255,0.35)'], [0.88, 'rgba(255,255,255,0.75)'], [1, 'rgba(255,255,255,0)']]);
-  const lf = new Lensflare();
-  lf.addElement(new LensflareElement(bloom, 260, 0, new THREE.Color(0.75, 0.68, 0.55)));
-  for (const [size, dist, col] of [
-    [50, 0.3, [0.5, 0.6, 0.35]],
-    [80, 0.5, [0.3, 0.45, 0.6]],
-    [36, 0.65, [0.6, 0.45, 0.25]],
-    [120, 0.9, [0.35, 0.55, 0.4]],
-    [60, 1.15, [0.55, 0.4, 0.6]],
-  ] as [number, number, number[]][])
-    lf.addElement(new LensflareElement(ghost, size, dist, new THREE.Color(col[0], col[1], col[2])));
-  lf.position.copy(dir).normalize().multiplyScalar(600);
-  lf.frustumCulled = false;
-  return lf;
 }
 
 /**
@@ -249,7 +216,8 @@ export async function preloadGround(): Promise<void> {
   for (const t of [grass, soil]) {
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.colorSpace = THREE.SRGBColorSpace;
-    t.anisotropy = 4;
+    // (Each step of anisotropy is more texture reads for every pixel of the ground: two on a phone.)
+    t.anisotropy = MOBILE ? 2 : 4;
   }
   // The harman's old village concrete (the painted look only).
   const concrete = PAINTED_GROUND ? await texLoader.loadAsync('./textures/zemin-beton-boya.jpg').catch(() => undefined) : undefined;

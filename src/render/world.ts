@@ -10,7 +10,7 @@ import { HarvestView, PatosRig } from './harvest';
 import { brambleObject } from './bramble';
 import { shootBush } from './shootBush';
 import { hazelnutBush } from './hazelnut';
-import { MEADOW_PATCHES, PAINTED_GROUND, groundTextures, hills, skyDome, sunFlare, sunSprite } from './scenery';
+import { MEADOW_PATCHES, PAINTED_GROUND, groundTextures, hills, skyDome, sunSprite } from './scenery';
 import { boulderGeometry, graveGeometry, mosqueGroup, stoneWall, yaylaHutGroup } from './landmarks';
 import { WEATHER } from './weather';
 import { StreamView } from './stream';
@@ -127,12 +127,10 @@ function terrain(f: Field, cut: THREE.Texture, lane: LaneView): THREE.Mesh {
   g.computeVertexNormals();
   // Pushed back in depth: the fine rutted tracks and the stream bed laid on it (a few centimetres lower
   // where its 2 m triangles cut across their ruts and banks) must not be covered by it.
-  const mat = new THREE.MeshLambertMaterial({ color: '#ffffff', polygonOffset: true, polygonOffsetFactor: 8, polygonOffsetUnits: 600 });
   const tex = groundTextures();
   // The coarse terrain is not drawn under the lane's middle: the fine rutted ribbon is the ground there.
   // Made once (not in onBeforeCompile, which runs for every program), freed with the material.
   const laneMask = lane.mask();
-  if (laneMask) mat.addEventListener('dispose', () => laneMask.tex.dispose());
   // The stream's line (Field.streamX) down the terrain, tabled: its x every metre of z from r.minZ.
   const sn = Math.ceil(d) + 2;
   const sxs = new Float32Array(sn);
@@ -140,8 +138,34 @@ function terrain(f: Field, cut: THREE.Texture, lane: LaneView): THREE.Mesh {
   const streamTex = new THREE.DataTexture(sxs, sn, 1, THREE.RedFormat, THREE.FloatType);
   streamTex.minFilter = streamTex.magFilter = THREE.NearestFilter;
   streamTex.needsUpdate = true;
-  mat.addEventListener('dispose', () => streamTex.dispose());
-  mat.onBeforeCompile = (sh) => {
+  // Two materials: one that cuts the tracks' middles and the stream out of the ground (discard: on a
+  // phone's GPU that turns off its early hidden-surface removal for what it draws), only for the
+  // triangles near them; the rest of the ground, nearly all the screen, by one that does not.
+  const cutMat = groundMaterial(true);
+  const mat = groundMaterial(false);
+  cutMat.addEventListener('dispose', () => {
+    laneMask?.tex.dispose();
+    streamTex.dispose();
+  });
+  // (The triangles are at most 2.9 m across: one with no corner within 3 m of a track or the water has no point on them.)
+  const nearLane = lane.nearMask(3);
+  const nearWater = STREAM.width * 0.62 + 0.4 + 3;
+  const near = (i: number) => nearLane(p.getX(i), p.getZ(i)) || Math.abs(p.getX(i) - f.streamX(p.getZ(i))) < nearWater;
+  const idx = g.index!.array;
+  const plain: number[] = [];
+  const edged: number[] = [];
+  for (let t = 0; t < idx.length; t += 3) (near(idx[t]) || near(idx[t + 1]) || near(idx[t + 2]) ? edged : plain).push(idx[t], idx[t + 1], idx[t + 2]);
+  g.setIndex([...plain, ...edged]);
+  g.clearGroups();
+  g.addGroup(0, plain.length, 0);
+  g.addGroup(plain.length, edged.length, 1);
+  function groundMaterial(cuts: boolean): THREE.MeshLambertMaterial {
+    const mat = new THREE.MeshLambertMaterial({ color: '#ffffff', polygonOffset: true, polygonOffsetFactor: 8, polygonOffsetUnits: 600 });
+    mat.customProgramCacheKey = () => (cuts ? 'ground-cut' : 'ground');
+    mat.onBeforeCompile = (sh) => groundShader(sh, cuts);
+    return mat;
+  }
+  function groundShader(sh: THREE.WebGLProgramParametersWithUniforms, cuts: boolean): void {
     sh.uniforms.uCut = { value: cut };
     sh.uniforms.uGrass = { value: tex?.grass ?? null };
     sh.uniforms.uSoil = { value: tex?.soil ?? null };
@@ -150,14 +174,26 @@ function terrain(f: Field, cut: THREE.Texture, lane: LaneView): THREE.Mesh {
     sh.uniforms.uLaneBox = { value: laneMask?.box ?? new THREE.Vector4(0, 0, 0, 0) };
     sh.uniforms.uStreamX = { value: streamTex };
     sh.uniforms.uStream = { value: new THREE.Vector3(r.minZ, streamTex.image.width, STREAM.width * 0.62 + 0.4) };
+    // The meadow's broad patches and colour drift (tens of metres across) worked out at the corners,
+    // not for every pixel.
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec2 vWXZ;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWXZ = (modelMatrix * vec4(transformed, 1.0)).xz;');
+      .replace('#include <common>', (PAINTED_GROUND ? MEADOW_PATCHES : '') + '#include <common>\nvarying vec2 vWXZ;\nvarying vec3 vWild;')
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        vWXZ = (modelMatrix * vec4(transformed, 1.0)).xz;
+        float drift = sin(vWXZ.x * 0.11 + sin(vWXZ.y * 0.07) * 2.0) * 0.5 + 0.5;
+        vWild = mix(vec3(0.9, 0.95, 0.75), vec3(0.75, 0.85, 0.65), drift)${PAINTED_GROUND ? ' * 0.85 * meadowPatches(vWXZ)' : ''};`,
+      );
+    sh.fragmentShader = sh.fragmentShader.replace(
+      '#include <common>',
+      '#include <common>\nvarying vec2 vWXZ;\nvarying vec3 vWild;\nuniform sampler2D uCut;\nuniform vec4 uField;\nuniform sampler2D uGrass;\nuniform sampler2D uSoil;\nuniform sampler2D uLaneMask;\nuniform vec4 uLaneBox;\nuniform vec3 uStream;\nuniform sampler2D uStreamX;',
+    );
+    // Not drawn under the tracks' middles, nor under the stream's water (the coarse triangles cut
+    // across its carved bank and would cover the bed; its line from uStreamX, between its samples).
+    if (cuts)
+      sh.fragmentShader = sh.fragmentShader.replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nvec2 luv = (vWXZ - uLaneBox.xy) * uLaneBox.zw;\nif (uLaneBox.z > 0.0 && luv.x > 0.0 && luv.x < 1.0 && luv.y > 0.0 && luv.y < 1.0 && texture2D(uLaneMask, luv).r > 0.5) discard;\nfloat sq = clamp(vWXZ.y - uStream.x, 0.0, uStream.y - 2.0);\nfloat sx = mix(texture2D(uStreamX, vec2((floor(sq) + 0.5) / uStream.y, 0.5)).r, texture2D(uStreamX, vec2((floor(sq) + 1.5) / uStream.y, 0.5)).r, fract(sq));\nif (abs(vWXZ.x - sx) < uStream.z) discard;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', (PAINTED_GROUND ? MEADOW_PATCHES : '') + '#include <common>\nvarying vec2 vWXZ;\nuniform sampler2D uCut;\nuniform vec4 uField;\nuniform sampler2D uGrass;\nuniform sampler2D uSoil;\nuniform sampler2D uLaneMask;\nuniform vec4 uLaneBox;\nuniform vec3 uStream;\nuniform sampler2D uStreamX;')
-      // Not drawn under the tracks' middles, nor under the stream's water (the coarse triangles cut
-      // across its carved bank and would cover the bed; its line from uStreamX, between its samples).
-      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nvec2 luv = (vWXZ - uLaneBox.xy) * uLaneBox.zw;\nif (uLaneBox.z > 0.0 && luv.x > 0.0 && luv.x < 1.0 && luv.y > 0.0 && luv.y < 1.0 && texture2D(uLaneMask, luv).r > 0.5) discard;\nfloat sq = clamp(vWXZ.y - uStream.x, 0.0, uStream.y - 2.0);\nfloat sx = mix(texture2D(uStreamX, vec2((floor(sq) + 0.5) / uStream.y, 0.5)).r, texture2D(uStreamX, vec2((floor(sq) + 1.5) / uStream.y, 0.5)).r, fract(sq));\nif (abs(vWXZ.x - sx) < uStream.z) discard;')
       .replace(
         '#include <color_fragment>',
         /* glsl */ `#include <color_fragment>
@@ -170,11 +206,10 @@ function terrain(f: Field, cut: THREE.Texture, lane: LaneView): THREE.Mesh {
         vec3 soilT = texture2D(uSoil, vWXZ / ${PAINTED_GROUND ? '2.4' : '2.2'}).rgb * 0.65 + texture2D(uSoil, vWXZ / ${PAINTED_GROUND ? '3.3' : '7.0'} + 0.61).rgb * 0.35;
         // The painted textures, a touch calmer than drawn (the blades and the light do the rest).
         ${PAINTED_GROUND ? 'grassT = mix(grassT, vec3(dot(grassT, vec3(0.3, 0.59, 0.11))), 0.25) * vec3(0.52, 0.64, 0.48); soilT = mix(soilT, vec3(dot(soilT, vec3(0.3, 0.59, 0.11))), 0.3) * vec3(0.84, 0.74, 0.64);' : ''}
-        float drift = sin(vWXZ.x * 0.11 + sin(vWXZ.y * 0.07) * 2.0) * 0.5 + 0.5;
         vec3 soil = soilT * vec3(1.0, 0.95, 0.9);
         vec3 stubble = mix(grassT * vec3(1.15, 1.12, 0.78), soilT, 0.25);
         vec3 under = grassT * vec3(0.55, 0.62, 0.5);
-        vec3 wild = grassT * mix(vec3(0.9, 0.95, 0.75), vec3(0.75, 0.85, 0.65), drift)${PAINTED_GROUND ? ' * 0.85 * meadowPatches(vWXZ)' : ''};
+        vec3 wild = grassT * vWild;
         vec3 c = mix(soil, stubble, smoothstep(0.03, 0.1, h));
         c = mix(c, under, smoothstep(0.18, 0.45, h));
         // A worn earth path just outside the field edge, then rough meadow.
@@ -184,8 +219,9 @@ function terrain(f: Field, cut: THREE.Texture, lane: LaneView): THREE.Mesh {
         c = mix(outside, c, inside);
         diffuseColor.rgb *= c * 1.15;`,
       );
-  };
-  const m = new THREE.Mesh(g, mat);
+  }
+  const m = new THREE.Mesh(g, [mat, cutMat]);
+  m.name = 'terrain';
   m.receiveShadow = true;
   return m;
 }
@@ -305,11 +341,8 @@ export class WorldView {
     const turn = ((models.panoramaTurn ?? 0) * Math.PI) / 180;
     const sky = skyDome(panorama, turn, { top: look.skyTop, haze: look.haze, sun: look.sunDir, glow: look.glow });
     // The sun itself where the light comes from (a fine day or the evening; not through rain or fog).
-    if (look.glow >= 1) {
-      sky.add(sunSprite(look.sunDir, turn, look.glow));
-      // And its glare in the lens when looked towards (gone behind a house or a tree).
-      g.add(sunFlare(look.sunDir));
-    }
+    if (look.glow >= 1) sky.add(sunSprite(look.sunDir, turn, look.glow));
+    sky.name = 'sky';
     g.add(sky);
     // The hills start inside the terrain's edge and rise from its height there, clamped to the terrain;
     // round its middle, an ellipse as long as the village.
@@ -319,6 +352,7 @@ export class WorldView {
     const edge = (x: number, z: number) => f.height(Math.max(tr.minX, Math.min(tr.maxX, x + cx)), Math.max(tr.minZ, Math.min(tr.maxZ, z + cz)));
     const hillRing = hills(f.level.seed + 77, (tr.maxX - tr.minX) / 2 - 8, !!panorama, edge, (tr.maxZ - tr.minZ) / 2 - 8);
     hillRing.position.set(cx, 0, cz);
+    hillRing.name = 'hills';
     g.add(hillRing);
     this.lane = new LaneView(f, { height: (x, z) => worldHeight(f, x, z), base: (x, z) => groundHeight(f, x, z), surface: (x, z, r, b) => laneSurface(f, x, z, r, b) });
     g.add(terrain(f, cutTexture, this.lane));
@@ -614,6 +648,16 @@ export class WorldView {
 
     // Trees over the village and along its tracks.
     g.add(villageTrees(f, at, trees * 4));
+
+    // What never moves (the ground, the hills, the houses, the trees, the fences, the other fields…):
+    // their matrices worked out once, not again every frame (three walks every object each frame; most
+    // of the village stands still). What moves is left to update itself.
+    g.traverse((o) => {
+      o.matrixAutoUpdate = false;
+      o.updateMatrix();
+    });
+    const moves = [this.patRig?.kasa, this.patRig?.head, this.trailerRig?.group, this.patosRig?.group, this.depotRing, ...(this.gate ?? []), this.harvest?.group, this.lane.group, this.bridge, ...this.brambles, this.sun, this.sun.target];
+    for (const o of moves) o?.traverse((x) => (x.matrixAutoUpdate = true));
   }
 
   /** Gravestones and boulders. */
@@ -672,6 +716,8 @@ export class WorldView {
     const ex = this.bushShake.find((s) => s.obj === obj);
     if (ex) ex.t = 0;
     else this.bushShake.push({ obj, t: 0, base: obj.rotation.clone() });
+    // (Kept still otherwise: its matrix updated while it shakes.)
+    obj.matrixAutoUpdate = true;
   }
 
   update(dt: number, time: number, playerX: number, playerZ: number, camera: THREE.Vector3 | null, fpv = false): void {
@@ -702,6 +748,8 @@ export class WorldView {
       s.obj.rotation.set(s.base.x + k, s.base.y, s.base.z + k * 0.6);
       if (s.t > 1) {
         s.obj.rotation.copy(s.base);
+        s.obj.updateMatrix();
+        s.obj.matrixAutoUpdate = false;
         this.bushShake.splice(i, 1);
       }
     }

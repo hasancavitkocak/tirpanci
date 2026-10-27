@@ -16,6 +16,7 @@ import { streamDistance } from './render/stream';
 import { Models, loadModels } from './render/models';
 import { Quality, View } from './render/view';
 import { WorldView } from './render/world';
+import { MOBILE } from './platform/device';
 import { drawVillageMap, preloadVillageArt } from './ui/villageMap';
 import { formatWait, readyIn } from './game/regrow';
 import { makeIlan } from './game/ilan';
@@ -123,6 +124,15 @@ const SHOP_PICTURES = ['patpat', 'traktor', 'romork', 'patos', 'emektar', 'usta'
 const UNLOCK_ALL = true;
 /** Development: ?tirpan in the address starts jobs in the field, trimmer in hand (no pat pat ride). */
 const DEV_TRIMMER = new URLSearchParams(location.search).has('tirpan');
+
+/**
+ * Frames drawn a second at most, playing and on the menu (its yard behind the buttons). A phone's 120 Hz
+ * screen would otherwise have them drawn twice as often for nothing: a powerful phone keeps up and heats.
+ */
+const FPS_CAP = 60;
+const MENU_FPS = 30;
+/** On the menu with a screen over it (the shop, the store, the job map, a card): the yard behind needs only this. */
+const OVERLAY_FPS = 5;
 /** Development: the purse never runs below this, in the browser and in the test APK (DEV_MONEY_ON). Set DEV_MONEY_ON to false before release. */
 const DEV_MONEY = 9_999_999;
 const DEV_MONEY_ON = true;
@@ -171,6 +181,9 @@ class Game {
   private hoseInHand = false;
   private sucking = 0;
   private harvestT = 0;
+  /** The objective's text and the line button's label as last put on the page (set only when they change). */
+  private objText = '';
+  private rethreadLabel = '';
   /** Seconds since the camera was last turned round the vehicle. */
   private orbitIdle = 0;
   /** The harvest is drawn and played in this job (Yeşilyamaç, once its gardens are done). */
@@ -338,11 +351,10 @@ class Game {
   /**
    * Automatic quality's start: computers high; phones low (a Galaxy A05s: ~50 fps low, ~32 fps medium),
    * a strong one (8 cores and 6 GB or more) medium. While playing it goes up a step when smooth, down
-   * when struggling (see trackFps).
+   * when struggling (see trackFps). (On a phone each quality draws fewer pixels: View's PHONE_RATIO.)
    */
   private defaultQuality(): Quality {
-    const mobile = /Android|iPhone|iPad/i.test(navigator.userAgent);
-    if (!mobile) return 'high';
+    if (!MOBILE) return 'high';
     const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 0;
     return (navigator.hardwareConcurrency ?? 0) >= 8 && memory >= 6 ? 'medium' : 'low';
   }
@@ -1409,6 +1421,9 @@ class Game {
       else this.show('menu');
     });
     on('btn-harvest', () => this.openHarvest());
+    // The messages sit under the objective and right of the buttons on the left: placed again when either changes size.
+    new ResizeObserver(() => this.placeToasts()).observe($('objective'));
+    new ResizeObserver(() => this.placeToasts()).observe($('actions'));
     on('btn-harvest-close', () => $('harvest-offer').classList.remove('show'));
     // The menu's harvest button counts down (and its card, open, with it).
     window.setInterval(() => {
@@ -2993,6 +3008,9 @@ class Game {
 
   private loop(t: number): void {
     requestAnimationFrame((n) => this.loop(n));
+    // (At most FPS_CAP frames a second; MENU_FPS on the menu and the screens over it.)
+    const fps = this.mode === 'playing' ? FPS_CAP : this.mode === 'menu' && document.querySelector('.screen.show:not(#menu)') ? OVERLAY_FPS : MENU_FPS;
+    if (t - this.last < 1000 / fps - 2) return;
     const dt = Math.min(0.05, (t - this.last) / 1000);
     this.last = t;
     if (this.view.freeCam && (this.mode === 'playing' || this.mode === 'menu')) {
@@ -3141,7 +3159,8 @@ class Game {
       this.harvestStep(s, dt);
       this.updateIntro(s);
       document.body.classList.toggle('tangled', s.tangle > 0.3);
-      $('rethread-label').textContent = s.tangle > 0.3 ? 'TEMİZLE' : 'MİSİNA TAK';
+      const rl = s.tangle > 0.3 ? 'TEMİZLE' : 'MİSİNA TAK';
+      if (rl !== this.rethreadLabel) $('rethread-label').textContent = this.rethreadLabel = rl;
       this.updateGuide(s);
       this.hudT -= dt;
       if (this.hudT <= 0) {
@@ -3283,10 +3302,12 @@ class Game {
       text = g?.head ? `${g.to ? this.arrowTo(s, g.to.x, g.to.z) : ''}${g.head}${g.sub ? `<small>${g.sub}</small>` : ''}` : '';
     }
     document.body.classList.toggle('harvest-hint', this.roaming && !!text);
-    const el = $('objective');
-    if (el.innerHTML !== text) {
-      el.innerHTML = text;
-      this.placeToasts();
+    // (Only when it changes, and never read back from the page: that, and placing the messages under it
+    // every frame, made the browser lay the page out again each frame. The messages follow its size: see
+    // the ResizeObserver.)
+    if (text !== this.objText) {
+      this.objText = text;
+      $('objective').innerHTML = text;
     }
   }
 
