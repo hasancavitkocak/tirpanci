@@ -24,6 +24,9 @@ export class PatpatEngine {
   private blipUntil = 0;
   /** The loops playing (idle first, rev last) and their gains. */
   private nodes: { loops: AudioBufferSourceNode[]; gains: GainNode[]; out: GainNode } | null = null;
+  /** A bigger engine of the same kind: the recording played this much slower (lower, heavier), this much louder. */
+  pitch = 1;
+  loud = 1;
   private rpm = 0;
   /** The idle's rise under the start runs until this time (its gain is not to be touched before). */
   private blendUntil = 0;
@@ -102,7 +105,8 @@ export class PatpatEngine {
     const r = this.rpm;
     // A running engine never holds quite the same speed: a slow drift of a percent or two, so the loops
     // do not repeat note for note.
-    const drift = 1 + 0.012 * Math.sin(t * 0.9) + 0.008 * Math.sin(t * 2.3 + 1);
+    const drift = (1 + 0.012 * Math.sin(t * 0.9) + 0.008 * Math.sin(t * 2.3 + 1)) * this.pitch;
+    this.nodes?.out.gain.setTargetAtTime(0.5 * this.loud, t, 0.2);
     // (Still starting: the loops' levels are the start's own; a change now would cut across the idle's
     // rise, which the browser refuses.)
     if (t < this.blendUntil + 0.01) return;

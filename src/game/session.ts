@@ -1,4 +1,4 @@
-import { BRAMBLE, BUSH_KINDS, CARGO, BushKind, DEFAULT_EQUIPMENT, ENGINE, Equipment, FINISH_AT, HEN, HIVE, HOSE, LevelDef, PATPAT, PLAYER, PRICES, SLOPE, SNAKE, STARS_AT, STONE_SNAP, TRIMMER, Upgrades, WET_LOAD, gearStats, TRACTOR_LOCK, TRACTOR_WHEELBASE, TRAILER } from './config';
+import { BRAMBLE, BUSH_KINDS, CARGO, BushKind, DEFAULT_EQUIPMENT, ENGINE, Equipment, FINISH_AT, HEN, HIVE, HOSE, LevelDef, PATPAT, PLAYER, PRICES, SLOPE, SNAKE, STARS_AT, STONE_SNAP, TRIMMER, Upgrades, WET_LOAD, gearStats, TRACTOR_LOCK, TRACTOR_WHEELBASE, TRAILER, BIG_PULL } from './config';
 import { Field } from './field';
 import { PullResult, Starter } from './starter';
 
@@ -366,7 +366,8 @@ export class Session {
     // Turning right is the heading decreasing.
     // The trailer's axle before the move: it is dragged (or pushed) after the hitch.
     const axle = f.trailerAxle();
-    const yaw = v.yaw - (v.speed * Math.tan(v.steer * TRACTOR_LOCK) * dt) / TRACTOR_WHEELBASE;
+    // (The big tractor's wheels further apart: it turns that much wider.)
+    const yaw = v.yaw - (v.speed * Math.tan(v.steer * TRACTOR_LOCK) * dt) / (f.bigTractor ? D.joint + D.rearAxle : TRACTOR_WHEELBASE);
     const rx = v.x - Math.sin(v.yaw) * D.rearAxle + Math.sin(yaw) * v.speed * dt;
     const rz = v.z - Math.cos(v.yaw) * D.rearAxle + Math.cos(yaw) * v.speed * dt;
     const nx = rx + Math.sin(yaw) * D.rearAxle;
@@ -406,7 +407,8 @@ export class Session {
     const ford = deep ? 0.6 : 1;
     // A load of sacks (Field.cargo, a share of what it takes): slower, slower away, and a climb with it
     // slower still (up to a crawl full uphill); its brakes take longer too.
-    const load = this.field.cargoCap ? Math.min(1, this.field.cargo / this.field.cargoCap) : 0;
+    // (The big tractor feels a load half as much.)
+    const load = (this.field.cargoCap ? Math.min(1, this.field.cargo / this.field.cargoCap) : 0) * (this.field.bigTractor ? BIG_PULL.load : 1);
     const gr = this.field.grade(v.x, v.z);
     const climb = load ? Math.max(0, -gr.g * (gr.dx * Math.sin(v.yaw) + gr.dz * Math.cos(v.yaw)) * Math.sign(v.speed || d.throttle || 1)) : 0;
     const heavy = (1 - CARGO.slow * load) * Math.max(CARGO.crawl, 1 - load * climb * CARGO.climb);
@@ -523,7 +525,7 @@ export class Session {
   /** On foot in the yard by the house (the shop can be opened there). */
   get atHouse(): boolean {
     const h = this.field.house;
-    return !this.driving && Math.hypot(this.x - h.x, this.z - h.z) < 6.5;
+    return !this.driving && Math.hypot(this.x - h.x, this.z - h.z) < this.field.houseR + 3.1;
   }
 
   /** Take the trimmer out of the trailer (at the start of a job: then fit line). */
@@ -948,6 +950,11 @@ export class Session {
     }
   }
 
+  /** The job done with a cow still grazing in the garden: the owner is not pleased (no tip). */
+  cowLeftIn(): void {
+    this.requestBroken = true;
+  }
+
   private breakRequest(): void {
     if (this.requestBroken) return;
     this.requestBroken = true;
@@ -1197,15 +1204,18 @@ export class Session {
     for (const h of f.hives) solid(h.x, h.z, HIVE.block);
     // Walls: pushed off each segment (half the wall's thickness plus the body).
     for (const y of f.yardProps) solid(y.x, y.z, y.r);
+    for (const b of f.blocks) solid(b.x, b.z, b.r);
+    for (const b of f.movers) solid(b.x, b.z, b.r);
     const gl = f.gateLeaf;
     const gate = gl ? [gl] : [];
-    for (const w of [...f.walls, ...f.fences, ...f.yardWalls, ...f.garageWalls, ...gate]) {
+    const byRoad = f.roadWalls.filter((w) => Math.abs(this.x - w.ax) < 4 && Math.abs(this.z - w.az) < 4);
+    for (const w of [...f.walls, ...f.fences, ...f.yardWalls, ...f.garageWalls, ...gate, ...byRoad]) {
       const dx = w.bx - w.ax;
       const dz = w.bz - w.az;
       const t = Math.max(0, Math.min(1, ((this.x - w.ax) * dx + (this.z - w.az) * dz) / (dx * dx + dz * dz)));
       solid(w.ax + dx * t, w.az + dz * t, 0.21);
     }
-    solid(f.house.x, f.house.z, 3.4);
+    solid(f.house.x, f.house.z, f.houseR);
     solid(f.mosque.x, f.mosque.z, 6.5);
     if (f.hut) solid(f.hut.x, f.hut.z, 3);
     ({ x: this.x, z: this.z } = f.clampWalk(this.x, this.z));

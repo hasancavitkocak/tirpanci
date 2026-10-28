@@ -300,6 +300,9 @@ body.look-hint.playing:not(.driving):not(.freecam) #look-hint { display: flex; }
    there is something to do (pulsing). */
 #menu .corner-btn.harvest-btn { top: calc(100px + var(--safe-t)); left: calc(12px + var(--safe-l)); right: auto; background: linear-gradient(180deg, #fff6df, #f3dfb0); color: #4a3510; box-shadow: 0 3px 0 #b99a5a, 0 6px 14px rgba(0, 0, 0, 0.3); overflow: visible; }
 #menu .corner-btn.harvest-btn.up { top: calc(56px + var(--safe-t)); }
+/* The evening's cows, under the harvest's button. */
+#menu .corner-btn.harvest-btn.evening-btn { top: calc(152px + var(--safe-t)); }
+#menu .corner-btn.harvest-btn.evening-btn.up { top: calc(108px + var(--safe-t)); }
 .harvest-btn .hv-ico { width: 38px; height: 38px; object-fit: contain; margin: -10px 0 -10px -8px; filter: drop-shadow(0 2px 1px rgba(0, 0, 0, 0.3)); }
 .hv-btn-text { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; line-height: 1.05; }
 .hv-chip { align-self: flex-start; min-width: 22px; height: 18px; padding: 0 8px; box-sizing: border-box; border-radius: 9px; white-space: nowrap; background: #3d7a26; color: #fff; font-size: 11px; font-weight: 900; line-height: 18px; text-align: center; font-variant-numeric: tabular-nums; box-shadow: 0 1px 0 #24520f; }

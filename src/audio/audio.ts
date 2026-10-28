@@ -8,6 +8,7 @@
  */
 import { PatpatEngine, TRACTOR_FILES } from './patpatEngine';
 import { PatosSound } from './patos';
+import { SawSound } from './saw';
 import { DieselEngine } from './diesel';
 import { Bed, Kit, Surface, Tractor, beeBed, cluck, dog, ezan, farBus, hoseCut, rainBed, snakeHiss, splash, sprayBed, step, sting, thunder, trafficBed } from './village';
 
@@ -209,9 +210,192 @@ export class GameAudio {
     this.patosSound.set(running, sucking, dt);
   }
 
-  /** The patos quiet (the job left). */
+  /** One-shot recordings, loaded the first time they are wanted. */
+  private shots = new Map<string, AudioBuffer | 'loading'>();
+  private shot(file: string, gain: number, rate: number): void {
+    const k = this.kit;
+    if (!k) return;
+    const b = this.shots.get(file);
+    const play = (buf: AudioBuffer) => {
+      const s = k.ctx.createBufferSource();
+      s.buffer = buf;
+      s.playbackRate.value = rate;
+      const g = k.ctx.createGain();
+      g.gain.value = gain;
+      s.connect(g).connect(k.out);
+      s.start();
+    };
+    if (b instanceof AudioBuffer) return play(b);
+    if (b === 'loading') return;
+    this.shots.set(file, 'loading');
+    void fetch(`./audio/${file}`)
+      .then((r) => r.arrayBuffer())
+      .then((a) => k.ctx.decodeAudioData(a))
+      .then((buf) => {
+        this.shots.set(file, buf);
+        play(buf);
+      })
+      .catch(() => this.shots.delete(file));
+  }
+
+  /** A cow mooing (public/audio/inek_bogur.wav), each a little different; quieter far off. */
+  moo(distance: number): void {
+    this.shot('inek_bogur.wav', 0.8 * Math.max(0.1, 1 - distance / 60), 0.88 + Math.random() * 0.2);
+  }
+
+  /** A cow's bell while it walks (public/audio/inek_can.wav, a loop): as loud as the nearest walking cow is near. */
+  private bell: { gain: GainNode } | null = null;
+  setCowBell(distance: number): void {
+    const k = this.kit;
+    if (!k) return;
+    const level = Number.isFinite(distance) ? Math.max(0, 1 - distance / 25) * 0.45 : 0;
+    if (!this.bell) {
+      if (!level) return;
+      const gain = k.ctx.createGain();
+      gain.gain.value = 0;
+      gain.connect(k.out);
+      this.bell = { gain };
+      void fetch('./audio/inek_can.wav')
+        .then((r) => r.arrayBuffer())
+        .then((a) => k.ctx.decodeAudioData(a))
+        .then((buf) => {
+          const s = k.ctx.createBufferSource();
+          s.buffer = buf;
+          s.loop = true;
+          s.connect(gain);
+          s.start();
+        })
+        .catch(() => undefined);
+    }
+    this.bell.gain.gain.setTargetAtTime(level, k.ctx.currentTime, 0.3);
+  }
+
+  /** The dog's bark (a recording, public/audio/kopek_havla.wav), a little different each time; quieter far off. */
+  private barkBuf: AudioBuffer | null = null;
+  private barkLoading = false;
+  bark(distance: number): void {
+    const k = this.kit;
+    if (!k) return;
+    const play = (buf: AudioBuffer) => {
+      const s = k.ctx.createBufferSource();
+      s.buffer = buf;
+      s.playbackRate.value = 0.9 + Math.random() * 0.22;
+      const g = k.ctx.createGain();
+      g.gain.value = 0.75 * Math.max(0.15, 1 - distance / 40);
+      s.connect(g).connect(k.out);
+      s.start();
+    };
+    if (this.barkBuf) return play(this.barkBuf);
+    if (this.barkLoading) return;
+    this.barkLoading = true;
+    void fetch('./audio/kopek_havla.wav')
+      .then((r) => r.arrayBuffer())
+      .then((b) => k.ctx.decodeAudioData(b))
+      .then((buf) => {
+        this.barkBuf = buf;
+        play(buf);
+      })
+      .catch(() => (this.barkLoading = false));
+  }
+
+  /** The chainsaw: in hand, its throttle (0 ticking over .. 1 flat out), in the wood (recordings: audio/saw.ts). */
+  private sawSound: SawSound | null = null;
+  private sawAt = 0;
+  setSaw(inHand: boolean, throttle: number, cutting: boolean): void {
+    const k = this.kit;
+    if (!k || (!inHand && !this.sawSound)) return;
+    this.sawSound ??= new SawSound(k);
+    const now = performance.now();
+    const dt = Math.min(0.1, (now - (this.sawAt || now)) / 1000);
+    this.sawAt = now;
+    this.sawSound.set(inHand, throttle, cutting, dt);
+  }
+
+  /** The motor çapa: running, its throttle, in the ground (recordings: audio/saw.ts with the tiller's own). */
+  private tillSound: SawSound | null = null;
+  private tillAt = 0;
+  setTiller(on: boolean, throttle: number, working: boolean): void {
+    const k = this.kit;
+    if (!k || (!on && !this.tillSound)) return;
+    this.tillSound ??= new SawSound(k, ['capa_rolanti.wav', 'capa_calisma.wav']);
+    const now = performance.now();
+    const dt = Math.min(0.1, (now - (this.tillAt || now)) / 1000);
+    this.tillAt = now;
+    this.tillSound.set(on, throttle, working, dt);
+  }
+
+  /** The backpack blower: running, its throttle (recordings: audio/saw.ts with the blower's own). */
+  private blowSound: SawSound | null = null;
+  private blowAt = 0;
+  setBlower(on: boolean, throttle: number): void {
+    const k = this.kit;
+    if (!k || (!on && !this.blowSound)) return;
+    this.blowSound ??= new SawSound(k, ['ufleyici_rolanti.wav', 'ufleyici_tam.wav']);
+    const now = performance.now();
+    const dt = Math.min(0.1, (now - (this.blowAt || now)) / 1000);
+    this.blowAt = now;
+    this.blowSound.set(on, throttle, false, dt);
+  }
+
+  /** Crickets of an evening (public/audio/gece.wav, a loop): as loud as the dark has fallen (0..1). */
+  private crickets: GainNode | null = null;
+  setCrickets(level: number): void {
+    const k = this.kit;
+    if (!k || (!level && !this.crickets)) return;
+    if (!this.crickets) {
+      const gain = k.ctx.createGain();
+      gain.gain.value = 0;
+      gain.connect(k.out);
+      this.crickets = gain;
+      void fetch('./audio/gece.wav')
+        .then((r) => r.arrayBuffer())
+        .then((a) => k.ctx.decodeAudioData(a))
+        .then((buf) => {
+          const s = k.ctx.createBufferSource();
+          s.buffer = buf;
+          s.loop = true;
+          s.connect(gain);
+          s.start();
+        })
+        .catch(() => undefined);
+    }
+    this.crickets.gain.setTargetAtTime(level * 0.55, k.ctx.currentTime, 0.5);
+  }
+
+  /** A heap of grass burning (public/audio/ates.wav, a loop): as loud as `level` (0..1, by how near and how big). */
+  private fire: GainNode | null = null;
+  setFire(level: number): void {
+    const k = this.kit;
+    if (!k || (!level && !this.fire)) return;
+    if (!this.fire) {
+      const gain = k.ctx.createGain();
+      gain.gain.value = 0;
+      gain.connect(k.out);
+      this.fire = gain;
+      void fetch('./audio/ates.wav')
+        .then((r) => r.arrayBuffer())
+        .then((a) => k.ctx.decodeAudioData(a))
+        .then((buf) => {
+          const s = k.ctx.createBufferSource();
+          s.buffer = buf;
+          s.loop = true;
+          s.connect(gain);
+          s.start();
+        })
+        .catch(() => undefined);
+    }
+    this.fire.gain.setTargetAtTime(level * 0.9, k.ctx.currentTime, 0.3);
+  }
+
+  /** The patos, the chainsaw, the tiller, the blower, a fire and the cows' bells quiet (the job left). */
   stopPatos(): void {
     this.patosSound?.silence();
+    this.sawSound?.silence();
+    this.tillSound?.silence();
+    this.blowSound?.silence();
+    if (this.fire && this.kit) this.fire.gain.setTargetAtTime(0, this.kit.ctx.currentTime, 0.05);
+    if (this.crickets && this.kit) this.crickets.gain.setTargetAtTime(0, this.kit.ctx.currentTime, 0.05);
+    if (this.bell && this.kit) this.bell.gain.gain.setTargetAtTime(0, this.kit.ctx.currentTime, 0.05);
   }
 
   setTraffic(level: number): void {
@@ -224,6 +408,7 @@ export class GameAudio {
   private patpatEngine: PatpatEngine | null = null;
   private tractorEngine: PatpatEngine | DieselEngine | null = null;
   private onTractor = false;
+  private bigTractor = false;
 
   /**
    * The tractor's engine: the diesel tractor's recording, or with ?traktorses=sentez the drawn one
@@ -245,7 +430,13 @@ export class GameAudio {
     const k = this.kit;
     if (!k) return;
     this.patpatEngine ??= new PatpatEngine(k.ctx, k.out);
-    this.tractorEngine ??= this.newTractorEngine();
+    if (!this.tractorEngine) {
+      this.tractorEngine = this.newTractorEngine();
+      if (this.tractorEngine && 'pitch' in this.tractorEngine) {
+        this.tractorEngine.pitch = this.bigTractor ? 0.8 : 1;
+        this.tractorEngine.loud = this.bigTractor ? 1.25 : 1;
+      }
+    }
     const real = this.vehicleEngine!;
     // The tractor waits for its own recording (silent a moment at most); only the pat pat has the drawn
     // stand-in (the tractor would otherwise start on a pat pat's sound).
@@ -258,8 +449,14 @@ export class GameAudio {
     if (on) e.set(rpm, moving);
   }
 
-  /** The vehicle driven is the tractor: its own recorded engine instead of the pat pat's. */
-  setTractor(on: boolean): void {
+  /** The vehicle driven is the tractor: its own recorded engine instead of the pat pat's; the big one's played lower and louder. */
+  setTractor(on: boolean, big = false): void {
+    const e = this.tractorEngine;
+    if (e && 'pitch' in e) {
+      e.pitch = big ? 0.8 : 1;
+      e.loud = big ? 1.25 : 1;
+    }
+    this.bigTractor = big;
     if (on === this.onTractor) return;
     const was = this.vehicleEngine;
     if (was?.running) was.stop();

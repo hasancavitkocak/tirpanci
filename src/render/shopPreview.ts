@@ -3,6 +3,7 @@ import { PATPAT } from '../game/config';
 import { Models, fitted } from './models';
 import { PatpatRig } from './patpat';
 import { clothesline, flowerPots, gazebo, kennel } from './props';
+import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 /**
  * The shop's turntable: the pat pat in a paint, or a yard decoration, turning slowly on a patch of
@@ -55,8 +56,23 @@ export class ShopPreview {
 
   /** A yard decoration by its id (saksi, cardak, kulube, camasir). */
   showDecor(id: string): void {
-    const make: Record<string, () => THREE.Object3D> = { saksi: () => flowerPots(3), cardak: () => (this.models.gazebo?.[0] ? fitted(this.models.gazebo[0].scene, 3) : gazebo(5)), kulube: () => (this.models.kennel?.[0] ? fitted(this.models.kennel[0].scene, 1.1) : kennel(7)), camasir: () => clothesline(9) };
+    const make: Record<string, () => THREE.Object3D> = { saksi: () => flowerPots(3), cardak: () => (this.models.gazebo?.[0] ? fitted(this.models.gazebo[0].scene, 3) : gazebo(5)), kulube: () => (this.models.kennel?.[0] ? fitted(this.models.kennel[0].scene, 1.1) : kennel(7)), camasir: () => clothesline(9), kopek: () => this.dog() };
     if (make[id]) this.put(`decor-${id}`, make[id]);
+  }
+
+  /** Karabaş standing (his rigged model cloned with its bones), 0.95 m to the top of his head. */
+  private dog(): THREE.Object3D {
+    const src = this.models.dog?.[0]?.scene;
+    const g = new THREE.Group();
+    if (!src) return g;
+    const m = SkeletonUtils.clone(src);
+    const box = new THREE.Box3().setFromObject(m);
+    const k = 0.95 / Math.max(1e-6, box.max.y - box.min.y);
+    m.scale.multiplyScalar(k);
+    m.position.set(-((box.min.x + box.max.x) / 2) * k, -box.min.y * k, -((box.min.z + box.max.z) / 2) * k);
+    m.traverse((o) => (o.frustumCulled = false));
+    g.add(m);
+    return g;
   }
 
   /** Into a list: the canvas goes into `parent` and starts turning. */

@@ -1,21 +1,25 @@
 import * as THREE from 'three';
 import { bridgeGroup, turnMillWheel } from './bridge';
-import { Field, STREAM } from '../game/field';
-import { Models, fitted } from './models';
+import { ARCH, BARN, Field, STREAM } from '../game/field';
+import { ModelKey, Models, fitted } from './models';
 import { backpackPart, cutTriangles, isBakedLine, isEngine, prepare } from './trimmerRig';
 import { PatpatRig } from './patpat';
-import { TractorRig } from './tractor';
+import { BIG, TractorRig } from './tractor';
 import { TrailerRig } from './trailer';
 import { HarvestView, PatosRig } from './harvest';
+import { WoodView } from './wood';
+import { SoilView } from './tiller';
+import { BurnView } from './burn';
+import { woodSpots } from '../game/wood';
 import { brambleObject } from './bramble';
 import { shootBush } from './shootBush';
 import { hazelnutBush } from './hazelnut';
-import { MEADOW_PATCHES, PAINTED_GROUND, groundTextures, hills, skyDome, sunSprite } from './scenery';
-import { boulderGeometry, graveGeometry, mosqueGroup, stoneWall, yaylaHutGroup } from './landmarks';
+import { MEADOW_PATCHES, PAINTED_GROUND, groundTextures, hills, regionSky, skyDome, sunSprite } from './scenery';
+import { boulderGeometry, graveGeometry, mosqueGroup, stoneWall, stoneWallModel, yaylaHutGroup } from './landmarks';
 import { WEATHER } from './weather';
 import { StreamView } from './stream';
 import { LANE_HALF, LaneView, harmanMesh, laneDip, puddleDip, puddleMeshes } from './lane';
-import { boardSpot, cobbleRoads, nameBoard, otherFields, villageBoard, villageTrees } from './villageView';
+import { boardSpot, cobbleRoads, fernClumps, nameBoard, otherFields, villageBoard, villageTrees } from './villageView';
 import { clothesline, depotGroup, flowerPots, gazebo, haystackGroup, houseGroup, kennel, oldPostGroup, postGeometry, slidingGate, spoolGroup, stoneGeometry, paintedStoneGeometry, wireFence, woodpileGroup } from './props';
 
 /** How far the terrain extends beyond the village on each side. */
@@ -127,7 +131,7 @@ function terrain(f: Field, cut: THREE.Texture, lane: LaneView): THREE.Mesh {
   g.computeVertexNormals();
   // Pushed back in depth: the fine rutted tracks and the stream bed laid on it (a few centimetres lower
   // where its 2 m triangles cut across their ruts and banks) must not be covered by it.
-  const tex = groundTextures();
+  const tex = groundTextures(f.region.id);
   // The coarse terrain is not drawn under the lane's middle: the fine rutted ribbon is the ground there.
   // Made once (not in onBeforeCompile, which runs for every program), freed with the material.
   const laneMask = lane.mask();
@@ -174,16 +178,18 @@ function terrain(f: Field, cut: THREE.Texture, lane: LaneView): THREE.Mesh {
     sh.uniforms.uLaneBox = { value: laneMask?.box ?? new THREE.Vector4(0, 0, 0, 0) };
     sh.uniforms.uStreamX = { value: streamTex };
     sh.uniforms.uStream = { value: new THREE.Vector3(r.minZ, streamTex.image.width, STREAM.width * 0.62 + 0.4) };
+    // The village's own meadow tint.
+    sh.uniforms.uTint = { value: new THREE.Vector3(...(f.region.look?.tint ?? [1, 1, 1])) };
     // The meadow's broad patches and colour drift (tens of metres across) worked out at the corners,
     // not for every pixel.
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', (PAINTED_GROUND ? MEADOW_PATCHES : '') + '#include <common>\nvarying vec2 vWXZ;\nvarying vec3 vWild;')
+      .replace('#include <common>', (PAINTED_GROUND ? MEADOW_PATCHES : '') + '#include <common>\nvarying vec2 vWXZ;\nvarying vec3 vWild;\nuniform vec3 uTint;')
       .replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
         vWXZ = (modelMatrix * vec4(transformed, 1.0)).xz;
         float drift = sin(vWXZ.x * 0.11 + sin(vWXZ.y * 0.07) * 2.0) * 0.5 + 0.5;
-        vWild = mix(vec3(0.9, 0.95, 0.75), vec3(0.75, 0.85, 0.65), drift)${PAINTED_GROUND ? ' * 0.85 * meadowPatches(vWXZ)' : ''};`,
+        vWild = mix(vec3(0.9, 0.95, 0.75), vec3(0.75, 0.85, 0.65), drift) * uTint${PAINTED_GROUND ? ' * 0.85 * meadowPatches(vWXZ)' : ''};`,
       );
     sh.fragmentShader = sh.fragmentShader.replace(
       '#include <common>',
@@ -257,6 +263,14 @@ export class WorldView {
   patosRig: PatosRig | null = null;
   /** The harvest's sacks, nuts, tarp and hose (in Yeşilyamaç: WorldView.harvest). */
   harvest: HarvestView | null = null;
+  /** The ground to till in this job (WorldView.till): the bostan's plot, the soil rising as it is turned. */
+  soil: SoilView | null = null;
+  static till: import('../game/tiller').TillTask | null = null;
+  /** The cut grass to blow together and burn in this job (WorldView.burn): its tufts, heap and fire. */
+  burnView: BurnView | null = null;
+  static burn: import('../game/burn').BurnTask | null = null;
+  /** The storm's tree, its logs, the piles by the gates and the yard's stack (in Karadere: WorldView.wood). */
+  wood: WoodView | null = null;
   /** What rides in the pat pat's trailer and is put away while sacks are loaded there. */
   private cargoHides: THREE.Object3D[] = [];
 
@@ -317,12 +331,16 @@ export class WorldView {
   /** The back-pack machine is the one in use: it rides in the trailer with the trimmer. */
   static backpack = false;
   static decor: string[] = [];
+  /** Karabaş adopted (the kennel bought): he comes along to every job. */
+  static dog = false;
   /** Per level: the line under its name on the board ("Hazır", or how long until it has grown back). */
   static waitText: Record<number, string> = {};
   /** What the tractor tows: the trailer or the patos (both bought, one hitched at a time). */
   static towed: 'romork' | 'patos' = 'romork';
   /** The harvest is on in this village (it is drawn). */
   static harvest = false;
+  /** The storm's wood in this village: the tree down in this job's garden (null: none) and the logs piled by the gates (null: not this village). */
+  static wood: { tree: import('../game/wood').FieldTree | null; piles: import('../game/wood').LogPile[] } | null = null;
   /** One object per bramble patch (shrinks as it is cut down). */
   private readonly brambles: THREE.Object3D[] = [];
   /** Materials of each bush (cloned per bush) so a bush hiding the worker can be faded. */
@@ -337,7 +355,7 @@ export class WorldView {
     const look = WEATHER[f.level.weather];
     this.sunDir = look.sunDir;
     // The painted sky (sunny and clear) only on a fine day; rain and fog keep the drawn grey sky.
-    const panorama = f.level.weather === 'sunny' ? models.panorama : undefined;
+    const panorama = f.level.weather === 'sunny' ? (regionSky(f.region.id) ?? models.panorama) : undefined;
     const turn = ((models.panoramaTurn ?? 0) * Math.PI) / 180;
     const sky = skyDome(panorama, turn, { top: look.skyTop, haze: look.haze, sun: look.sunDir, glow: look.glow });
     // The sun itself where the light comes from (a fine day or the evening; not through rain or fog).
@@ -527,9 +545,12 @@ export class WorldView {
 
     // The village's buildings: the house, the mosque above the graveyard, the highland hut.
     const { x: hx, z: hz, rot } = f.house;
-    const house = models.house?.length ? fitted(models.house[0].scene, 7) : houseGroup();
+    // (A village's own house where it has one.)
+    const own = f.region.look?.house;
+    const houseModel = (own && models[own.model as ModelKey]?.[0]) || models.house?.[0];
+    const house = houseModel ? fitted(houseModel.scene, own && houseModel !== models.house?.[0] ? own.height : 7) : houseGroup();
     // (On the lowest of the ground under it: the yard is not quite level.)
-    house.position.set(hx, footing(f, hx, hz, 3.2, 3.2) - 0.3, hz);
+    house.position.set(hx, footing(f, hx, hz, f.houseR - 0.2, f.houseR - 0.2) - 0.3, hz);
     house.rotation.y = rot;
     g.add(house);
     const mosque = models.mosque?.length ? fitted(models.mosque[0].scene, 12) : mosqueGroup();
@@ -549,6 +570,43 @@ export class WorldView {
     const at = (x: number, z: number) => worldHeight(f, x, z);
     // Low quality (fewest trees) draws the other fields without their bushes.
     g.add(otherFields(f, at, WorldView.unlockedUpTo, trees > 8, models.shoot?.[0], WorldView.waitText), cobbleRoads(f, at), villageBoard(f, at));
+    // The stone arch over the trunk by the way out, its name board lettered on both faces.
+    const ar = f.archAt;
+    if (ar && models.arch?.[0]) {
+      const o = fitted(models.arch[0].scene, ARCH.height);
+      o.updateMatrixWorld(true);
+      // (The board's faces found on the model: a ray in from either side at its height.)
+      const by = ARCH.height * 0.575;
+      const ray = new THREE.Raycaster();
+      for (const [dir, text, sub] of [[1, f.region.name, 'Köyü'], [-1, 'Yolun açık olsun', null]] as const) {
+        ray.set(new THREE.Vector3(0, by, dir * 5), new THREE.Vector3(0, 0, -dir));
+        const hit = ray.intersectObject(o, true)[0];
+        if (!hit) continue;
+        const plate = archLetters(text, sub);
+        plate.position.set(0, by, hit.point.z + dir * 0.03);
+        plate.rotation.y = dir > 0 ? 0 : Math.PI;
+        o.add(plate);
+      }
+      const px = Math.cos(ar.yaw) * ARCH.pillar;
+      const pz = -Math.sin(ar.yaw) * ARCH.pillar;
+      o.position.set(ar.x, Math.min(worldHeight(f, ar.x + px, ar.z + pz), worldHeight(f, ar.x - px, ar.z - pz)) - 0.1, ar.z);
+      o.rotation.y = ar.yaw;
+      g.add(o);
+    }
+    // The dry-stone walls along the trunk (a village that has them).
+    // (The artist's dry-stone wall laid along them, or the drawn one.)
+    const drystone = (pts: THREE.Vector3[]) => (models.stoneWall?.[0] ? stoneWallModel(pts, models.stoneWall[0].scene) : stoneWall(pts));
+    for (const run of f.roadWallRuns) g.add(drystone(run.map((p) => new THREE.Vector3(p.x, at(p.x, p.z) - 0.05, p.z))));
+    // At the village's way out, a board to the other village.
+    const out = f.exit;
+    if (out && WorldView.exitTo) {
+      const sb = nameBoard(`${WorldView.exitTo} →`, 'Köy yolu', false);
+      const sx = out.x + Math.cos(out.yaw) * 3;
+      const sz = out.z - Math.sin(out.yaw) * 3;
+      sb.position.set(sx, at(sx, sz), sz);
+      sb.rotation.y = out.yaw + Math.PI;
+      g.add(sb);
+    }
     // This job's name board by its way in.
     if (theme !== 'mezarlik') {
       const board = nameBoard(f.level.name, `${f.level.id}. iş`, false);
@@ -563,19 +621,28 @@ export class WorldView {
     // The harvest's things (drawn from its state each frame: updateHarvest).
     this.harvest = WorldView.harvest ? new HarvestView(f, (x, z) => worldHeight(f, x, z), models.sack?.[0]) : null;
     if (this.harvest) g.add(this.harvest.group);
+    // The storm's wood (from its state each frame: updateWood).
+    const wd = WorldView.wood;
+    this.wood = wd ? new WoodView(f, (x, z) => worldHeight(f, x, z), wd.tree, wd.piles, { tree: models.fallenTree?.[0], log: models.log?.[0] }) : null;
+    if (this.wood) g.add(this.wood.group);
+    this.soil = WorldView.till ? new SoilView(f, WorldView.till, (x, z) => worldHeight(f, x, z)) : null;
+    if (this.soil) g.add(this.soil.group);
+    this.burnView = WorldView.burn ? new BurnView(WorldView.burn, (x, z) => worldHeight(f, x, z)) : null;
+    if (this.burnView) g.add(this.burnView.group);
     // The yard: a wire-mesh fence round the house and the harman with a sliding iron gate, haystacks
     // and a woodpile.
-    // One fence per unbroken run of segments.
+    // One fence per unbroken run of segments (a village with a stone yard: a dry-stone wall).
+    const yardFence = (pts: THREE.Vector3[]) => (f.region.look?.stoneYard ? (models.stoneWall?.[0] ? stoneWallModel(pts, models.stoneWall[0].scene) : stoneWall(pts.map((p) => p.clone().setY(p.y - 0.1)))) : wireFence(pts));
     let run: THREE.Vector3[] = [];
     f.yardWalls.forEach((w, i) => {
       const prev = f.yardWalls[i - 1];
       if (!prev || prev.bx !== w.ax || prev.bz !== w.az) {
-        if (run.length > 1) g.add(wireFence(run));
+        if (run.length > 1) g.add(yardFence(run));
         run = [new THREE.Vector3(w.ax, worldHeight(f, w.ax, w.az), w.az)];
       }
       run.push(new THREE.Vector3(w.bx, worldHeight(f, w.bx, w.bz), w.bz));
     });
-    if (run.length > 1) g.add(wireFence(run));
+    if (run.length > 1) g.add(yardFence(run));
     const yg = f.yardGate;
     if (yg) {
       // One leaf across the whole gap, hung on the post at its a end; it swings out of the yard.
@@ -598,6 +665,49 @@ export class WorldView {
       g.add(o);
     }
     f.yardProps.forEach((y, i) => {
+      if (y.kind === 'pillar') return;
+      if (y.kind === 'rack') {
+        // The woodpile rack (2 m long, its face towards the harman): drawn once for its two solid halves.
+        if (f.yardProps.findIndex((q) => q.kind === 'rack') !== i || !models.woodRack?.[0]) return;
+        const r = woodSpots(f).rack;
+        const s = models.woodRack[0].scene.clone(true);
+        const box = new THREE.Box3().setFromObject(s);
+        const k = 2 / (box.max.x - box.min.x);
+        s.scale.setScalar(k);
+        s.position.set((-(box.min.x + box.max.x) / 2) * k, -box.min.y * k, (-(box.min.z + box.max.z) / 2) * k);
+        s.traverse((o) => (o.castShadow = o.receiveShadow = true));
+        const o = new THREE.Group();
+        o.add(s);
+        o.position.set(r.x, footing(f, r.x, r.z, 1, 0.4) - 0.03, r.z);
+        o.rotation.y = r.yaw;
+        g.add(o);
+        return;
+      }
+      if (y.kind === 'barn') {
+        // Its door towards the yard.
+        if (!models.barn?.[0]) return;
+        const s = fitted(models.barn[0].scene, BARN.height);
+        s.position.set(y.x, footing(f, y.x, y.z, BARN.w / 2 - 0.5, BARN.d / 2 - 0.5) - 0.15, y.z);
+        s.rotation.y = Math.atan2(f.plateau.x - y.x, f.plateau.z - y.z);
+        g.add(s);
+        return;
+      }
+      if (y.kind === 'bales') {
+        const s = baleStack(f.level.seed + i, models.bale?.[0]?.scene);
+        s.position.set(y.x, worldHeight(f, y.x, y.z) - 0.05, y.z);
+        s.rotation.y = i * 0.9;
+        g.add(s);
+        return;
+      }
+      if (y.kind === 'serender') {
+        // The granary on its stilts (5.6 m to the ridge), its door towards the yard.
+        if (!models.serender?.[0]) return;
+        const s = fitted(models.serender[0].scene, 5.6);
+        s.position.set(y.x, footing(f, y.x, y.z, 1.6, 1.6) - 0.1, y.z);
+        s.rotation.y = Math.atan2(f.plateau.x - y.x, f.plateau.z - y.z);
+        g.add(s);
+        return;
+      }
       const o = y.kind === 'hay' ? haystackGroup(y.r, f.level.seed + i) : y.kind === 'wood' ? woodpileGroup(y.r, f.level.seed + i) : oldPostGroup(f.level.seed + i);
       o.position.set(y.x, worldHeight(f, y.x, y.z) - 0.05, y.z);
       o.rotation.y = i * 1.7;
@@ -615,7 +725,7 @@ export class WorldView {
         g.add(o);
       };
       const toCentre = (at: { x: number; z: number }) => Math.atan2(p.x - at.x, p.z - at.z);
-      if (WorldView.decor.includes('saksi')) put(flowerPots(3), { x: f.house.x + 3.4, z: f.house.z - 1.6 }, Math.PI / 2);
+      if (WorldView.decor.includes('saksi')) put(flowerPots(3), { x: f.house.x + f.houseR, z: f.house.z - 1.6 }, Math.PI / 2);
       if (WorldView.decor.includes('cardak')) {
         // On the lawn in front of the house, south of the harman (seen from the harman and the gate),
         // facing the yard's middle; where a road runs too close there, the next lawn along.
@@ -648,6 +758,8 @@ export class WorldView {
 
     // Trees over the village and along its tracks.
     g.add(villageTrees(f, at, trees * 4));
+    // Bracken along the tracks and walls, in a village that has it.
+    if (f.region.look?.ferns) g.add(fernClumps(f, at, Math.round(trees * 4 * f.region.look.ferns)));
 
     // What never moves (the ground, the hills, the houses, the trees, the fences, the other fields…):
     // their matrices worked out once, not again every frame (three walks every object each frame; most
@@ -656,7 +768,7 @@ export class WorldView {
       o.matrixAutoUpdate = false;
       o.updateMatrix();
     });
-    const moves = [this.patRig?.kasa, this.patRig?.head, this.trailerRig?.group, this.patosRig?.group, this.depotRing, ...(this.gate ?? []), this.harvest?.group, this.lane.group, this.bridge, ...this.brambles, this.sun, this.sun.target];
+    const moves = [this.patRig?.kasa, this.patRig?.head, this.trailerRig?.group, this.patosRig?.group, this.depotRing, ...(this.gate ?? []), this.harvest?.group, this.wood?.group, this.soil?.group, this.burnView?.group, this.lane.group, this.bridge, ...this.brambles, this.sun, this.sun.target];
     for (const o of moves) o?.traverse((x) => (x.matrixAutoUpdate = true));
   }
 
@@ -762,11 +874,15 @@ export class WorldView {
     const depot = models.fuelcan?.length || models.spool?.length ? depotModels(models) : models.depot?.length ? fitted(models.depot[0].scene, 0.6) : depotGroup();
     const body = models.patpat?.[0];
     const teker = models.patpatTeker?.[0];
+    // (The big tractor drawn from its own models, when it is the one and they are there.)
+    const big = f.bigTractor && models.bigTractor?.[0] && models.bigTractorRear?.[0] && models.bigTractorFront?.[0];
     const tractor = f.tractor && models.tractor?.[0] && models.tractorRear?.[0] && models.tractorFront?.[0];
     if (tractor || (body && teker)) {
       // The tractor bought and driven, or the pat pat. (No trimmer rides on the tractor: the worker keeps it.)
       const rig = tractor
-        ? new TractorRig({ body: models.tractor![0], rear: models.tractorRear![0], front: models.tractorFront![0] })
+        ? big
+          ? new TractorRig({ body: models.bigTractor![0], rear: models.bigTractorRear![0], front: models.bigTractorFront![0] }, BIG)
+          : new TractorRig({ body: models.tractor![0], rear: models.tractorRear![0], front: models.tractorFront![0] })
         : new PatpatRig({ body: body!, teker: teker!, direksiyon: models.patpatDireksiyon?.[0] }, WorldView.paintHue);
       this.patRig = rig;
       // The trailer, when hitched behind the tractor.
@@ -853,6 +969,9 @@ export class WorldView {
     this.gate[0].rotation.y = -Math.atan2(d.z, d.x);
   }
 
+  /** The other village the way out leads to (its board), or null. */
+  static exitTo: string | null = null;
+
   /** The patos's drum turning (its tractor's shaft on). */
   patosRunning = false;
 
@@ -869,6 +988,30 @@ export class WorldView {
     const loaded = (h?.load ?? 0) > 0;
     for (const o of this.cargoHides) if (loaded) o.visible = false;
     this.harvest.update(h, bed, this.patosRig, hand, sucking, time);
+  }
+
+  /** The burning each frame: the tufts, the heap, the fire (where it is, for its smoke). */
+  updateBurn(task: import('../game/burn').BurnTask, time: number): { x: number; y: number; z: number } | null {
+    if (!this.burnView) return null;
+    this.burnView.update(task, time);
+    return this.burnView.fireAt(task);
+  }
+
+  /** The tilling each frame: the cells turned over rise. */
+  updateTill(task: import('../game/tiller').TillTask, dt: number): void {
+    this.soil?.update(task, (x, z) => worldHeight(this.field, x, z), dt);
+  }
+
+  /** The storm's wood each frame: the tree cut back to `cut` cuts, the piles, the load in the pat pat's box or the trailer, the yard's stack. */
+  updateWood(cut: number, w: import('../game/wood').WoodState | null): void {
+    if (!this.wood) return;
+    const r = this.patRig;
+    let bed: Parameters<WoodView['update']>[2] = null;
+    if (this.trailerRig) bed = { obj: this.trailerRig.group, floorY: TRAILER_BED.floorY, z0: TRAILER_BED.z0, z1: TRAILER_BED.z1, width: TRAILER_BED.width };
+    else if (r && !('hitch' in r)) bed = { obj: r.kasa, floorY: r.floorY, z0: -1.1, z1: -0.35, width: 1.2 };
+    const loaded = (w?.load ?? 0) > 0;
+    for (const o of this.cargoHides) if (loaded) o.visible = false;
+    this.wood.update(cut, w, bed);
   }
 
   /** The pat pat on the ground where it is: pitched and rolled to the terrain under its wheels. */
@@ -925,3 +1068,94 @@ export class WorldView {
 
 /** Haze colour (fog and background). */
 export { HAZE as SKY_HORIZON } from './scenery';
+
+/**
+ * Letters burnt into the arch's board (3.6 m by 0.9 m): the name large, a word under it (or one line
+ * alone), light on the dark wood, a see-through plane laid on its face.
+ */
+function archLetters(text: string, sub: string | null): THREE.Mesh {
+  const c = document.createElement('canvas');
+  c.width = 1024;
+  c.height = 256;
+  const g = c.getContext('2d')!;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = '#f4e3b8';
+  g.shadowColor = 'rgba(30, 15, 5, 0.85)';
+  g.shadowBlur = 6;
+  g.shadowOffsetY = 3;
+  const big = sub ? 132 : 96;
+  g.font = `bold ${big}px Georgia, serif`;
+  g.fillText(text, 512, sub ? 104 : 128, 960);
+  if (sub) {
+    g.font = 'bold 64px Georgia, serif';
+    g.fillText(sub, 512, 206, 960);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return new THREE.Mesh(new THREE.PlaneGeometry(3.4, 0.85), new THREE.MeshLambertMaterial({ map: tex, transparent: true, depthWrite: false }));
+}
+
+/**
+ * Square straw bales (1 m by 0.5 by 0.4, two strings round each) stacked three, two and one high, a
+ * little askew: bought in, waiting by the barn.
+ */
+function baleStack(seed: number, model?: THREE.Object3D): THREE.Group {
+  const g = new THREE.Group();
+  if (model) {
+    // The artist's bale (0.4 m high as made into the stack), the same stack.
+    let s0 = seed * 7 + 3;
+    const r0 = () => ((s0 = (s0 * 9301 + 49297) % 233280) / 233280);
+    const spots: [number, number, number][] = [[-1.04, 0, 0], [0, 0, 0], [1.04, 0, 0], [-0.52, 1, 0], [0.52, 1, 0], [0, 2, 0], [-0.52, 0, -0.56], [0.52, 0, -0.56]];
+    for (const [x, row, z] of spots) {
+      const b = fitted(model, 0.42);
+      b.position.set(x + (r0() - 0.5) * 0.08, row * 0.41, z + (r0() - 0.5) * 0.08);
+      b.rotation.y = (r0() - 0.5) * 0.14 + (r0() < 0.5 ? Math.PI : 0);
+      g.add(b);
+    }
+    return g;
+  }
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const x = c.getContext('2d')!;
+  x.fillStyle = '#d9b45a';
+  x.fillRect(0, 0, 128, 128);
+  // Straw: short light and dark strokes, the two strings across.
+  let s = seed * 9301 + 49297;
+  const rnd = () => ((s = (s * 9301 + 49297) % 233280) / 233280);
+  for (let i = 0; i < 420; i++) {
+    x.strokeStyle = rnd() < 0.5 ? 'rgba(250, 225, 140, 0.7)' : 'rgba(150, 110, 40, 0.55)';
+    const px = rnd() * 128;
+    const py = rnd() * 128;
+    x.beginPath();
+    x.moveTo(px, py);
+    x.lineTo(px + (rnd() - 0.5) * 14, py + (rnd() - 0.5) * 5);
+    x.stroke();
+  }
+  x.fillStyle = '#6b4a2a';
+  x.fillRect(36, 0, 5, 128);
+  x.fillRect(88, 0, 5, 128);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const mat = new THREE.MeshLambertMaterial({ map: tex });
+  const geo = new THREE.BoxGeometry(1, 0.4, 0.5);
+  const rows = [3, 2, 1];
+  rows.forEach((n, row) => {
+    for (let k = 0; k < n; k++) {
+      const b = new THREE.Mesh(geo, mat);
+      b.position.set((k - (n - 1) / 2) * 1.04 + (rnd() - 0.5) * 0.08, 0.2 + row * 0.4, (rnd() - 0.5) * 0.1);
+      b.rotation.y = (rnd() - 0.5) * 0.12;
+      b.castShadow = b.receiveShadow = true;
+      g.add(b);
+    }
+  });
+  // A second stack behind it.
+  for (let k = 0; k < 2; k++) {
+    const b = new THREE.Mesh(geo, mat);
+    b.position.set((k - 0.5) * 1.04, 0.2, -0.56);
+    b.castShadow = b.receiveShadow = true;
+    g.add(b);
+  }
+  return g;
+}

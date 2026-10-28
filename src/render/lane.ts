@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { Field } from '../game/field';
 import { PATPAT } from '../game/config';
 import { makeRng } from '../game/rng';
-import { PAINTED_GROUND, groundTextures } from './scenery';
+import { PAINTED_GROUND, groundTextures, regionPaving } from './scenery';
 
 /** Half the width of the dirt lane, metres (its texture fades into the grass at the edges). */
 export const LANE_HALF = 1.9;
@@ -883,7 +883,7 @@ export function puddleMeshes(f: Field, heightAt: (x: number, z: number) => numbe
  * The hazelnut drying floor (harman) of old village concrete, about 3 m to a tile, `len` by `wid`
  * metres: a rounded slab, its rim softening into the grass and broken unevenly.
  */
-function concreteHarman(seed: number, len: number, wid: number, concrete: CanvasImageSource): THREE.CanvasTexture {
+function concreteHarman(seed: number, len: number, wid: number, concrete: CanvasImageSource, stone = false): THREE.CanvasTexture {
   const ppm = 48;
   const w = Math.round(len * ppm);
   const h = Math.round(wid * ppm);
@@ -892,16 +892,18 @@ function concreteHarman(seed: number, len: number, wid: number, concrete: Canvas
   c.height = h;
   const g = c.getContext('2d')!;
   const rnd = makeRng(seed + 17);
-  const tile = 3 * ppm;
+  const tile = (stone ? 2.6 : 3) * ppm;
   for (let y = 0; y < h; y += tile) for (let x = 0; x < w; x += tile) g.drawImage(concrete, x, y, tile, tile);
-  // The moss painted in the picture read as grass growing on the concrete: its colour taken out.
-  g.globalCompositeOperation = 'saturation';
-  g.fillStyle = 'rgba(128, 128, 128, 0.85)';
-  g.fillRect(0, 0, w, h);
-  g.globalCompositeOperation = 'source-over';
-  // Lighter, sun-bleached, a touch warm.
-  g.fillStyle = 'rgba(255, 248, 232, 0.3)';
-  g.fillRect(0, 0, w, h);
+  if (!stone) {
+    // The moss painted in the picture read as grass growing on the concrete: its colour taken out.
+    g.globalCompositeOperation = 'saturation';
+    g.fillStyle = 'rgba(128, 128, 128, 0.85)';
+    g.fillRect(0, 0, w, h);
+    g.globalCompositeOperation = 'source-over';
+    // Lighter, sun-bleached, a touch warm.
+    g.fillStyle = 'rgba(255, 248, 232, 0.3)';
+    g.fillRect(0, 0, w, h);
+  }
   // The slab: a rounded rectangle a little inside the canvas, its edge blurred into the grass.
   const pad = 0.5 * ppm;
   const mask = document.createElement('canvas');
@@ -911,7 +913,8 @@ function concreteHarman(seed: number, len: number, wid: number, concrete: Canvas
   mg.filter = `blur(${0.25 * ppm}px)`;
   mg.fillStyle = '#000';
   mg.beginPath();
-  mg.roundRect(pad, pad, w - 2 * pad, h - 2 * pad, 2.2 * ppm);
+  // (Stones: laid round at the ends, as the old threshing floors are.)
+  mg.roundRect(pad, pad, w - 2 * pad, h - 2 * pad, stone ? (h - 2 * pad) / 2 : 2.2 * ppm);
   mg.fill();
   g.globalCompositeOperation = 'destination-in';
   g.drawImage(mask, 0, 0);
@@ -995,7 +998,9 @@ function harmanTexture(seed: number): THREE.CanvasTexture {
 export function harmanMesh(f: Field, heightAt: (x: number, z: number) => number): THREE.Mesh | null {
   const h = f.harman;
   if (!h) return null;
-  const concrete = groundTextures()?.concrete?.image as CanvasImageSource | undefined;
+  // (A village with a stone yard: its harman paved with stones.)
+  const stone = regionPaving(f.region.id)?.image as CanvasImageSource | undefined;
+  const concrete = stone ?? (groundTextures()?.concrete?.image as CanvasImageSource | undefined);
   let g: THREE.PlaneGeometry;
   let cx = h.x;
   let cz = h.z;
@@ -1017,7 +1022,7 @@ export function harmanMesh(f: Field, heightAt: (x: number, z: number) => number)
     g = new THREE.PlaneGeometry(len, wid, Math.round(len * 2), Math.round(wid * 2));
     g.rotateX(-Math.PI / 2);
     g.rotateY(-Math.atan2(uz, ux));
-    map = concreteHarman(f.level.seed, len, wid, concrete);
+    map = concreteHarman(f.level.seed, len, wid, concrete, !!stone);
     span = [len, wid];
   } else {
     const r = h.r * 1.15;
@@ -1033,7 +1038,7 @@ export function harmanMesh(f: Field, heightAt: (x: number, z: number) => number)
   // The same lumpy mud as the lane, so the one runs into the other (concrete: nearly flat).
   const normalMap = mudNormals(f.level.seed);
   normalMap.repeat.set(span[0] / 0.8, span[1] / 0.8);
-  const bump = concrete ? 0.2 : 0.7;
+  const bump = stone ? 0.6 : concrete ? 0.2 : 0.7;
   const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map, normalMap, normalScale: new THREE.Vector2(bump, bump), roughness: 0.95, metalness: 0, transparent: true, depthWrite: false }));
   m.position.set(cx, 0, cz);
   m.receiveShadow = true;

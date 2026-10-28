@@ -321,9 +321,17 @@ function buildTree(): BushGeo {
 }
 
 /** Broadleaf trees at the given transforms (instanced: two draw calls for all of them). */
-export function broadleafTrees(matrices: THREE.Matrix4[]): THREE.Group {
+export function broadleafTrees(matrices: THREE.Matrix4[], tint?: { bark: string; leaf: string }): THREE.Group {
   treeGeo ??= buildTree();
-  return instanced(treeGeo, matrices, treeLeafMaterial());
+  if (!tint) return instanced(treeGeo, matrices, treeLeafMaterial());
+  // (Another kind of tree: its bark and leaves tinted.)
+  const leaf = treeLeafMaterial().clone();
+  leaf.color.set(tint.leaf);
+  leaf.onBeforeCompile = treeLeafMaterial().onBeforeCompile;
+  const bark = materials().bark.clone();
+  bark.color.set(tint.bark);
+  bark.emissive.multiplyScalar(0.45);
+  return instanced(treeGeo, matrices, leaf, bark);
 }
 
 let treeLeafMat: THREE.MeshLambertMaterial | null = null;
@@ -364,9 +372,9 @@ function treeLeafMaterial(): THREE.MeshLambertMaterial {
   return treeLeafMat;
 }
 
-function instanced(geo: BushGeo, matrices: THREE.Matrix4[], leafOverride?: THREE.Material): THREE.Group {
+function instanced(geo: BushGeo, matrices: THREE.Matrix4[], leafOverride?: THREE.Material, barkOverride?: THREE.Material): THREE.Group {
   const m = materials();
-  const bark = m.bark;
+  const bark = barkOverride ?? m.bark;
   const leaf = leafOverride ?? m.leaf;
   const g = new THREE.Group();
   if (!matrices.length) return g;

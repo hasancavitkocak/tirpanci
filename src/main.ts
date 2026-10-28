@@ -2,9 +2,9 @@ import './styles.css';
 import './hud.css';
 import * as THREE from 'three';
 import { GameAudio } from './audio/audio';
-import { BushKind, DAILY, ENGINE, EXTRAS, HIVE, LEVELS, LINE_TYPES, LevelDef, MACHINES, NO_UPGRADES, PLAYER, REQUEST_TEXT, THEME_NAME, TRIMMER, Theme, UPGRADES, WEATHER_ICON, WEATHER_NAME, Weather, VEHICLES, DECOR, PAINTS } from './game/config';
+import { BushKind, DAILY, ENGINE, EXTRAS, HIVE, LEVELS, LINE_TYPES, LevelDef, MACHINES, NO_UPGRADES, PLAYER, REQUEST_TEXT, SNAKE, COW, BIG_PULL, THEME_NAME, TRIMMER, Theme, UPGRADES, WEATHER_ICON, WEATHER_NAME, Weather, VEHICLES, DECOR, PAINTS } from './game/config';
 import { CarryOver, Result, Session } from './game/session';
-import { PRIMES_NEEDED, PullResult } from './game/starter';
+import { PRIMES_NEEDED, PullResult, Starter } from './game/starter';
 import { Input } from './input/input';
 import { Visor } from './ui/visor';
 import { initAds, maybeInterstitial, setAdsRemoved, showRewarded } from './platform/ads';
@@ -27,6 +27,13 @@ import { activeEvents, eventPay } from './game/events';
 import { REGIONS, setPosted, village } from './game/village';
 import { HARVEST, HarvestState, beansKg, capacityOf, dryWithAd, harvestHint, harvestNeeds, harvestOn, harvestSacks, loadSack, newHarvest, sellNuts, spreadSack, suckCell, tickHarvest } from './game/harvest';
 import { HEAP_R, harmanCells, harvestSpots, inSpot, loadSpot, pickPiles, sackPile, tarpSpot } from './render/harvest';
+import { WOOD, cutAt, cutStand, gatePile, inCrown, layTree, loadLog, logsWaiting, newWood, pickFieldTree, pileSpots, sellStock, stackLog, treeBlocks, treePoint, underTree, woodCapacity, woodSpots } from './game/wood';
+import type { FieldTree, LogPile, WoodState } from './game/wood';
+import { TILL, layBostan, pickTillTask, tillAt, tillPay, tilled } from './game/tiller';
+import type { TillTask } from './game/tiller';
+import { TILLER_AHEAD } from './render/tiller';
+import { BURN, blow, burnPay, heaped, pickBurnTask, revealTufts } from './game/burn';
+import type { BurnTask } from './game/burn';
 import { SAGA_MAPS } from './ui/sagaMaps';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -99,6 +106,23 @@ const SACK_PACE = 0.55;
 const HARVEST_REGION = 1;
 /** The job list's tab for the harvest. */
 const HARVEST_TAB = -1;
+/** The storm's tree: seconds the chainsaw takes through a piece at full throttle (less throttle, longer; ticking over it does not cut), and a log to load or stack. */
+const CUT_PACE = 2.2;
+const LOG_PACE = 0.7;
+/** The chainsaw's starter: as the trimmer's, its carburettor always primed (it has no primer bulb). */
+function sawStarter(): Starter {
+  const st = new Starter();
+  st.primes = PRIMES_NEEDED;
+  return st;
+}
+/** The evening's work (once a day, in Karadere, by its barn): its cows brought home; from which job, how many, the pay. */
+const EVENING = { needs: 11, cows: 4, pay: 500 };
+/** A vehicle that is a tractor (the small one or the big one): the trailer and the patos go behind it. */
+const isTractor = (id: string | undefined): boolean => id === 'traktor' || id === 'buyuk';
+/** How near a hidden snake the dog smells it out (m). */
+const DOG_NOSE = 4;
+/** How near the tree's middle the chainsaw is taken in hand (m). */
+const TREE_NEAR = 12;
 /** A time left as a clock, hours:minutes:seconds (47:59:59). */
 const clock = (ms: number): string => {
   const t = Math.max(0, Math.ceil(ms / 1000));
@@ -188,6 +212,54 @@ class Game {
   private orbitIdle = 0;
   /** The harvest is drawn and played in this job (Yeşilyamaç, once its gardens are done). */
   private harvestHere = false;
+  /** The storm's wood is drawn and played in this job (Karadere, once the chainsaw's job is open). */
+  private woodHere = false;
+  /** Serbest gez with logs waiting by the gates or on the vehicle: the steps to bring them home told. */
+  private wooding = false;
+  private woodT = 0;
+  /** A storm's tree down in this job's garden (null: none), and how many cuts it has had. */
+  private woodTree: FieldTree | null = null;
+  private woodCut = 0;
+  /** How far the chainsaw is through the piece it is on (0..1; kept when the throttle is let go). */
+  private sawT = 0;
+  /**
+   * The chainsaw's own engine: started on the trimmer's starter (no primer: just the choke and the cord;
+   * cold, choke on till it coughs, then off and pull again; warm, a pull), running while it is in hand
+   * (put away it stops), warm once it has run in this job.
+   */
+  private sawStarter = sawStarter();
+  private sawRunning = false;
+  /** The chainsaw was in hand last frame (its starter shown or hidden when that changes). */
+  private sawWasInHand = false;
+  /**
+   * The motor çapa: this job's tilling (null: none asked for), the tiller taken out of the vehicle, its
+   * engine (as the chainsaw's: choke and cord), how far the work had got when last told (quarters).
+   */
+  private tillTask: TillTask | null = null;
+  private tillerInHand = false;
+  private tillWasInHand = false;
+  private tillStarter = sawStarter();
+  private tillRunning = false;
+  private tillQuarter = 0;
+  /**
+   * The cut grass to blow together and burn (null: not asked for); the blower taken out of the vehicle,
+   * its engine; which tuft to look at next for the grass mown under it; whether the heap's being ready
+   * has been told.
+   */
+  private burnTask: BurnTask | null = null;
+  private blowerInHand = false;
+  private blowerWasInHand = false;
+  private blowerStarter = sawStarter();
+  private blowerRunning = false;
+  private burnReveal = 0;
+  private burnReady = false;
+  /** The evening's cows being brought home (Serbest gez started from the menu's Akşam button); all home told. */
+  private eveningRun = false;
+  private eveningDone = false;
+  /** Seconds to the dog's next bark while it is after a snake. */
+  private barkT = 0;
+  /** Coming in from the other village by its road (lastJob holds where): starts driving at its way out. */
+  private arrival = false;
   /** The context actions now shown (to rebuild the buttons only when they change). */
   private actionKey = '';
   /** Daily reward on offer (TL) while the daily screen is open. */
@@ -282,9 +354,10 @@ class Game {
   private applyVehicle(): void {
     const s = this.session;
     if (!s || s.driving) return;
-    s.field.tractor = this.save.vehicle === 'traktor';
+    s.field.tractor = isTractor(this.save.vehicle);
+    s.field.bigTractor = this.save.vehicle === 'buyuk';
     s.field.trailer = this.trailerOn ? { yaw: NaN } : null;
-    this.audio.setTractor(s.field.tractor);
+    this.audio.setTractor(s.field.tractor, s.field.bigTractor);
     this.view.swapVehicle(this.models);
   }
 
@@ -292,6 +365,11 @@ class Game {
   private roaming = false;
   /** The job about to start was taken on while roaming (it starts with the trimmer in the vehicle). */
   private fromRoam = false;
+  /**
+   * The next job taken on from the result: the finished field stays as it is, the worker puts the
+   * trimmer in the vehicle and drives to the next field's gate, where it is loaded and opens.
+   */
+  private travelTo: LevelDef | null = null;
   /**
    * Fındık Harmanı played (started from its tab): its steps told and its buttons shown. Serbest gez
    * is the player's own: a harvest under way is seen there but asks nothing.
@@ -313,13 +391,13 @@ class Game {
 
   /** The patos bought and hitched (instead of the trailer), behind the tractor driven. */
   private get patosHitched(): boolean {
-    return this.save.vehicle === 'traktor' && !!this.save.vehicles?.includes('patos') && !!this.save.patosOn;
+    return isTractor(this.save.vehicle) && !!this.save.vehicles?.includes('patos') && !!this.save.patosOn;
   }
 
   /** Something on the tractor's hitch: the trailer or the patos (and which, for the scene). */
   private get trailerOn(): boolean {
     WorldView.towed = this.patosHitched ? 'patos' : 'romork';
-    return this.patosHitched || (this.save.vehicle === 'traktor' && !!this.save.vehicles?.includes('romork') && !this.save.trailerOff);
+    return this.patosHitched || (isTractor(this.save.vehicle) && !!this.save.vehicles?.includes('romork') && !this.save.trailerOff);
   }
 
   /** Menu background: the worker with his trimmer standing in front of the pat pat, on the harman at home. */
@@ -328,7 +406,8 @@ class Game {
     WorldView.harvest = false;
     const s = new Session(LEVELS[0], NO_UPGRADES);
     // The vehicle chosen in the shop stands there.
-    s.field.tractor = this.save.vehicle === 'traktor';
+    s.field.tractor = isTractor(this.save.vehicle);
+    s.field.bigTractor = this.save.vehicle === 'buyuk';
     s.field.trailer = this.trailerOn ? { yaw: NaN } : null;
     const v = s.field.vehicle;
     // At home: the pat pat on the harman in front of the house.
@@ -366,6 +445,27 @@ class Game {
   }
 
   /** A yes/no question over whatever is on screen; true for yes. */
+  /**
+   * A rewarded ad; true when the reward was earned. Not earned (closed early, none to show, no
+   * connection), it says so: the player otherwise sees nothing happen.
+   */
+  private async rewarded(text: string): Promise<boolean> {
+    const ok = await showRewarded(text);
+    if (!ok) this.notice('Reklam tamamlanmadı', 'Ödül verilmedi. Reklam sonuna kadar izlenmedi ya da şu an reklam yok; biraz sonra yeniden dene.');
+    return ok;
+  }
+
+  /** A short notice: a message while playing, a card with one button elsewhere. */
+  private notice(title: string, text: string): void {
+    if (this.mode === 'playing') {
+      this.toast(`${title}: ${text}`, 'warn');
+      return;
+    }
+    const no = $('btn-confirm-no');
+    no.style.display = 'none';
+    void this.ask(title, text, 'Tamam').then(() => (no.style.display = ''));
+  }
+
   private ask(title: string, html: string, yes: string): Promise<boolean> {
     const box = $('confirm');
     $('confirm-title').textContent = title;
@@ -410,6 +510,7 @@ class Game {
     this.offerDaily();
     this.updateHarvestBtn();
     this.offerHarvest();
+    this.updateEveningBtn();
   }
 
   // ---------------------------------------------------------------- daily reward, remove ads
@@ -508,7 +609,7 @@ class Game {
   private async takeDaily(withAd: boolean): Promise<void> {
     if (!$('daily').classList.contains('show')) return;
     let amount = this.dailyAmount;
-    if (withAd && (await showRewarded(`+${amount * 2} TL!`))) amount *= 2;
+    if (withAd && (await this.rewarded(`+${amount * 2} TL!`))) amount *= 2;
     this.save.money += amount;
     this.save.daily = { last: today(), streak: this.dailyStreak };
     void writeSave(this.save);
@@ -628,9 +729,114 @@ class Game {
     ].join('');
     $('btn-call-ok').onclick = () => {
       $('call').classList.remove('show');
-      void this.startWithLoader(lv);
+      if (this.canTravelTo(lv)) this.beginTravel(lv);
+      else void this.startWithLoader(lv);
     };
     this.show('call');
+  }
+
+  /** The next job can be driven to from the finished one: just finished, in the same village. */
+  private canTravelTo(lv: LevelDef): boolean {
+    const s = this.session;
+    if (this.mode !== 'result' || !s || this.roaming) return false;
+    return s.field.others.some((o) => o.level.id === lv.id) || ((lv.region ?? 1) !== s.field.region.id && !!s.field.exit);
+  }
+
+  /** The other village (the one the way out leads to). */
+  private otherRegion(s: Session): (typeof REGIONS)[number] | null {
+    return REGIONS.find((r) => r.id !== s.field.region.id && LEVELS.some((l) => (l.region ?? 1) === r.id)) ?? null;
+  }
+
+  /**
+   * Driving up to the village's way out, roaming or on the way to a job over there: the board's button
+   * takes the player there (returned: where to).
+   */
+  private exitNear(s: Session): (typeof REGIONS)[number] | null {
+    const e = s.field.exit;
+    const v = s.field.vehicle;
+    if (!e || !s.driving || Math.hypot(v.x - e.x, v.z - e.z) > 10) return null;
+    if (!this.roaming && !(this.travelTo && (this.travelTo.region ?? 1) !== s.field.region.id)) return null;
+    return this.otherRegion(s);
+  }
+
+  /**
+   * Arriving in a village by its road: on it some way in from the way out, facing into the village,
+   * the worker beside the seat (village coordinates; `level` is the one coming from).
+   */
+  private arrivalAt(region: number, level: number): CarryOver | null {
+    const r = REGIONS.find((q) => q.id === region);
+    const t = r && village(r).roads[0].pts;
+    if (!t || t.length < 4) return null;
+    // (Outside its arch if it has one: driven in under it.)
+    const ab = village(r).archBack;
+    const inFrom = ab === undefined ? 8 : Math.min(8, ab - 4);
+    let i = t.length - 1;
+    for (let d = 0; i > 3 && d < inFrom; i--) d += Math.hypot(t[i].x - t[i - 1].x, t[i].z - t[i - 1].z);
+    const p = t[i];
+    const q = t[i - 3];
+    const yaw = Math.atan2(q.x - p.x, q.z - p.z);
+    const fx = Math.sin(yaw);
+    const fz = Math.cos(yaw);
+    return { level, region, vehicle: { x: p.x, z: p.z, yaw, art: 0 }, worker: { x: p.x + fx * 0.6 + fz * 1.5, z: p.z + fz * 0.6 - fx * 1.5, yaw } };
+  }
+
+  /** Off to the other village: Serbest gez there, or the job there being travelled to. */
+  private leaveVillage(to: (typeof REGIONS)[number]): void {
+    const s = this.session;
+    if (!s || this.mode !== 'playing') return;
+    const lv = this.travelTo;
+    const carry = this.arrivalAt(to.id, s.level.id);
+    if (!carry) return;
+    this.lastJob = carry;
+    this.arrival = true;
+    this.travelTo = null;
+    document.body.classList.remove('travel');
+    if (lv) {
+      this.fromRoam = true;
+      void this.startWithLoader(lv, `${to.name} yolu…`);
+    } else {
+      this.levelTab = to.id;
+      void this.startRoam();
+    }
+  }
+
+  /** Back into the finished field to drive on to the next job (see travelTo). */
+  private beginTravel(lv: LevelDef): void {
+    const s = this.session!;
+    this.travelTo = lv;
+    s.state = 'running';
+    $('btn-finish').classList.remove('show');
+    this.mode = 'playing';
+    this.last = performance.now();
+    this.show('hud');
+    document.body.classList.add('playing', 'travel');
+    this.audio.startAmbience({ rain: s.field.level.weather === 'rain', ezan: 'never', traffic: false });
+    this.updateStarterUi();
+    const far = (lv.region ?? 1) !== s.field.region.id;
+    this.toast(far ? `Tırpanı ${s.field.tractor ? 'traktöre' : 'patpata'} koy, köy çıkışından ${REGIONS.find((r) => r.id === lv.region)?.name ?? 'öbür köy'} yoluna sür` : `Tırpanı ${s.field.tractor ? 'traktöre' : 'patpata'} koy, ${lv.name} bahçesine sür`, 'good', 'travel', 4, 3500);
+  }
+
+  /** On the way to the next job: arrived at its gate with the trimmer in the vehicle, it is loaded there. */
+  private travelStep(s: Session): void {
+    const lv = this.travelTo;
+    if (!lv || s.hasTrimmer) return;
+    const g = this.gatePoint(s, lv);
+    const v = s.field.vehicle;
+    if (!g || Math.hypot(v.x - g.x, v.z - g.z) > 9) return;
+    if (s.driving && Math.abs(v.speed) > 0.3) return;
+    this.travelTo = null;
+    document.body.classList.remove('travel');
+    this.lastJob = s.carryOver();
+    // (It starts as a job taken on at its gate: the trimmer in the vehicle, to be taken out.)
+    this.fromRoam = true;
+    void this.startWithLoader(lv);
+  }
+
+  /** A field's gate (where its job is taken on), in this field's coordinates. */
+  private gatePoint(s: Session, lv: LevelDef): { x: number; z: number } | null {
+    const q = s.field.others.find((o) => o.level.id === lv.id);
+    if (!q) return null;
+    return { x: q.level.theme === 'mezarlik' ? (q.minX + q.maxX) / 2 : q.entryX, z: q.maxZ + 1.5 };
   }
 
   /** The field shown in the regrow offer (the last one asked for). */
@@ -638,7 +844,7 @@ class Game {
 
   private async watchAdToRegrow(): Promise<void> {
     const lv = this.regrowFor;
-    if (!(await showRewarded('Otlar büyüdü!'))) return;
+    if (!(await this.rewarded('Otlar büyüdü!'))) return;
     if (this.save.mownAt) delete this.save.mownAt[lv.id];
     void writeSave(this.save);
     this.openCall(lv);
@@ -769,7 +975,7 @@ class Game {
         // Not wanting to wait: a rewarded ad posts a job there now.
         b.onclick = async () => {
           this.audio.unlock();
-          if (!(await showRewarded('Yeni ilan geldi!'))) return;
+          if (!(await this.rewarded('Yeni ilan geldi!'))) return;
           if (this.save.ilanDone) delete this.save.ilanDone[s.id];
           void writeSave(this.save);
           this.openLevels();
@@ -920,7 +1126,7 @@ class Game {
         <span class="sn-disc"><b>${locked ? '<img class="sn-lock" src="./harita/kilit.webp" alt="">' : lv.id}</b></span>
         ${locked ? '' : `<span class="sn-stars">${starRow}</span>`}
         ${next ? `<span class="sn-name">${lv.name}</span>` : ''}
-        ${lv === firstLocked ? `<span class="sn-tag price">${this.unlockLabel(lv)}</span>` : wait ? `<span class="sn-tag wait">${icon('i-clock')} ${formatWait(wait)}</span>` : locked ? '' : this.payChip(lv)}`;
+        ${lv === firstLocked ? `<span class="sn-tag price">${this.unlockLabel(lv)}</span>` : wait ? `<span class="sn-tag wait">${icon('i-clock')} ${formatWait(wait)}</span>` : locked || (wide && !next) ? '' : this.payChip(lv)}`;
       b.onclick = () => {
         this.audio.unlock();
         this.audio.ui();
@@ -992,6 +1198,7 @@ class Game {
   private applyLook(): void {
     WorldView.paintHue = PAINTS.find((p) => p.id === this.save.paint)?.hue ?? null;
     WorldView.decor = (this.save.decor ?? []).filter((d) => !this.save.decorOff?.includes(d));
+    WorldView.dog = !!this.save.dog && !!this.save.decor?.includes('kulube');
   }
 
   /** A job's pay on the map, under its badge (an event's raise in pink). */
@@ -1164,13 +1371,27 @@ class Game {
       list.appendChild(c);
       return c;
     };
+    // Something for later on, not on sale yet: greyed, a padlock and the job it opens at on its button;
+    // tapped, it says so.
+    const lockedCard = (pic: string, name: string, desc: string, wait: number) => {
+      const c = card(pic, name, desc, '', `🔒 ${wait}. İŞ`, true, () => {
+        this.audio.ui();
+        this.shopNote = { text: `${name} ${wait}. işe gelince satışa çıkar. Önce önceki işleri bitir.`, kind: 'warn' };
+      });
+      c.classList.add('locked');
+    };
     // The artist's shop picture (shop-<id>.webp), or an icon until there is one.
     const pic = (id: string, fallback: string) => picture([`shop-${id}.webp`], fallback);
     // Machines and line types: buy once, then pick one.
-    const choice = (items: { id: string; name: string; desc: string; price: number }[], pics: Record<string, string>, selected: string, pick: (id: string) => void) => {
+    const choice = (items: { id: string; name: string; desc: string; price: number; needs?: number }[], pics: Record<string, string>, selected: string, pick: (id: string) => void) => {
       for (const it of items) {
         const owned = eq.owned.includes(it.id);
         const on = selected === it.id;
+        const wait = owned ? null : this.lockedUntil(it.needs);
+        if (wait) {
+          lockedCard(pics[it.id], it.name, it.desc, wait);
+          continue;
+        }
         const label = on ? 'SEÇİLİ' : owned ? 'SEÇ' : `${it.price} TL`;
         card(pics[it.id], it.name, it.desc, '', label, !on && (owned || this.save.money >= it.price), () => {
           if (!owned) {
@@ -1267,20 +1488,44 @@ class Game {
         }, placed);
         preview(c, d.id);
       }
+      // Karabaş, the dog: free, adopted once the kennel is bought (its picture from its own model).
+      if (this.koyPart === 'avlu') {
+        const kennel = owned.includes('kulube');
+        const mine = !!this.save.dog;
+        const desc = 'Kangal köpeği. Seninle işe gelir, saklı yılanları önceden bulup kaçırır. Ücretsiz.';
+        const c = card(pic('koy-kopek', 'i-person'), 'Karabaş', desc, '', mine ? 'SENİN' : kennel ? 'SAHİPLEN' : 'ÖNCE KULÜBE', !mine, () => {
+          if (!kennel) {
+            this.audio.ui();
+            this.shopNote = { text: 'Karabaş’ı sahiplenmek için önce Köpek Kulübesi’ni al', kind: 'warn' };
+            return;
+          }
+          this.save.dog = true;
+          this.audio.success();
+          haptic('medium');
+          this.shopNote = { text: `Karabaş artık senin! ${this.shopInGame ? 'Bir sonraki işte' : 'İşe'} seninle gelir, saklı yılanları bulur`, kind: 'good' };
+        }, mine);
+        if (!kennel) c.classList.add('locked');
+        preview(c, 'kopek');
+      }
     } else if (this.shopTab === 'arac') {
       // Vehicles: the pat pat is had from the start; the tractor shows what is coming.
       const owned = this.save.vehicles ?? ['patpat'];
       const using = this.save.vehicle ?? 'patpat';
       for (const v of VEHICLES) {
         const has = owned.includes(v.id);
+        const wait = has ? null : this.lockedUntil(v.needs);
+        if (wait) {
+          lockedCard(pic(v.id, 'i-tractor'), v.name, v.desc, wait);
+          continue;
+        }
         if (v.attach) {
           // The trailer and the patos: bought once (the tractor first), then hitched on or left off; one at a time.
           const patos = v.id === 'patos';
           const hitched = has && (patos ? !!this.save.patosOn : !this.save.trailerOff && !this.save.patosOn);
-          const tractor = owned.includes('traktor');
+          const tractor = owned.includes('traktor') || owned.includes('buyuk');
           const canBuy = tractor && this.save.money >= v.price;
           const label = has ? (hitched ? 'ÇIKAR' : 'TAK') : tractor ? `${v.price.toLocaleString('tr-TR')} TL` : 'ÖNCE TRAKTÖR';
-          const state = has ? `<span class="hitch-badge${hitched ? ' on' : ''}">${hitched ? (using === 'traktor' ? 'TAKILI' : 'TAKILI · TRAKTÖRÜ SEÇ') : 'TAKILI DEĞİL'}</span>` : '';
+          const state = has ? `<span class="hitch-badge${hitched ? ' on' : ''}">${hitched ? (isTractor(using) ? 'TAKILI' : 'TAKILI · TRAKTÖRÜ SEÇ') : 'TAKILI DEĞİL'}</span>` : '';
           card(pic(v.id, 'i-tractor') + state, v.name, v.desc, '', label, has || canBuy || !tractor, () => {
             if (!has && !tractor) {
               this.shopNote = { text: `${v.name} sadece traktöre takılır: önce traktörü al`, kind: 'warn' };
@@ -1304,7 +1549,7 @@ class Game {
             }
             // Said plainly: what is on the hitch now, what came off, and the tractor to be picked.
             const off = on && other ? ` ${patos ? 'Römork' : 'Patos'} çıkarıldı (ikisi birden takılmaz).` : '';
-            const pick = on && using !== 'traktor' ? ' Traktörü SEÇ: arkasında gelir.' : '';
+            const pick = on && !isTractor(using) ? ' Traktörü SEÇ: arkasında gelir.' : '';
             const carry = !on && !patos ? ' Traktör artık çuval taşımaz.' : on && patos ? ' Çuval taşımak için römorku tak ya da patpatı seç.' : '';
             this.shopNote = { text: `${v.name} ${on ? 'takıldı' : 'çıkarıldı'}.${off}${pick}${carry}`, kind: on ? 'good' : '' };
             if (this.mode === 'menu') this.view.load(this.menuSession(), this.models, true);
@@ -1325,7 +1570,7 @@ class Game {
           this.save.vehicle = v.id;
           const towed = this.save.patosOn && owned.includes('patos') ? 'patos' : owned.includes('romork') && !this.save.trailerOff ? 'römork' : '';
           this.shopNote = {
-            text: v.id === 'traktor' ? `Traktör seçildi.${towed ? ` Arkasında ${towed} takılı.` : ' Arkasında bir şey takılı değil.'}` : `${v.name} seçildi.${owned.includes('traktor') ? ' Römork ve patos traktörde kalır.' : ''}`,
+            text: isTractor(v.id) ? `${v.name} seçildi.${towed ? ` Arkasında ${towed} takılı.` : ' Arkasında bir şey takılı değil.'}` : `${v.name} seçildi.${owned.includes('traktor') ? ' Römork ve patos traktörde kalır.' : ''}`,
             kind: 'good',
           };
           // On the menu: the yard behind it shows the vehicle chosen; in a job it stands there at once.
@@ -1352,6 +1597,45 @@ class Game {
           if (this.shopInGame) this.toast(`${it.name} bir sonraki işte ${worn ? 'çıkarılmış' : 'takılı'} olacak`, 'good');
         }, worn);
       }
+      // The chainsaw (Odun İşi): bought once; on sale once its job is open.
+      const sw = WOOD.saw;
+      const hasSaw = eq.owned.includes(sw.id);
+      const sawWait = hasSaw ? null : this.lockedUntil(WOOD.needs);
+      if (sawWait) lockedCard(pic('testere', 'i-engine'), sw.name, sw.desc, sawWait);
+      else
+        card(pic('testere', 'i-engine'), sw.name, sw.desc, '', hasSaw ? 'ALINDI' : `${sw.price.toLocaleString('tr-TR')} TL`, !hasSaw && this.save.money >= sw.price, () => {
+          if (hasSaw || this.save.money < sw.price) return;
+          this.save.money -= sw.price;
+          eq.owned.push(sw.id);
+          this.audio.coin();
+          this.shopNote = { text: this.shopInGame ? 'Motorlu testere alındı: tırpanı kasaya bırak, devrik ağacın yanına git, KES' : 'Motorlu testere alındı. Karadere’de fırtınanın devirdiği ağaçları kesebilirsin; kütükler senin', kind: 'good' };
+        }, hasSaw);
+      // The backpack blower: bought once; on sale once its job is open.
+      const bl = BURN.tool;
+      const hasBlower = eq.owned.includes(bl.id);
+      const blowWait = hasBlower ? null : this.lockedUntil(BURN.needs);
+      if (blowWait) lockedCard(pic('ufleyici', 'i-engine'), bl.name, bl.desc, blowWait);
+      else
+        card(pic('ufleyici', 'i-engine'), bl.name, bl.desc, '', hasBlower ? 'ALINDI' : `${bl.price.toLocaleString('tr-TR')} TL`, !hasBlower && this.save.money >= bl.price, () => {
+          if (hasBlower || this.save.money < bl.price) return;
+          this.save.money -= bl.price;
+          eq.owned.push(bl.id);
+          this.audio.coin();
+          this.shopNote = { text: 'Üfleme makinesi alındı: patpatın kasasında. Bahçe sahibi otu yakmanı isteyince kasadan ÜFLEYİCİYİ AL', kind: 'good' };
+        }, hasBlower);
+      // The motor çapa: bought once; on sale once its job is open.
+      const tl = TILL.tool;
+      const hasTill = eq.owned.includes(tl.id);
+      const tillWait = hasTill ? null : this.lockedUntil(TILL.needs);
+      if (tillWait) lockedCard(pic('capa', 'i-engine'), tl.name, tl.desc, tillWait);
+      else
+        card(pic('capa', 'i-engine'), tl.name, tl.desc, '', hasTill ? 'ALINDI' : `${tl.price.toLocaleString('tr-TR')} TL`, !hasTill && this.save.money >= tl.price, () => {
+          if (hasTill || this.save.money < tl.price) return;
+          this.save.money -= tl.price;
+          eq.owned.push(tl.id);
+          this.audio.coin();
+          this.shopNote = { text: 'Motor çapa alındı: patpatın kasasında. Bahçe sahibi çapa isteyince kasadan ÇAPAYI AL', kind: 'good' };
+        }, hasTill);
     } else {
       const pics: Record<string, string> = { tank: pic('depo', 'i-tank'), line: pic('kalin', 'i-spool'), head: pic('kafa', 'i-head'), motor: pic('motor', 'i-engine'), boots: pic('cizme', 'i-boot') };
       for (const u of UPGRADES) {
@@ -1421,6 +1705,14 @@ class Game {
       else this.show('menu');
     });
     on('btn-harvest', () => this.openHarvest());
+    on('btn-evening', () => {
+      if (this.save.eveningDay === today()) {
+        this.notice('Akşam', 'Bugünün inekleri ahırda. Yarın akşam yine gel.');
+        return;
+      }
+      this.levelTab = 2;
+      void this.startRoam('evening');
+    });
     // The messages sit under the objective and right of the buttons on the left: placed again when either changes size.
     new ResizeObserver(() => this.placeToasts()).observe($('objective'));
     new ResizeObserver(() => this.placeToasts()).observe($('actions'));
@@ -1643,7 +1935,7 @@ class Game {
     if (!s?.overheated || this.mode !== 'playing') return;
     this.mode = 'paused';
     this.audio.suspend();
-    const ok = await showRewarded('Motor soğutuldu!');
+    const ok = await this.rewarded('Motor soğutuldu!');
     this.audio.resume();
     this.mode = 'playing';
     this.last = performance.now();
@@ -1656,7 +1948,7 @@ class Game {
     if (!s || s.fuel > 0 || s.running || this.mode !== 'playing') return;
     this.mode = 'paused';
     this.audio.suspend();
-    const ok = await showRewarded('Depo doldu!');
+    const ok = await this.rewarded('Depo doldu!');
     this.audio.resume();
     this.mode = 'playing';
     this.last = performance.now();
@@ -1673,7 +1965,7 @@ class Game {
     if (!r || r.total <= 0 || this.mode !== 'result' || this.doubled) return;
     this.doubled = true;
     $('btn-ad-double').style.display = 'none';
-    const ok = await showRewarded(`+${r.total} TL kazandın!`);
+    const ok = await this.rewarded(`+${r.total} TL kazandın!`);
     if (!ok) {
       this.doubled = false;
       $('btn-ad-double').style.display = '';
@@ -1692,9 +1984,23 @@ class Game {
     go();
   }
 
+  /** A tool with its own engine in hand and not running (the chainsaw, the tiller): the starter is its. */
+  private get toolStarting(): boolean {
+    const off = (this.view.sawInHand && !this.sawRunning) || (this.tillerInHand && !this.tillRunning) || (this.blowerInHand && !this.blowerRunning);
+    return off && !!this.session && !this.session.driving && this.mode === 'playing';
+  }
+
+  /** The starter of the tool in hand, and its name. */
+  private get toolStarter(): Starter {
+    return this.tillerInHand ? this.tillStarter : this.blowerInHand ? this.blowerStarter : this.sawStarter;
+  }
+  private get toolName(): string {
+    return this.tillerInHand ? 'Çapa' : this.blowerInHand ? 'Üfleyici' : 'Testere';
+  }
+
   private prime(): void {
     const s = this.session;
-    if (!s || s.running || this.mode !== 'playing') return;
+    if (!s || s.running || this.mode !== 'playing' || this.toolStarting) return;
     this.audio.unlock();
     s.starter.prime();
     this.audio.prime();
@@ -1704,6 +2010,13 @@ class Game {
 
   private choke(): void {
     const s = this.session;
+    if (this.toolStarting) {
+      this.toolStarter.setChoke(!this.toolStarter.choke);
+      this.audio.choke();
+      haptic('light');
+      this.updateStarterUi();
+      return;
+    }
     if (!s || s.running || this.mode !== 'playing') return;
     s.starter.setChoke(!s.starter.choke);
     this.audio.choke();
@@ -1713,6 +2026,10 @@ class Game {
 
   private pullCord(strength: number): void {
     const s = this.session;
+    if (this.toolStarting) {
+      this.pullSaw(strength);
+      return;
+    }
     if (!s || s.running || this.mode !== 'playing') return;
     this.lastPull = strength;
     s.pull(strength);
@@ -1754,12 +2071,45 @@ class Game {
     this.updateStarterUi();
   }
 
+  /** The tool's cord pulled (the chainsaw's, the tiller's): it coughs, starts (then the trigger and STOP), or not. */
+  private pullSaw(strength: number): void {
+    const st = this.toolStarter;
+    const name = this.toolName;
+    const r = st.pull(strength);
+    haptic(strength > 0.6 ? 'medium' : 'light');
+    this.audio.crank(r === 'weak' ? strength * 0.5 : strength);
+    if (r === 'weak') this.toast('Daha uzun ve hızlı çek!', '', 'weak', 1.5);
+    else if (r === 'cough') {
+      this.audio.cough(3);
+      this.toast('Öksürdü! Jikleyi bırak, tekrar çek', 'good');
+    } else if (r === 'flooded') {
+      this.audio.cough(1, true);
+      this.toast(`${name} boğuldu! Jikle kapalı birkaç kez çek`, 'warn', 'flood', 2);
+    } else if (r === 'start') {
+      haptic('heavy');
+      if (this.blowerInHand) {
+        this.blowerRunning = true;
+        this.toast('Üfleyici çalıştı! Gaz tetiğine bas, otu yığına doğru üfle. Çok gaz daha uzağa', 'good');
+      } else if (this.tillerInHand) {
+        this.tillRunning = true;
+        this.toast('Çapa çalıştı! Gaz tetiğine bas, yürü: bıçaklar toprağı kabartır. Çok gaz daha hızlı', 'good');
+      } else {
+        this.sawRunning = true;
+        this.toast('Testere çalıştı! Gaz tetiğine bas, kes. Az gaz yavaş, çok gaz hızlı keser', 'good');
+      }
+    }
+    this.updateStarterUi();
+  }
+
   private updateStarterUi(): void {
     const s = this.session;
-    const off = !!s && !s.running && !s.intro && !s.driving && s.hasTrimmer && this.mode === 'playing';
+    // (The chainsaw in hand, not running: its starter, without the primer.)
+    const saw = this.toolStarting;
+    document.body.classList.toggle('saw-start', saw);
+    const off = !!s && !s.running && !s.intro && !s.driving && (s.hasTrimmer || saw) && this.mode === 'playing' && !this.travelTo;
     document.body.classList.toggle('engine-off', off);
     if (!s || !off) return;
-    const st = s.starter;
+    const st = saw ? this.toolStarter : s.starter;
     // (The bulb's lower third is its base: the dome above it fills, a third with each press.)
     const primed = Math.min(1, st.primes / PRIMES_NEEDED);
     $('bulb-fill').style.height = `${primed > 0 ? 35 + primed * 65 : 0}%`;
@@ -1767,29 +2117,43 @@ class Game {
     $('choke-text').textContent = st.choke ? 'JİKLE ÇEKİLİ' : 'JİKLE';
     let hint: string;
     let focus: 'prime' | 'choke' | 'cord';
-    if (s.overheated) {
+    if (saw) {
+      if (st.flooded) {
+        hint = st.choke ? "Boğuldu: JİKLE'yi bırak" : 'Boğuldu: ipi birkaç kez çek';
+        focus = st.choke ? 'choke' : 'cord';
+      } else if (!st.warm && !st.popped && !st.choke) {
+        hint = `${this.toolName} soğuk: JİKLE'yi çek`;
+        focus = 'choke';
+      } else if ((st.popped || st.warm) && st.choke) {
+        hint = st.popped ? "Öksürdü! JİKLE'yi bırak" : "Motor sıcak: JİKLE'yi bırak";
+        focus = 'choke';
+      } else {
+        hint = `${this.toolName} çalıştır: İPİ sertçe çek`;
+        focus = 'cord';
+      }
+    } else if (s.overheated) {
       hint = 'Motor hararet yaptı: soğumasını bekle';
       focus = 'cord';
     } else if (s.fuel <= 0) {
       hint = 'Depo boş! Sarı halkaya, bidonun yanına git';
       focus = 'cord';
     } else if (st.dry) {
-      hint = `POMPA'ya bas (${st.primes}/${PRIMES_NEEDED}): karbüratöre benzin gelsin`;
+      hint = `POMPA'ya bas ${st.primes}/${PRIMES_NEEDED}`;
       focus = 'prime';
     } else if (st.flooded) {
-      hint = st.choke ? 'Motor boğuldu! Önce jikleyi bırak' : 'Boğulan motoru aç: ipi birkaç kez çek';
+      hint = st.choke ? "Boğuldu: JİKLE'yi bırak" : 'Boğuldu: ipi birkaç kez çek';
       focus = st.choke ? 'choke' : 'cord';
     } else if (!st.warm && !st.popped && !st.choke) {
-      hint = "Motor soğuk: JİKLE'yi çek";
+      hint = "Soğuk motor: JİKLE'yi çek";
       focus = 'choke';
     } else if (st.popped && st.choke) {
-      hint = 'Öksürdü! Jikleyi bırak';
+      hint = "Öksürdü! JİKLE'yi bırak";
       focus = 'choke';
     } else if (st.warm && st.choke) {
-      hint = 'Motor sıcak: jikleyi bırak';
+      hint = "Sıcak motor: JİKLE'yi bırak";
       focus = 'choke';
     } else {
-      hint = st.popped || st.warm ? 'Şimdi ipi sertçe çek!' : 'İpi hızlıca aşağı çek (öksürene kadar)';
+      hint = st.popped || st.warm ? 'İPİ sertçe çek!' : 'İPİ hızlıca aşağı çek';
       focus = 'cord';
     }
     $('starter-hint').textContent = hint;
@@ -1819,26 +2183,35 @@ class Game {
    * (the vehicle in the garage, the trimmer left in it), in first person; walk, drive, look round, the
    * shop by the house. No objective, gauges, time or pay; the pause card's Ana Menü ends it.
    */
-  private async startRoam(harvest = false): Promise<void> {
+  private async startRoam(job: '' | 'harvest' | 'evening' = ''): Promise<void> {
     const tab = this.levelTab ?? 1;
     const def = LEVELS.find((l) => (l.region ?? 1) === tab) ?? LEVELS[0];
-    const place = harvest ? 'Fındık Harmanı' : (REGIONS.find((r) => r.id === tab)?.name ?? 'Köy');
+    const place = job === 'harvest' ? 'Fındık Harmanı' : job === 'evening' ? 'Akşam' : (REGIONS.find((r) => r.id === tab)?.name ?? 'Köy');
+    this.eveningRun = job === 'evening';
+    this.eveningDone = false;
     this.roaming = true;
-    this.harvesting = this.harvestTab = harvest;
+    this.harvesting = job === 'harvest';
+    this.wooding = false;
+    this.harvestTab = job !== '';
     this.guideKey = '';
-    this.lastJob = null;
+    // (Coming in by the road keeps where: see leaveVillage.)
+    if (!this.arrival) this.lastJob = null;
     await this.startWithLoader(def, `${place} hazırlanıyor…`);
   }
 
   start(def: LevelDef): void {
     // Today's events may raise the pay.
-    const lv = { ...def, weather: this.weatherOf(def), pay: eventPay(def, new Date()) };
+    // (The evening's cows: Serbest gez of a late afternoon, the dark falling.)
+    if (!this.roaming) this.eveningRun = false;
+    const lv = { ...def, weather: this.eveningRun ? ('evening' as const) : this.weatherOf(def), pay: eventPay(def, new Date()) };
+    this.view.herd = this.eveningRun ? EVENING.cows : 0;
+    this.view.duskLevel = this.eveningRun ? 0.15 : null;
     this.level = def;
     // Every job starts on the pat pat by the house at the top of the slope, the trimmer in the trailer without line.
     // (Development: ?tirpan in the address starts every job in the field with the trimmer in hand.)
     const from = this.roaming ? 'home' : DEV_TRIMMER ? 'ready' : !this.save.introDone && def.id === LEVELS[0].id ? 'home' : 'patpat';
     // On from the last job's field if the day goes on; from home after the menu.
-    this.session = new Session(lv, this.save.upgrades, this.input.easy ? 1.5 : 1, this.save.equipment, from, this.roaming ? undefined : (this.lastJob ?? undefined));
+    this.session = new Session(lv, this.save.upgrades, this.input.easy ? 1.5 : 1, this.save.equipment, from, this.roaming && !this.arrival ? undefined : (this.lastJob ?? undefined));
     // Roaming: nothing to do first (no trimmer to take for a job).
     if (this.roaming) {
       this.session.intro = null;
@@ -1852,12 +2225,21 @@ class Game {
       s.broken = true;
     }
     this.fromRoam = false;
-    if (!this.roaming) this.harvesting = this.harvestTab = false;
+    // In from the other village by its road: at the wheel, the trimmer in the vehicle.
+    if (this.arrival) {
+      this.session.hasTrimmer = false;
+      this.session.board();
+      this.arrival = false;
+    }
+    if (!this.roaming) this.harvesting = this.wooding = this.harvestTab = false;
     document.body.classList.toggle('roam', this.roaming);
+    this.travelTo = null;
+    document.body.classList.remove('travel');
     // The vehicle bought and chosen in the shop.
-    this.session.field.tractor = this.save.vehicle === 'traktor';
+    this.session.field.tractor = isTractor(this.save.vehicle);
+    this.session.field.bigTractor = this.save.vehicle === 'buyuk';
     this.session.field.trailer = this.trailerOn ? { yaw: NaN } : null;
-    this.audio.setTractor(this.session.field.tractor);
+    this.audio.setTractor(this.session.field.tractor, this.session.field.bigTractor);
     this.lastJob = null;
     // The coffee-house jobs stand in the neighbours' gardens.
     this.refreshIlanlar();
@@ -1866,6 +2248,7 @@ class Game {
     // The fields still locked by the player's own progress show it (chain and padlock), even while
     // development lets every job be played from the list.
     WorldView.unlockedUpTo = this.save.unlocked;
+    WorldView.exitTo = this.otherRegion(this.session)?.name ?? null;
     this.applyLook();
     WorldView.waitText = Object.fromEntries(LEVELS.map((l) => [l.id, this.readyIn(l) ? `Ot uzuyor: ${formatWait(this.readyIn(l))}` : 'Hazır']));
     // The harvest, in Yeşilyamaç once its gardens are done.
@@ -1883,10 +2266,55 @@ class Game {
     }
     this.session.field.harvestPiles = hv?.piles;
     WorldView.harvest = this.harvestHere;
+    // The storm's wood in Karadere: now and then a tree down in the garden (the first time it can be, always;
+    // in rain more often); the logs waiting by the gates (the ones fetched dropped).
+    const wd = this.session.field.region.id === WOOD.region ? this.wood() : null;
+    this.woodHere = !!wd;
+    this.woodTree = null;
+    this.woodCut = this.woodT = this.sawT = 0;
+    this.sawStarter = sawStarter();
+    this.sawRunning = this.sawWasInHand = false;
+    if (wd) {
+      wd.piles = wd.piles.filter((q) => q.n > 0);
+      if (!this.roaming && def.id >= WOOD.from && def.id < 100 && (!wd.intro || Math.random() < (lv.weather === 'rain' ? WOOD.rainChance : WOOD.chance))) {
+        const t = pickFieldTree(this.session.field, Math.random);
+        if (t) {
+          layTree(this.session.field, t);
+          this.woodTree = t;
+          wd.intro = true;
+          void writeSave(this.save);
+        }
+      }
+      if (this.roaming && (wd.load > 0 || logsWaiting(wd) > 0)) this.wooding = true;
+    }
+    WorldView.wood = wd ? { tree: this.woodTree, piles: wd.piles } : null;
+    // Now and then a cow wanders into the garden: in a job whose owner tips (left in, no tip).
+    const cowGarden = (def.theme === 'findik' || def.theme === 'yayla') && def.client.request !== 'none';
+    this.view.cowIntruder = !this.roaming && !this.eveningRun && def.id >= COW.from && def.id < 100 && cowGarden && Math.random() < COW.chance ? { after: 40 + Math.random() * 50 } : null;
+    // Now and then the owner wants some tilling too: the bostan in a corner, or the ocaks' feet.
+    this.tillTask = null;
+    this.tillerInHand = this.tillWasInHand = this.tillRunning = false;
+    this.tillStarter = sawStarter();
+    this.tillQuarter = 0;
+    if (!this.roaming && def.id >= TILL.from && def.id < 100 && (def.theme === 'findik' || def.theme === 'yayla') && Math.random() < TILL.chance) {
+      const f = this.session.field;
+      const kind = Math.random() < 0.5 ? 'bostan' : 'ocak';
+      const t = pickTillTask(f, kind, Math.random) ?? pickTillTask(f, kind === 'bostan' ? 'ocak' : 'bostan', Math.random);
+      if (t) layBostan(f, t);
+      this.tillTask = t;
+    }
+    WorldView.till = this.tillTask;
+    // Now and then the owner wants the cut grass blown together and burned.
+    this.burnTask = null;
+    this.blowerInHand = this.blowerWasInHand = this.blowerRunning = this.burnReady = false;
+    this.blowerStarter = sawStarter();
+    this.burnReveal = 0;
+    if (!this.roaming && def.id >= BURN.from && def.id < 100 && (def.theme === 'findik' || def.theme === 'yayla') && Math.random() < BURN.chance) this.burnTask = pickBurnTask(this.session.field, Math.random);
+    WorldView.burn = this.burnTask;
     this.patosRunning = this.hoseInHand = false;
     this.view.load(this.session, this.models);
     // After the first few jobs the objective is one line (where, how far): its how-to line only for the harvest.
-    document.body.classList.toggle('obj-brief', Object.keys(this.save.best).length >= 3 && !this.harvesting);
+    document.body.classList.toggle('obj-brief', Object.keys(this.save.best).length >= 3 && !this.harvesting && !this.wooding);
     // Every job starts in first person, at the worker's eyes on the harman (the eye button still
     // switches to the camera behind him for the job).
     this.save.camera = 'fpv';
@@ -1927,8 +2355,27 @@ class Game {
     if (this.roaming && this.harvesting) {
       this.guideKey = this.harvestGuide(this.session).key;
       if (!this.harvestTab) this.toast('Serbest gez: yarım kalan hasadın var, sıradaki adım üstte yazıyor', 'good');
-    } else if (this.roaming) this.toast('Serbest gez: tırpan evde, köy senin. Bir tarlanın kapısında BU İŞE GEÇ ile iş başlar', 'good');
-    else this.toast(`Bugünkü iş: ${lv.name}`, 'good', 'job', 6, 3000);
+    } else if (this.roaming && this.wooding) {
+      this.guideKey = this.woodGuide(this.session).key;
+      this.toast('Serbest gez: kütüklerin seni bekliyor, eve taşımak için sıradaki adım üstte yazıyor', 'good');
+    } else if (this.roaming && this.eveningRun) this.toast(`Akşam oluyor: ${EVENING.cows} inek yollarda otluyor. Arkalarına geç, ahıra doğru sür${this.view.dog ? ' (Karabaş yardım eder)' : ''}`, 'good', 'evening', 5, 6000);
+    else if (this.roaming) this.toast('Serbest gez: tırpan evde, köy senin. Bir tarlanın kapısında BU İŞE GEÇ ile iş başlar', 'good');
+    else {
+      // (What else there is to do in this garden: a storm's tree, some tilling.)
+      const t = this.tillTask;
+      const tool = this.save.equipment.owned.includes(TILL.tool.id) ? '' : ' (Motor Çapa: Dükkân › Donanım)';
+      const extras = [
+        this.woodTree ? 'Fırtına bahçeye ağaç devirmiş! Testeren varsa kes: kütükler senin' : '',
+        t ? `${lv.client.name} ${t.kind === 'bostan' ? `bostanı da çapalamanı istiyor (+${TILL.pay.bostan} TL)` : `${t.ocaks?.length} ocağın dibini çapalamanı istiyor (+${(t.ocaks?.length ?? 0) * TILL.pay.ocak} TL)`}${tool}` : '',
+        this.burnTask ? `${lv.client.name} biçilen otu ortaya üfleyip yakmanı istiyor (+${BURN.pay} TL)${this.save.equipment.owned.includes(BURN.tool.id) ? '' : ' (Üfleme Makinesi: Dükkân › Donanım)'}` : '',
+      ].filter(Boolean);
+      this.toast(`Bugünkü iş: ${lv.name}${extras.length ? '. ' + extras.join('. ') : ''}`, 'good', 'job', 6, extras.length ? 7000 : 3000);
+    }
+  }
+
+  /** A shop item for later on not yet on sale: the job it waits for (null: on sale). */
+  private lockedUntil(needs?: number): number | null {
+    return needs && this.save.unlocked < needs ? needs : null;
   }
 
   /** The harvest is open: Yeşilyamaç's gardens done (or every job open while developing). */
@@ -1939,7 +2386,7 @@ class Game {
   /** What the player has for the patos. */
   private get harvestHas(): { patos: boolean; tractor: boolean } {
     const v = this.save.vehicles ?? [];
-    return { patos: v.includes('patos'), tractor: v.includes('traktor') };
+    return { patos: v.includes('patos'), tractor: v.includes('traktor') || v.includes('buyuk') };
   }
 
   /** The harvest's state (null: never started; the player starts one from its tab). */
@@ -1981,7 +2428,7 @@ class Game {
     }
     const f = s.field;
     f.cargo = h.load;
-    f.cargoCap = capacityOf(f.tractor, !!f.trailer && !this.patosHitched);
+    f.cargoCap = Math.round(capacityOf(f.tractor, !!f.trailer && !this.patosHitched) * (f.bigTractor ? BIG_PULL.carry : 1));
     // A held action: a sack a beat.
     const held = this.actionHeld ? this.heldId : '';
     this.harvestT = held === 'sack' || held === 'spread' ? this.harvestT + dt : this.hoseInHand ? this.harvestT : 0;
@@ -2165,7 +2612,7 @@ class Game {
   private goHarvest(): void {
     $('harvest-offer').classList.remove('show');
     this.levelTab = HARVEST_REGION;
-    void this.startRoam(true);
+    void this.startRoam('harvest');
   }
 
   /**
@@ -2237,6 +2684,7 @@ class Game {
       const buy = add(`HEMEN BAŞLAT <b class="hv-price">${this.harvestPrice || HARVEST_NOW.devPrice}</b>`, 'btn gold', () => {
         void buyProduct(HARVEST_NOW.id, true).then((ok) => {
           if (ok) start();
+          else this.notice('Satın alma olmadı', 'Ödeme tamamlanmadı, para çekilmedi. İnternetini kontrol edip yeniden dene.');
         });
       });
       if (!this.harvestPrice)
@@ -2313,7 +2761,7 @@ class Game {
   private async dryByAd(): Promise<void> {
     const h = this.save.harvest;
     if (!h) return;
-    if (!(await showRewarded('Kuruma hızlandı!'))) return;
+    if (!(await this.rewarded('Kuruma hızlandı!'))) return;
     dryWithAd(h, this.now());
     tickHarvest(h, this.now());
     void writeSave(this.save);
@@ -2335,6 +2783,230 @@ class Game {
     this.updateMoney();
     void writeSave(this.save);
     this.toast(`Hasat bitti! Tüccar fındığı aldı: +${pay.toLocaleString('tr-TR')} TL. Yeni hasat ${HARVEST.everyDays} gün sonra (ana menüde FINDIK HARMANI)`, 'good');
+  }
+
+  /** The storm's wood is open: Karadere's job WOOD.needs reached (or every job open while developing). */
+  private get woodOpen(): boolean {
+    return UNLOCK_ALL || this.save.unlocked >= WOOD.needs;
+  }
+
+  /** The chainsaw bought. */
+  private get hasSaw(): boolean {
+    return this.save.equipment.owned.includes(WOOD.saw.id);
+  }
+
+  /** The player's wood (piles by the gates, the load, the yard's stock); made the first time it is asked for once open. */
+  private wood(): WoodState | null {
+    if (!this.woodOpen) return null;
+    const w = this.save.wood;
+    // (A save from before the logs were the player's: started afresh.)
+    if (!w || !Array.isArray(w.piles)) this.save.wood = newWood();
+    return this.save.wood!;
+  }
+
+  /** On foot by the next cut of the tree in this garden. */
+  private atCut(s: Session): boolean {
+    const t = this.woodTree;
+    if (!t || this.woodCut >= WOOD.pieces || s.driving) return false;
+    const c = treePoint(t, cutAt(this.woodCut));
+    return Math.hypot(c.x - s.x, c.z - s.z) < cutStand(this.woodCut) + 1.6;
+  }
+
+  /** The pile by a gate the worker (or the vehicle's bed) is at, with logs left (its index; -1: none). */
+  private pileAt(s: Session, w: WoodState): number {
+    const bed = this.loadBed(s);
+    return w.piles.findIndex((p) => {
+      if (p.n <= 0) return false;
+      const sp = pileSpots(s.field, p);
+      return Math.hypot(sp.pile.x - s.x, sp.pile.z - s.z) < 4 || Math.hypot(sp.load.x - s.x, sp.load.z - s.z) < 4 || inSpot(sp.load, bed.x, bed.z, 0.6);
+    });
+  }
+
+  /**
+   * Every frame of a job in Karadere: the chainsaw in hand by the storm's tree, the held KES (a piece
+   * every CUT_PACE, the sawdust flying), KÜTÜK YÜKLE and İSTİFLE (a log every LOG_PACE), the load on the
+   * vehicle, and the scene drawn from it.
+   */
+  private woodStep(s: Session, dt: number): void {
+    const w = this.woodHere ? this.wood() : null;
+    this.view.sawInHand = false;
+    this.view.sawing = 0;
+    if (!w) return;
+    if (this.wooding) {
+      const g = this.woodGuide(s);
+      if (g.key !== this.guideKey) {
+        this.guideKey = g.key;
+        if (g.alert) {
+          const el = $('objective');
+          el.classList.remove('alert');
+          void el.offsetWidth;
+          el.classList.add('alert');
+          haptic('medium');
+        }
+      }
+    }
+    const f = s.field;
+    if (!this.harvestHere) {
+      f.cargo = w.load;
+      f.cargoCap = Math.round(woodCapacity(f.tractor, !!f.trailer && !this.patosHitched) * (f.bigTractor ? BIG_PULL.carry : 1));
+    }
+    const t = this.woodTree;
+    // By the tree with cutting to do: the chainsaw in hand (the trimmer put away first).
+    if (t && this.woodCut < WOOD.pieces && !s.driving && Math.hypot(t.x - s.x, t.z - s.z) < TREE_NEAR) {
+      if (this.hasSaw && !s.hasTrimmer && !this.tillerInHand && !this.blowerInHand) this.view.sawInHand = true;
+      else if (this.atCut(s)) this.toast(this.hasSaw ? 'Ağaç testereyle kesilir: tırpanı kasaya bırak (TIRPANI BIRAK), gel, gaza bas' : 'Ağacı kesmek için motorlu testere lazım (Dükkân › Donanım). Kesersen kütükler senin', 'warn', 'tree-how', 25);
+    }
+    // Put away (walked off, the trimmer taken, driving): it stops. Taken up or put away: its starter shown or hidden.
+    if (!this.view.sawInHand) this.sawRunning = false;
+    if (this.view.sawInHand !== this.sawWasInHand) {
+      this.sawWasInHand = this.view.sawInHand;
+      this.updateStarterUi();
+    }
+    if (this.view.sawInHand && this.atCut(s) && this.sawRunning) this.toast('Sarı çizginin yanındasın: gaz tetiğine bas, kes. Az gaz yavaş, çok gaz hızlı keser', 'good', 'saw-how', 40);
+    this.view.sawOn = this.sawRunning;
+    // The chainsaw on the trimmer's own trigger: as much throttle as it is given, it revs and cuts.
+    const gas = this.view.sawInHand && this.sawRunning ? this.input.throttleLevel : 0;
+    this.view.sawing = gas;
+    const cutting = gas > 0.08 && this.atCut(s);
+    const held = this.actionHeld ? this.heldId : '';
+    this.woodT = held === 'log' || held === 'stack' ? this.woodT + dt : 0;
+    if (cutting && t) {
+      // Sawdust from the cut, more the harder it is worked.
+      const c = treePoint(t, cutAt(this.woodCut), 0.3);
+      if (Math.random() < dt * 25 * gas) this.view.emit(c.x, c.z, 2, 'dust', 0.9);
+      // (Ticking over it hardly bites: the cut goes with the throttle, more than in proportion.)
+      this.sawT += (dt / CUT_PACE) * gas * gas;
+      if (this.sawT >= 1) {
+        this.sawT = 0;
+        // (The crown's pieces drop their leaves.)
+        if (inCrown(this.woodCut)) this.view.emit(c.x, c.z, 16, 'leaf', 1.4);
+        this.woodCut++;
+        haptic('medium');
+        this.audio.trunk();
+        f.blocks = treeBlocks(t, this.woodCut);
+        f.shade = underTree(t, this.woodCut);
+        if (this.woodCut < WOOD.pieces) this.toast(`${this.woodCut}/${WOOD.pieces} parça kesildi`, 'good', 'saw-piece');
+        if (this.woodCut >= WOOD.pieces) this.toast(`Ağaç kesildi! ${WOOD.pieces} kütük senin: iş bitince bahçe sahibi kapının önüne yığar, sonra araçla eve taşırsın. Tırpanı kasadan al, altındaki otu da biç`, 'good');
+      }
+    }
+    if ((held === 'log' || held === 'stack') && this.woodT >= LOG_PACE) {
+      this.woodT = 0;
+      if (held === 'log') {
+        const i = this.pileAt(s, w);
+        if (i >= 0 && loadLog(w, i, f.cargoCap)) {
+          haptic('light');
+          this.audio.ui();
+          void writeSave(this.save);
+          if (w.load >= f.cargoCap && logsWaiting(w)) this.toast(`Araç doldu (${w.load} kütük): eve götür, harmanın yanındaki sarı İSTİF alanına`, 'warn');
+          else if (w.piles[i].n <= 0) this.toast(logsWaiting(w) && w.load < f.cargoCap ? 'Buradaki kütükler bitti: öteki yığına git ya da eve götür' : 'Kütükler araçta: eve götür, odunluğa istifle', 'good');
+        }
+      } else if (stackLog(w)) {
+        haptic('light');
+        this.audio.ui();
+        void writeSave(this.save);
+        if (!w.load) this.toast(`Odunlukta ${w.stock} kütük. Satmak için rafın önünde ODUN SAT${logsWaiting(w) ? ' · kapıların önünde daha kütük var' : ''}`, 'good');
+      }
+    }
+    this.audio.setSaw(this.view.sawInHand && this.sawRunning, this.view.sawing, cutting);
+    this.view.world?.updateWood(this.woodCut, w);
+  }
+
+  /** The woodpile sold to the baker. */
+  private sellWood(): void {
+    const w = this.wood();
+    if (!w) return;
+    const pay = sellStock(w);
+    if (!pay) return;
+    this.save.money += pay;
+    this.audio.coin();
+    this.audio.success();
+    haptic('medium');
+    this.updateMoney();
+    void writeSave(this.save);
+    this.toast(`Odun satıldı! Köyün fırıncısı hepsini aldı: +${pay.toLocaleString('tr-TR')} TL`, 'good');
+  }
+
+  /** The wood's buttons where the worker stands. */
+  private woodActions(s: Session, acts: Parameters<Game['renderActions']>[0]): void {
+    const w = this.woodHere ? this.wood() : null;
+    if (!w || s.driving) return;
+    const f = s.field;
+    if (this.atCut(s)) {
+      if (!this.hasSaw) acts.push({ id: 'cut-nosaw', icon: 'i-coins', label: 'TESTERE LAZIM', sub: 'Dükkân › Donanım', run: () => this.toast('Ağacı kesmek için motorlu testere lazım: evin önünde DÜKKAN › Donanım', 'warn') });
+      else if (s.hasTrimmer) acts.push({ id: 'cut-trimmer', icon: 'i-hand', label: 'TIRPANLA OLMAZ', sub: 'tırpanı kasaya bırak', run: () => this.toast('Ağaç testereyle kesilir: tırpanı kasaya bırak, gel', 'warn') });
+    }
+    const bed = this.loadBed(s);
+    const pi = this.pileAt(s, w);
+    if (pi >= 0) {
+      const sp = pileSpots(f, w.piles[pi]);
+      if (!inSpot(sp.load, bed.x, bed.z, 0.6)) acts.push({ id: 'log-far', icon: 'i-tractor', label: 'ARACI YANAŞTIR', sub: 'kasası sarı alana', run: () => this.toast('Patpatın kasasını ya da römorku kütüklerin yanındaki sarı KÜTÜK YÜKLE alanına getir', 'warn') });
+      else if (!f.cargoCap) acts.push({ id: 'log-no', icon: 'i-tractor', label: 'RÖMORK LAZIM', sub: 'traktöre römork tak', run: () => this.toast('Traktör kütüğü römorkla taşır: Dükkân › Araç › Römork', 'warn') });
+      else acts.push({ id: 'log', icon: 'i-hand', label: 'KÜTÜK YÜKLE', sub: `${w.load}/${f.cargoCap} · basılı tut`, hold: true, progress: w.load / f.cargoCap });
+    }
+    const sp = woodSpots(f);
+    const ta = f.trailerAxle();
+    const byLoad = s.nearVehicle || (!!ta && Math.hypot(ta.x - s.x, ta.z - s.z) < 3.5);
+    if (w.load > 0 && byLoad && Math.hypot(s.x - sp.unload.x, s.z - sp.unload.z) < 9) {
+      if (!inSpot(sp.unload, bed.x, bed.z, 0.6)) acts.push({ id: 'stack-far', icon: 'i-tractor', label: 'İSTİF YERİNE ÇEK', sub: 'odunluğun yanındaki sarı alan', run: () => this.toast('Kasayı harmanın yanındaki, odunluğun önündeki sarı İSTİF alanına getir', 'warn') });
+      else acts.push({ id: 'stack', icon: 'i-hand', label: 'İSTİFLE', sub: `odunlukta ${w.stock} · araçta ${w.load} · basılı tut`, hold: true, progress: 1 - w.load / Math.max(1, f.cargoCap) });
+    }
+    // At the rack on foot, the vehicle emptied: the stack sold. (Not while stacking: a button coming up
+    // beside the held İSTİFLE would rebuild the row under the finger.)
+    if (w.stock > 0 && !w.load && Math.hypot(s.x - sp.rack.x, s.z - sp.rack.z) < 4.5)
+      acts.push({ id: 'sell-wood', icon: 'i-coins', label: 'ODUN SAT', sub: `${w.stock} kütük · ${(w.stock * WOOD.pricePerLog).toLocaleString('tr-TR')} TL`, run: () => this.sellWood() });
+  }
+
+  /**
+   * The wood's next step in Serbest gez (logs waiting by a gate, or on the vehicle): the objective's
+   * line (an arrow to `to`), and a warning (`alert`) the moment one is needed (stop and get off).
+   */
+  private woodGuide(s: Session): { key: string; head: string; sub: string; to?: { x: number; z: number }; alert?: string } {
+    const w = this.wood();
+    if (!w || (!w.load && !logsWaiting(w))) return { key: 'none', head: '', sub: '' };
+    const f = s.field;
+    const bed = this.loadBed(s);
+    const dist = (q: { x: number; z: number }) => Math.round(Math.hypot(q.x - s.x, q.z - s.z));
+    const tr = f.tractor;
+    const board = (key: string, why: string) =>
+      s.nearVehicle
+        ? { key: `${key}-b`, head: tr ? 'Traktöre bin' : 'Patpata bin', sub: why }
+        : { key: `${key}-w`, head: `${tr ? 'Traktörüne' : 'Patpatına'} git (${dist(f.vehicle)} m)`, sub: why, to: f.vehicle };
+    const ta = f.trailerAxle();
+    const byLoad = s.nearVehicle || (!!ta && Math.hypot(ta.x - s.x, ta.z - s.z) < 3.5);
+    const cap = woodCapacity(tr, !!f.trailer && !this.patosHitched);
+    const waiting = logsWaiting(w);
+    // Home with what is on the vehicle: full, or nothing more waiting.
+    if (w.load > 0 && (w.load >= cap || !waiting)) {
+      const u = woodSpots(f).unload;
+      if (inSpot(u, bed.x, bed.z, 0.6)) {
+        if (s.driving) return { key: 'y-off', head: 'Dur ve araçtan in', sub: 'Kütükleri odunluğa elle istifleyeceksin: İN butonuna bas', alert: 'İstif yerindesin! Dur ve araçtan in' };
+        if (!byLoad) return { key: 'y-walk', head: 'Kasanın yanına yürü', sub: 'Yanına gidince İSTİFLE çıkar', to: bed };
+        return { key: 'y-stack', head: 'İSTİFLE butonuna basılı tut', sub: `Araçta ${w.load} kütük · odunlukta ${w.stock}` };
+      }
+      if (s.driving) {
+        const r = this.trackTo(s, f.harman);
+        return { key: 'y-drive', head: `Eve götür (${r && dist(f.harman) > 15 ? r.left : dist(u)} m)`, sub: 'Kasayı harmanın yanında, odunluğun önündeki sarı İSTİF alanına getir', to: r && dist(f.harman) > 15 ? r : u };
+      }
+      return board('y', `${w.load} kütük araçta: eve götür, odunluğun önündeki sarı İSTİF alanına`);
+    }
+    if (!cap) return { key: 'l-trailer', head: `${waiting} kütük kapıların önünde: römork lazım`, sub: 'Traktör kütüğü römorkla taşır: evin önünde DÜKKAN › Araç: römorku TAK ya da patpatı SEÇ', alert: 'Traktörde römork yok' };
+    // To the nearest pile.
+    const near = (p: LogPile) => {
+      const sp = pileSpots(f, p).load;
+      return Math.hypot(sp.x - bed.x, sp.z - bed.z);
+    };
+    const p = w.piles.filter((q) => q.n > 0).reduce((a, b) => (near(b) < near(a) ? b : a));
+    const sp = pileSpots(f, p);
+    if (inSpot(sp.load, bed.x, bed.z, 0.6)) {
+      if (s.driving) return { key: 'l-off', head: 'Dur ve araçtan in', sub: 'Kütükleri elle yükleyeceksin: İN butonuna bas', alert: 'Yerindesin! Dur ve araçtan in, kütükleri yükle' };
+      if (Math.hypot(sp.pile.x - s.x, sp.pile.z - s.z) >= 4 && Math.hypot(sp.load.x - s.x, sp.load.z - s.z) >= 4) return { key: 'l-walk', head: `Kütüklerin yanına yürü (${dist(sp.pile)} m)`, sub: 'Yanlarına gidince KÜTÜK YÜKLE çıkar', to: sp.pile };
+      return { key: 'l-load', head: 'KÜTÜK YÜKLE butonuna basılı tut', sub: `Araçta ${w.load}/${cap} · burada ${p.n} kütük` };
+    }
+    if (s.driving) {
+      const r = this.trackTo(s, sp.load);
+      return { key: 'l-drive', head: `Kütüklerine git (${r?.left ?? dist(sp.load)} m)`, sub: `Bahçe kapısının önünde · kasayı sarı KÜTÜK YÜKLE alanına getir · ${waiting} kütük bekliyor`, to: r ?? sp.load };
+    }
+    return board('l', `${waiting} kütüğün bahçe kapılarının önünde bekliyor: araçla gidip kasayı sarı alana getir`);
   }
 
   /**
@@ -2436,7 +3108,7 @@ class Game {
   private openShopInGame(): void {
     if (this.mode !== 'playing') return;
     this.pauseForShop();
-    this.shopTab = this.harvesting || (harvestOn(this.save.harvest) && this.save.harvest?.stage === 'thresh') ? 'arac' : 'koy';
+    this.shopTab = this.woodTree && !this.hasSaw ? 'donanim' : this.harvesting || (harvestOn(this.save.harvest) && this.save.harvest?.stage === 'thresh') ? 'arac' : 'koy';
     this.shopNote = null;
     this.shopBack = null;
     this.openShop();
@@ -2474,7 +3146,8 @@ class Game {
   private quitToMenu(): void {
     this.lastJob = null;
     this.roaming = false;
-    document.body.classList.remove('roam');
+    this.travelTo = null;
+    document.body.classList.remove('roam', 'travel');
     this.audio.resume();
     this.audio.stopEngine();
     this.audio.patpat(false);
@@ -2494,8 +3167,18 @@ class Game {
   private finish(): void {
     const s = this.session;
     if (!s || this.mode !== 'playing') return;
+    // A cow still in the garden: the owner gives no tip.
+    const cowIn = !!this.view.cows?.intruding;
+    if (cowIn) s.cowLeftIn();
     const r = s.finish();
     this.lastResult = r;
+    const logs = this.pileLogs(s);
+    const till = this.tillTask;
+    const tillMoney = till && r.total > 0 ? tillPay(till) : 0;
+    if (tillMoney) this.save.money += tillMoney;
+    const burn = this.burnTask;
+    const burnMoney = burn && r.total > 0 ? burnPay(burn) : 0;
+    if (burnMoney) this.save.money += burnMoney;
     this.lastJob = s.carryOver();
     this.audio.stopEngine();
     this.audio.patpat(false);
@@ -2544,16 +3227,284 @@ class Game {
     ];
     if (r.accidents > 0) rows.push(['Kazalar (arı, tavuk, hortum)', `−${r.accidents} TL`, 'neg']);
     const c = this.level.client;
-    if (c.request !== 'none') rows.push([`Bahşiş · ${c.name}`, r.requestMet ? `+${r.tip} TL` : 'yok (istek tutmadı)', r.requestMet ? '' : 'neg']);
+    if (c.request !== 'none') rows.push([`Bahşiş · ${c.name}`, r.requestMet ? `+${r.tip} TL` : cowIn ? 'yok (inek bahçede kaldı)' : 'yok (istek tutmadı)', r.requestMet ? '' : 'neg']);
+    if (logs) rows.push(['Devrik ağaç', `${logs} kütük kapının önünde, senin`]);
+    if (burn) rows.push(['Ot yakma', burnMoney ? `+${burnMoney} TL` : `yapılmadı (yığında %${Math.round(heaped(burn) * 100)})`, burnMoney ? '' : 'neg']);
+    if (till) rows.push([till.kind === 'bostan' ? 'Bostan çapası' : 'Ocak dibi çapası', tillMoney ? `+${tillMoney} TL` : `yapılmadı (%${Math.round(tilled(till) * 100)})`, tillMoney ? '' : 'neg']);
     $('result-table').innerHTML =
       rows.map(([a, b, c]) => `<tr><td>${a}</td><td class="${c ?? ''}">${b}</td></tr>`).join('') +
-      `<tr class="total"><td>Eline geçen</td><td>${r.total} TL</td></tr>`;
+      `<tr class="total"><td>Eline geçen</td><td>${r.total + tillMoney + burnMoney} TL</td></tr>`;
     const hasNext = LEVELS.some((l) => l.id === this.level.id + 1) && r.total > 0;
     $('btn-next').style.display = hasNext ? '' : 'none';
     this.doubled = false;
     $('btn-ad-double').style.display = r.total > 0 ? '' : 'none';
     $('ad-double-text').textContent = `+${r.total} TL daha al`;
     this.show('result');
+  }
+
+  /**
+   * Karabaş and the snakes: a snake still hidden where the dog comes sniffing is found before the worker
+   * steps on it: it barks, runs at it, and the snake slithers off (no fright for the worker).
+   */
+  private dogStep(s: Session, dt: number): void {
+    const d = this.view.dog;
+    if (!d) return;
+    this.barkT -= dt;
+    for (const sn of s.field.snakes) {
+      if (sn.state !== 'hidden' || d.distanceTo(sn.x, sn.z) > DOG_NOSE) continue;
+      sn.state = 'flee';
+      sn.t = SNAKE.flee;
+      sn.yaw = Math.atan2(sn.x - d.x, sn.z - d.z);
+      d.chase = { x: sn.x, z: sn.z, t: 2.6 };
+      this.toast('Karabaş yılanı buldu, kaçırdı!', 'good', 'dog-snake', 4);
+      this.barkT = 0;
+    }
+    // Barking while it is after one: a bark or two at a time.
+    if (d.chase) {
+      if (this.barkT <= 0) {
+        this.audio.bark(Math.hypot(d.x - s.x, d.z - s.z));
+        this.barkT = 0.45 + Math.random() * 0.6;
+      }
+    }
+  }
+
+  /**
+   * The motor çapa each frame: put back in the vehicle when the worker drives off; in hand and running,
+   * its tines (ahead of it) turn over the cells under them as hard as the throttle says, the grass there
+   * going with them; how far the work has got told by the quarter.
+   */
+  private tillStep(s: Session, dt: number): void {
+    const t = this.tillTask;
+    this.view.tillerInHand = this.view.tillerOn = false;
+    this.view.tillerGas = 0;
+    if (!t) return;
+    if (s.driving && this.tillerInHand) {
+      this.tillerInHand = this.tillRunning = false;
+      this.toast('Çapa kasaya kondu', '', 'till-put', 3);
+    }
+    const inHand = this.tillerInHand && !s.driving;
+    if (inHand !== this.tillWasInHand) {
+      this.tillWasInHand = inHand;
+      this.updateStarterUi();
+    }
+    let working = false;
+    let gas = 0;
+    if (inHand) {
+      gas = this.tillRunning ? this.input.throttleLevel : 0;
+      this.view.tillerInHand = true;
+      this.view.tillerOn = this.tillRunning;
+      this.view.tillerGas = gas;
+      const ahead = TILLER_AHEAD + (this.view.tiller?.tinesAhead ?? 0.18);
+      const x = s.x + Math.sin(s.yaw) * ahead;
+      const z = s.z + Math.cos(s.yaw) * ahead;
+      const before = tilled(t);
+      tillAt(t, x, z, s.yaw, gas, dt);
+      working = gas > 0.2 && t.cells.some((c) => c.t < 1 && Math.hypot(c.x - x, c.z - z) < 0.7);
+      if (gas > 0.2) {
+        // The grass under the tines goes too; the soil flies.
+        const ax = Math.cos(s.yaw) * 0.32;
+        const az = -Math.sin(s.yaw) * 0.32;
+        s.field.cutSegment(x - ax, z - az, x + ax, z + az, 0.25);
+        if (working && Math.random() < dt * 18 * gas) this.view.emit(x, z, 3, 'dust', 0.2);
+      }
+      const after = tilled(t);
+      const q = Math.floor(after * 4);
+      if (after >= TILL.done && before < TILL.done) this.toast(`Çapa tamam! ${this.level.client.name} iş sonunda +${tillPay(t)} TL verecek`, 'good');
+      else if (q > this.tillQuarter && q < 4) this.toast(`Çapa: %${q * 25}`, 'good', 'till-q', 1);
+      this.tillQuarter = Math.max(this.tillQuarter, q);
+    }
+    this.audio.setTiller(inHand && this.tillRunning, gas, working);
+    this.view.world?.updateTill(t, dt);
+  }
+
+  /** The tiller taken out of the vehicle (the trimmer put away first) and put back. */
+  private tillActions(s: Session, acts: Parameters<Game['renderActions']>[0]): void {
+    const t = this.tillTask;
+    if (!t || s.driving || !s.nearVehicle) return;
+    const what = `${t.kind === 'bostan' ? 'bostan' : 'ocak dipleri'} %${Math.round(tilled(t) * 100)}`;
+    if (this.tillerInHand)
+      acts.push({ id: 'tiller-off', icon: 'i-hand', label: 'ÇAPAYI KOY', sub: `kasaya · ${what}`, run: () => {
+        this.tillerInHand = this.tillRunning = false;
+        this.updateStarterUi();
+      } });
+    else if (!s.hasTrimmer && !this.blowerInHand && this.save.equipment.owned.includes(TILL.tool.id))
+      acts.push({ id: 'tiller', icon: 'i-hand', label: 'ÇAPAYI AL', sub: what, run: () => {
+        this.tillerInHand = true;
+        this.updateStarterUi();
+      } });
+  }
+
+  /**
+   * The cut grass each frame: the tufts showing as the grass under them is mown; the blower, worn and
+   * running, blowing them along on the throttle from its tube (ahead on the right); the heap, once lit,
+   * burning down with its smoke and crackle.
+   */
+  private burnStep(s: Session, dt: number): void {
+    const t = this.burnTask;
+    this.view.blowerInHand = this.view.blowerOn = false;
+    this.view.blowerGas = 0;
+    if (!t) return;
+    const f = s.field;
+    this.burnReveal = revealTufts(t, f, this.burnReveal, 30);
+    if (s.driving && this.blowerInHand) {
+      this.blowerInHand = this.blowerRunning = false;
+      this.toast('Üfleyici kasaya kondu', '', 'blow-put', 3);
+    }
+    const inHand = this.blowerInHand && !s.driving;
+    if (inHand !== this.blowerWasInHand) {
+      this.blowerWasInHand = inHand;
+      this.updateStarterUi();
+    }
+    let gas = 0;
+    if (inHand) {
+      gas = this.blowerRunning ? this.input.throttleLevel : 0;
+      this.view.blowerInHand = true;
+      this.view.blowerOn = this.blowerRunning;
+      this.view.blowerGas = gas;
+      // The tube's mouth: ahead of him, a little to the right, low.
+      const mx = s.x + Math.sin(s.yaw) * 1.0 + Math.cos(s.yaw) * -0.25;
+      const mz = s.z + Math.cos(s.yaw) * 1.0 - Math.sin(s.yaw) * -0.25;
+      if (t.lit === undefined) blow(t, f, mx, mz, s.yaw, gas, dt);
+      if (gas > 0.3 && Math.random() < dt * 20 * gas) this.view.emit(mx + Math.sin(s.yaw) * 1.5, mz + Math.cos(s.yaw) * 1.5, 2, 'grass', 0.15);
+    } else if (t.lit === undefined) blow(t, f, 0, 0, 0, 0, dt);
+    const k = heaped(t);
+    if (k >= BURN.done && !this.burnReady && t.lit === undefined) {
+      this.burnReady = true;
+      this.toast('Yığın hazır! Yanına git, YAK', 'good');
+    }
+    if (t.lit !== undefined && t.lit < BURN.burns) {
+      t.lit += dt;
+      if (t.lit >= BURN.burns) this.toast(`Yığın yandı. ${this.level.client.name} iş sonunda +${BURN.pay} TL verecek`, 'good');
+    }
+    this.audio.setBlower(inHand && this.blowerRunning, gas);
+    const fire = this.view.world?.updateBurn(t, performance.now() / 1000) ?? null;
+    if (fire && Math.random() < dt * 14) this.view.smoke(fire.x + (Math.random() - 0.5) * 0.8, fire.y, fire.z + (Math.random() - 0.5) * 0.8, 3);
+    if (fire && Math.random() < dt * 6) this.view.emit(fire.x, fire.z, 2, 'spark', 1.0);
+    this.audio.setFire(fire ? Math.max(0, 1 - Math.hypot(fire.x - s.x, fire.z - s.z) / 35) : 0);
+  }
+
+  /** The blower taken out of the vehicle (the trimmer put away first) and put back; the heap lit. */
+  private burnActions(s: Session, acts: Parameters<Game['renderActions']>[0]): void {
+    const t = this.burnTask;
+    if (!t || s.driving) return;
+    const k = heaped(t);
+    const what = t.lit !== undefined ? 'yandı' : `yığında %${Math.round(k * 100)}`;
+    if (s.nearVehicle) {
+      if (this.blowerInHand)
+        acts.push({ id: 'blower-off', icon: 'i-hand', label: 'ÜFLEYİCİYİ KOY', sub: `kasaya · ${what}`, run: () => {
+          this.blowerInHand = this.blowerRunning = false;
+          this.updateStarterUi();
+        } });
+      else if (!s.hasTrimmer && !this.tillerInHand && t.lit === undefined && this.save.equipment.owned.includes(BURN.tool.id))
+        acts.push({ id: 'blower', icon: 'i-hand', label: 'ÜFLEYİCİYİ AL', sub: what, run: () => {
+          this.blowerInHand = true;
+          this.updateStarterUi();
+        } });
+    }
+    // By the heap, enough of the grass in it: set it alight.
+    if (t.lit === undefined && k >= BURN.done && Math.hypot(s.x - t.heap.x, s.z - t.heap.z) < BURN.heapR + 2.5)
+      acts.push({ id: 'burn', icon: 'i-power', label: 'YAK', sub: 'yığını tutuştur', run: () => {
+        t.lit = 0;
+        haptic('medium');
+        this.toast('Yığın tutuştu', 'good', 'lit', 3);
+      } });
+  }
+
+  /**
+   * The evening's cows each frame: the dark falling and the crickets with it; Karabaş going round behind
+   * the nearest cow still out (pushing it towards the barn's door, barking now and then); each one home
+   * told; all of them home, the pay.
+   */
+  private eveningStep(s: Session, dt: number): void {
+    if (!this.eveningRun) {
+      this.audio.setCrickets(0);
+      return;
+    }
+    const dusk = Math.min(0.92, 0.15 + s.time / 220);
+    this.view.duskLevel = dusk;
+    this.audio.setCrickets(Math.max(0, (dusk - 0.25) / 0.6));
+    const c = this.view.cows;
+    if (!c?.door) return;
+    const n = c.herdCount();
+    if (c.events.home && n.home < n.all) this.toast(`${n.home}/${n.all} inek ahırda`, 'good', 'herd', 1);
+    if (n.all && n.home >= n.all && !this.eveningDone) {
+      this.eveningDone = true;
+      this.save.money += EVENING.pay;
+      this.save.eveningDay = today();
+      void writeSave(this.save);
+      this.audio.coin();
+      this.audio.success();
+      this.updateMoney();
+      this.toast(`Bütün inekler ahırda! +${EVENING.pay} TL. İyi akşamlar`, 'good');
+    }
+    // Karabaş behind the nearest cow still out, on the far side from the door.
+    const d = this.view.dog;
+    const out = c.herdOut();
+    if (!d || !out.length) return;
+    const near = out.reduce((a, b) => (Math.hypot(b.x - s.x, b.z - s.z) < Math.hypot(a.x - s.x, a.z - s.z) ? b : a));
+    if (Math.hypot(near.x - s.x, near.z - s.z) > 35) return;
+    const dx = near.x - c.door.x;
+    const dz = near.z - c.door.z;
+    const l = Math.hypot(dx, dz) || 1;
+    d.chase = { x: near.x + (dx / l) * 4, z: near.z + (dz / l) * 4, t: 0.5 };
+    this.barkT -= dt;
+    if (this.barkT <= 0 && Math.hypot(d.x - near.x, d.z - near.z) < 6) {
+      this.audio.bark(Math.hypot(d.x - s.x, d.z - s.z));
+      this.barkT = 2 + Math.random() * 3;
+    }
+  }
+
+  /** The evening's next step: to the nearest cow still out (round behind it), or all home. */
+  private eveningGuide(s: Session): { key: string; head: string; sub: string; to?: { x: number; z: number } } {
+    const c = this.view.cows;
+    if (!c?.door) return { key: 'none', head: '', sub: '' };
+    const n = c.herdCount();
+    if (n.home >= n.all) return { key: 'e-done', head: 'Bütün inekler ahırda', sub: 'İyi akşamlar. Menüye dönebilirsin' };
+    const out = c.herdOut();
+    const near = out.reduce((a, b) => (Math.hypot(b.x - s.x, b.z - s.z) < Math.hypot(a.x - s.x, a.z - s.z) ? b : a));
+    const dist = Math.round(Math.hypot(near.x - s.x, near.z - s.z));
+    return { key: `e-${n.home}`, head: `İnekleri ahıra getir: ${n.home}/${n.all}`, sub: dist > 10 ? `En yakını ${dist} m · arkasına geç, ahırın kapısına doğru sür` : 'Ahırın öbür yanından yürü: inek senden kaçar, kapıya gider', to: dist > 10 ? near : c.door };
+  }
+
+  /** The menu's Akşam button: once Karadere is open; ready once a day. */
+  private updateEveningBtn(): void {
+    const b = $('btn-evening');
+    const open = UNLOCK_ALL || this.save.unlocked >= EVENING.needs;
+    b.style.display = open ? '' : 'none';
+    if (!open) return;
+    b.classList.toggle('up', $('btn-starter').style.display === 'none');
+    const done = this.save.eveningDay === today();
+    $('evening-badge').textContent = done ? 'YARIN' : 'HAZIR';
+    b.classList.toggle('ready', !done);
+  }
+
+  /** The cows: in the worker's way, their moos and bells, the garden's one told about. */
+  private cowStep(s: Session): void {
+    const c = this.view.cows;
+    if (!c) return;
+    s.field.movers = c.blocks();
+    const ev = c.events;
+    if (ev.moo) this.audio.moo(Math.hypot(ev.moo.x - s.x, ev.moo.z - s.z));
+    if (ev.entered) this.toast(`Bahçeye inek girdi! ${this.level.client.name} kızar: kovala, yoksa bahşiş yok`, 'warn', 'cow-in', 10);
+    if (ev.chased) this.toast('İnek kaçtı, bahçeden çıktı', 'good', 'cow-out', 5);
+    this.audio.setCowBell(c.bellDistance(s.x, s.z));
+  }
+
+  /** The job done: the logs cut from the storm's tree piled by the track outside the gate (how many; 0: none). */
+  private pileLogs(s: Session): number {
+    const w = this.woodHere ? this.wood() : null;
+    const n = this.woodTree ? this.woodCut : 0;
+    if (!w || !n) return 0;
+    const p = gatePile(s.field);
+    if (!p) return 0;
+    // (Another lot already there from this garden: added to it.)
+    const same = w.piles.find((q) => Math.hypot(q.x - p.x, q.z - p.z) < 1);
+    if (same) same.n += n;
+    else w.piles.push({ ...p, n });
+    this.woodTree = null;
+    this.woodCut = 0;
+    void writeSave(this.save);
+    return n;
   }
 
   /** A message under the objective (one at a time); `ms`: how long it stays (else by its length). */
@@ -2695,7 +3646,7 @@ class Game {
           haptic('medium');
           this.updateStarterUi();
           // (Said the first few times only.)
-          if (!this.harvesting && (this.save.driveTips ?? 0) < 3) {
+          if (!this.harvesting && !this.wooding && (this.save.driveTips ?? 0) < 3) {
             this.save.driveTips = (this.save.driveTips ?? 0) + 1;
             this.toast('Direksiyonu çevir, GAZ ve FREN pedallarıyla sür', 'good', 'board', 120);
           }
@@ -2797,6 +3748,8 @@ class Game {
           this.toast('Böğürtlen temizlendi +20 TL', 'good');
           break;
         case 'finish-ready':
+          // (Not again on the way to the next job.)
+          if (this.travelTo) break;
           this.audio.success();
           $('btn-finish').classList.add('show');
           this.toast('%90 tamam! İstersen işi bitir, istersen temizle', 'good');
@@ -3026,6 +3979,18 @@ class Game {
           this.patGear = dir;
         } else if (!dir && Math.abs(s.field.vehicle.speed) < 0.1) this.patGear = 0;
       }
+      // (STOP with the chainsaw or the tiller in hand stops it.)
+      const sawInHand = this.view.sawInHand && !s.driving;
+      const tillerInHand = this.tillerInHand && !s.driving;
+      const blowerInHand = this.blowerInHand && !s.driving;
+      const stopNow = this.input.takeStop();
+      if (stopNow && ((sawInHand && this.sawRunning) || (tillerInHand && this.tillRunning) || (blowerInHand && this.blowerRunning))) {
+        if (tillerInHand) this.tillRunning = false;
+        else if (blowerInHand) this.blowerRunning = false;
+        else this.sawRunning = false;
+        this.toast(`${this.toolName} durdu`, '', 'saw-stop', 1);
+        this.updateStarterUi();
+      }
       s.advance(dt, {
         drive,
         moveX,
@@ -3034,18 +3999,20 @@ class Game {
         bump,
         yaw: fpv ? this.lookYaw : undefined,
         sweep: this.input.sweep,
-        stop: this.input.takeStop(),
+        stop: stopNow && !sawInHand && !tillerInHand && !blowerInHand,
         rethread: this.input.rethreading || this.actionHeld,
         lift,
       });
       // The throttle lever: shown with the trimmer in hand and the engine running; back to idle when it
       // stops (it starts again ticking over, not flat out).
       const trimmerInHand = s.hasTrimmer && !s.driving && !s.intro;
-      document.body.classList.toggle('gas-on', trimmerInHand && s.running);
+      // (The chainsaw in hand, running, works the same trigger.)
+      document.body.classList.toggle('gas-on', (trimmerInHand && s.running) || (sawInHand && this.sawRunning) || (tillerInHand && this.tillRunning) || (blowerInHand && this.blowerRunning));
+      document.body.classList.toggle('saw-hand', sawInHand || tillerInHand || blowerInHand);
       document.body.classList.toggle('trimmer-hand', trimmerInHand);
       // Trimmer in hand the right thumb is on the trigger: the left one walks and turns (looking).
-      if (this.input.trimmer !== trimmerInHand) {
-        this.input.trimmer = trimmerInHand;
+      if (this.input.trimmer !== (trimmerInHand || sawInHand || tillerInHand || blowerInHand)) {
+        this.input.trimmer = trimmerInHand || sawInHand || tillerInHand || blowerInHand;
         this.updateTutorialText();
       }
       // The look hint: it stays a few seconds, then goes as soon as the player moves (walks or looks).
@@ -3059,7 +4026,7 @@ class Game {
         }
       }
       document.body.classList.toggle('look-hint', hint);
-      if (!s.running && this.input.throttleOn) this.input.setGas(0);
+      if (!s.running && !sawInHand && !tillerInHand && !blowerInHand && this.input.throttleOn) this.input.setGas(0);
       if (throttle && s.cold) this.toast('Motor ısınıyor, birkaç saniye tam güç vermez', '', 'cold', 8);
       this.handleEvents(s);
       this.cutRate += (this.cutAcc / Math.max(dt, 1e-3) - this.cutRate) * 0.2;
@@ -3088,6 +4055,12 @@ class Game {
       $('btn-rethread').style.setProperty('--p', String(s.rethread));
       document.body.classList.toggle('line-broken', s.hasTrimmer && (s.broken || (s.line < TRIMMER.lineMin && s.spool < 0.01)));
       this.harvestStep(s, dt);
+      this.woodStep(s, dt);
+      this.dogStep(s, dt);
+      this.tillStep(s, dt);
+      this.burnStep(s, dt);
+      this.cowStep(s);
+      this.eveningStep(s, dt);
       this.updateIntro(s);
       document.body.classList.toggle('tangled', s.tangle > 0.3);
       const rl = s.tangle > 0.3 ? 'TEMİZLE' : 'MİSİNA TAK';
@@ -3098,7 +4071,8 @@ class Game {
         this.hudT = 0.2;
         this.updateHud(s);
       }
-      if (s.field.coverage >= 0.995) this.finish();
+      if (this.travelTo) this.travelStep(s);
+      else if (s.field.coverage >= 0.995) this.finish();
     }
     if (this.mode !== 'paused') this.view.frame(dt);
     this.trackFps(dt);
@@ -3184,7 +4158,7 @@ class Game {
       acts.push({ id: 'line', icon: 'i-rethread', label: 'MİSİNA TAK', sub: s.rethread > 0 ? `sarılıyor %${Math.round(s.rethread * 100)}` : 'basılı tut', hold: true, progress: s.rethread });
     } else {
       // (Roaming there is no job to take the trimmer for.)
-      if (s.canTake && !s.roaming) acts.push({ id: 'take', icon: 'i-hand', label: 'TIRPANI AL', sub: 'kasadan al', run: () => s.takeTrimmer() });
+      if (s.canTake && !s.roaming && !this.tillerInHand && !this.blowerInHand) acts.push({ id: 'take', icon: 'i-hand', label: 'TIRPANI AL', sub: 'kasadan al', run: () => s.takeTrimmer() });
       if (s.canBoard) acts.push({ id: 'board', icon: 'i-tractor', label: s.field.tractor ? 'TRAKTÖRE BİN' : 'PATPATA BİN', sub: s.roaming ? 'köyü gez' : !s.vehicleAtField ? 'tarlaya sür' : 'bidonu yanına getir', run: () => s.board() });
       if (s.canDrop) acts.push({ id: 'drop', icon: 'i-hand', label: 'TIRPANI BIRAK', sub: 'kasaya koy', run: () => s.dropTrimmer() });
       if (s.canOpenGate) acts.push({ id: 'gate', icon: 'i-lock', label: 'KAPIYI AÇ', sub: 'avlu kapısı', run: () => s.openGate() });
@@ -3196,7 +4170,12 @@ class Game {
     const gate = this.gateNear(s);
     if (gate?.kind === 'buy') acts.push({ id: 'unlock', icon: 'i-lock', label: 'BÖLÜMÜ AÇ', sub: this.unlockLabel(gate.lv), run: () => void this.buyUnlock(gate.lv) });
     if (gate?.kind === 'switch') acts.push({ id: 'switch', icon: 'i-map', label: 'BU İŞE GEÇ', sub: gate.lv.name, run: () => void this.switchJob(gate.lv) });
+    const away = this.exitNear(s);
+    if (away) acts.push({ id: 'exit', icon: 'i-map', label: 'KÖYE GİT', sub: away.name, run: () => this.leaveVillage(away) });
     this.harvestActions(s, acts);
+    this.woodActions(s, acts);
+    this.tillActions(s, acts);
+    this.burnActions(s, acts);
     this.renderActions(acts);
     let text = '';
     // The vehicle by name (the pat pat carries the trimmer in its trailer; nothing rides on the tractor).
@@ -3230,9 +4209,22 @@ class Game {
       text = p > 0 ? `Misina sarılıyor: %${p}<small>Bırakma, birazdan biter</small>` : 'Misina takılı değil<small>MİSİNA TAK butonuna basılı tut</small>';
       text += `<span class="obj-bar"><i style="width:${p}%"></i></span>`;
     }
+    // On the way to the next job: the trimmer into the vehicle, then the way to its gate.
+    if (this.travelTo) {
+      const lv = this.travelTo;
+      const v = s.field.vehicle;
+      const to = s.field.tractor ? 'Traktöre' : 'Patpata';
+      const dv = Math.round(Math.hypot(v.x - s.x, v.z - s.z));
+      const g = this.gatePoint(s, lv);
+      const e = s.field.exit;
+      if (s.driving && !g && e) text = `${this.arrowTo(s, e.x, e.z)}${this.otherRegion(s)?.name ?? 'Köy'} yolu: ${Math.round(Math.hypot(e.x - v.x, e.z - v.z))} m<small>Köyün çıkışındaki tabelaya sür, KÖYE GİT'e bas</small>`;
+      else if (s.driving && g) text = `${this.arrowTo(s, g.x, g.z)}${lv.name}: ${Math.round(Math.hypot(g.x - v.x, g.z - v.z))} m<small>Bahçenin kapısına gel</small>`;
+      else if (s.hasTrimmer) text = s.nearVehicle ? 'TIRPANI BIRAK: kasaya koy' : `${this.arrowTo(s, v.x, v.z)}${to} git (${dv} m)<small>Tırpanı kasaya koy, ${lv.name} bahçesine sür</small>`;
+      else text = s.nearVehicle ? `${to} bin, ${lv.name} bahçesine sür` : `${this.arrowTo(s, v.x, v.z)}${to} git (${dv} m)`;
+    }
     // (Roaming: no job to point to; the harvest's next step if there is one.)
     if (this.roaming) {
-      const g = this.harvesting ? this.harvestGuide(s) : null;
+      const g = this.eveningRun ? this.eveningGuide(s) : this.harvesting ? this.harvestGuide(s) : this.wooding ? this.woodGuide(s) : null;
       text = g?.head ? `${g.to ? this.arrowTo(s, g.to.x, g.to.z) : ''}${g.head}${g.sub ? `<small>${g.sub}</small>` : ''}` : '';
     }
     document.body.classList.toggle('harvest-hint', this.roaming && !!text);
@@ -3326,9 +4318,11 @@ class Game {
     const v = s.field.vehicle;
     let n = 0;
     for (let i = 1; i < l.length; i++) if ((l[i].x - v.x) ** 2 + (l[i].z - v.z) ** 2 < (l[n].x - v.x) ** 2 + (l[n].z - v.z) ** 2) n = i;
-    let left = 0;
+    // (Off the way, as come in by the village's road beyond its end: to its nearest point first.)
+    const off = Math.hypot(l[n].x - v.x, l[n].z - v.z);
+    let left = off;
     for (let i = n + 1; i < l.length; i++) left += Math.hypot(l[i].x - l[i - 1].x, l[i].z - l[i - 1].z);
-    const p = l[Math.min(l.length - 1, n + 15)];
+    const p = off > 15 ? l[n] : l[Math.min(l.length - 1, n + 15)];
     return { x: p.x, z: p.z, left: Math.round(left / 5) * 5 };
   }
 
@@ -3391,6 +4385,18 @@ class Game {
     return this.lastResult;
   }
 }
+
+/**
+ * A tablet held sideways: the menu and the cards over it laid out as on a phone (its screen about 874 by
+ * 402) and scaled up to fill it (the game's own controls are left as they are: they place themselves at
+ * the finger).
+ */
+function fitTablet(): void {
+  const z = innerWidth > innerHeight && innerHeight > 520 ? Math.min(innerHeight / 402, innerWidth / 874) : 1;
+  document.documentElement.style.setProperty('--ui-zoom', z.toFixed(3));
+}
+fitTablet();
+addEventListener('resize', fitTablet);
 
 const game = new Game();
 (window as unknown as { __game: Game }).__game = game;

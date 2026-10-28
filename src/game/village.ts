@@ -80,6 +80,38 @@ export interface Region {
   /** The bridge over it, and the mill on its west bank by it (its wheel on its own +x side; x is set from the stream). */
   bridge?: Bridge;
   mill?: Pt & { rot: number };
+  /**
+   * What sets the village apart to look at: its tracks paved with setts, dry-stone walls along its trunk,
+   * the share of spruces among its trees, the meadow's tint (multiplied in), its own meadow and sett
+   * pictures (public/textures; the setts' picture covering `cobbleSize` metres).
+   */
+  look?: {
+    paved?: boolean;
+    walls?: boolean;
+    spruce?: number;
+    tint?: [number, number, number];
+    grass?: string;
+    cobble?: string;
+    cobbleSize?: number;
+    /** Its own house model (manifest key), how tall it stands, and how far round it is solid (m). */
+    house?: { model: string; height: number; r: number };
+    /** The serender (the granary on stilts) in the yard, village coordinates. */
+    serender?: Pt;
+    /** The barn (its door towards the yard), hay bales stacked beside it, village coordinates. */
+    barn?: Pt;
+    /** Its own sky panorama (public/textures), laid out as gokyuzu.jpg. */
+    sky?: string;
+    /** The stone arch with its name board over the trunk just inside the way out. */
+    arch?: boolean;
+    /** The yard the old way: its harman paved with stones (the setts' picture) and a dry-stone wall round it. */
+    stoneYard?: boolean;
+    /** Its broadleaf trees' bark and leaves tinted (walnuts and chestnuts: dark bark, deeper leaves). */
+    treeTint?: { bark: string; leaf: string };
+    /** Clumps of bracken (eğrelti) along its tracks, walls and woods: how many for each tree. */
+    ferns?: number;
+    /** A woodpile rack in the yard east of the harman (where Odun İşi's logs are stacked). */
+    woodRack?: boolean;
+  };
 }
 
 /**
@@ -136,11 +168,12 @@ export const ASPHALT_X = -90;
 const noise1 = makeNoise(4242);
 const noise2 = makeNoise(977);
 
-function home(hx: number, hz: number): Pick<Region, 'house' | 'harman' | 'plateau'> {
+/** The house and its yard; `wide`: metres more between the house and the harman, and on the yard's radius (a bigger house). */
+function home(hx: number, hz: number, wide = 0): Pick<Region, 'house' | 'harman' | 'plateau'> {
   const house = { x: hx, z: hz, rot: Math.PI / 2 };
-  const harman = { x: hx + 9.5, z: hz, r: 4.6 };
+  const harman = { x: hx + 9.5 + wide, z: hz, r: 4.6 };
   // (Wide enough for the garage behind, between the house and the harman.)
-  return { house, harman, plateau: { x: (house.x + harman.x) / 2, z: hz, r: 15 } };
+  return { house, harman, plateau: { x: (house.x + harman.x) / 2, z: hz, r: 15 + wide } };
 }
 
 export const REGIONS: Region[] = [
@@ -178,14 +211,20 @@ export const REGIONS: Region[] = [
   {
     id: 2,
     name: 'Karadere',
-    ...home(-14, -140),
+    // (A bigger stone house: a wider yard.)
+    ...home(-14, -140, 3),
     mosque: { x: -62, z: -82 },
     hut: null,
     map: { minX: -125, minZ: -190, maxZ: 70 },
-    place: { 11: { z: -95 }, 12: { z: -45 }, 13: { x: -52, z: -60 }, 14: { x: -100, z: 5 }, 15: { z: 12 } },
+    place: { 11: { z: -95 }, 12: { z: -45 }, 13: { x: -52, z: -60 }, 14: { x: -100, z: 5 }, 15: { z: 12 }, 16: { x: -62, z: -158 }, 17: { x: -100, z: -160 }, 18: { x: -98, z: -110 }, 19: { x: -95, z: -60 }, 20: { x: -60, z: -10 } },
     slots: [],
     north: false,
     trunkEnd: 52,
+    look: { paved: true, walls: true, spruce: 0.6, tint: [0.97, 1, 0.95], grass: 'zemin-cim-karadere.webp', cobble: 'kaldirim-karadere.webp', cobbleSize: 2.6, house: { model: 'houseKaradere', height: 7.6, r: 4.6 }, serender: { x: -17, z: -127.5 }, barn: { x: -35, z: -168 }, sky: 'gokyuzu-karadere.jpg', arch: true, stoneYard: true, treeTint: { bark: '#7a5a40', leaf: '#b9cfa2' }, ferns: 3, woodRack: true },
+    // The stone bridge over the stream between Değirmen Bahçesi and Köprübaşı (turned: the village on
+    // its west), the mill on the near bank just above Değirmen Bahçesi.
+    bridge: { x: 0, z: -71, rot: Math.PI, len: 11.6, width: 3.2, hump: 0.45, ramp: 2.2 },
+    mill: { x: 0, z: -124, rot: Math.PI / 2 },
     // A broad valley: gentler than Yeşilyamaç, rolling more.
     ground: (x, z) => {
       const u = Math.max(0, 60 - z);
@@ -279,6 +318,35 @@ export interface Village {
   roads: Road[];
   /** The way from the harman to each field (jobs and neighbours' gardens), as one polyline. */
   routes: Record<number, Pt[]>;
+  /** How far in from the trunk's end its arch stands (Region.look.arch), clear of the tracks leaving it. */
+  archBack?: number;
+}
+
+/** The arch's pillars' middles out from the road's line (m), and how near a track may come to one. */
+export const ARCH_PILLAR = 3.58;
+const ARCH_CLEAR = 4.5;
+
+/** The point `d` metres along a polyline, and its heading there (yaw: atan2(dx, dz)). */
+export function alongLine(t: Pt[], d: number): { x: number; z: number; yaw: number } {
+  let along = 0;
+  for (let i = 1; i < t.length; i++) {
+    const a = t[i - 1];
+    const b = t[i];
+    const l = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+    if (along + l >= d || i === t.length - 1) {
+      const u = Math.min(1, Math.max(0, (d - along) / l));
+      return { x: a.x + (b.x - a.x) * u, z: a.z + (b.z - a.z) * u, yaw: Math.atan2(b.x - a.x, b.z - a.z) };
+    }
+    along += l;
+  }
+  return { x: t[0].x, z: t[0].z, yaw: 0 };
+}
+
+/** A polyline's length (m). */
+export function lineLength(t: Pt[]): number {
+  let total = 0;
+  for (let i = 1; i < t.length; i++) total += Math.hypot(t[i].x - t[i - 1].x, t[i].z - t[i - 1].z);
+  return total;
 }
 
 const built = new Map<number, Village>();
@@ -324,16 +392,29 @@ export function village(r: Region = REGIONS[0]): Village {
     addRoad('dirt', trunk, iJ, [j, ...along(northX, j.z - 0.8, r.map.minZ + 28)]);
   }
   // The nearest point to a target on any dirt track built so far.
-  const nearestOnRoads = (t: Pt) => {
+  // (`clear`: only from where the way straight to the target keeps off the fields, their fences and the
+  // yard; failing that, the nearest anyway.)
+  const keepOff = [...regionLevels(r).map(fieldRect), ...r.slots.map((s) => ({ minX: s.x - s.w / 2, maxX: s.x + s.w / 2, minZ: s.z - s.d / 2, maxZ: s.z + s.d / 2 }))];
+  const clearTo = (a: Pt, t: Pt) => {
+    const n = Math.ceil(Math.hypot(t.x - a.x, t.z - a.z) / 1.5);
+    for (let k = 0; k <= n; k++) {
+      const x = a.x + ((t.x - a.x) * k) / n;
+      const z = a.z + ((t.z - a.z) * k) / n;
+      if (keepOff.some((f) => x > f.minX - 3.5 && x < f.maxX + 3.5 && z > f.minZ - 3.5 && z < f.maxZ + 3.5)) return false;
+      if (Math.hypot(x - r.plateau.x, z - r.plateau.z) < r.plateau.r + 1) return false;
+    }
+    return true;
+  };
+  const nearestOnRoads = (t: Pt, clear = false): { road: Pt[]; i: number; d: number } => {
     let best = { road: trunk, i: 0, d: Infinity };
     for (const rd of roads) {
       if (rd.kind !== 'dirt') continue;
       rd.pts.forEach((p, i) => {
         const d = Math.hypot(p.x - t.x, p.z - t.z);
-        if (d < best.d) best = { road: rd.pts, i, d };
+        if (d < best.d && (!clear || clearTo(p, t))) best = { road: rd.pts, i, d };
       });
     }
-    return best;
+    return clear && best.d === Infinity ? nearestOnRoads(t) : best;
   };
   if (r.bridge) {
     // Over the stream: off the nearest track east of the bridge, across it, and on west a little to
@@ -393,7 +474,7 @@ export function village(r: Region = REGIONS[0]): Village {
       branch = [t, ...bezier(t, { x: t.x - 30, z: t.z + 2 }, { x: ex, z: fr.maxZ + 14 }, end, 120, 0.6, seed)];
     } else {
       // Off the nearest track below the field, round and up to its way in.
-      from = nearestOnRoads({ x: ex, z: fr.maxZ + 7.5 });
+      from = nearestOnRoads({ x: ex, z: fr.maxZ + 7.5 }, true);
       const t = from.road[from.i];
       const side = Math.sign(ex - t.x) || 1;
       const n = Math.max(24, Math.round(Math.hypot(ex - t.x, end.z - t.z) * 1.3));
@@ -402,7 +483,20 @@ export function village(r: Region = REGIONS[0]): Village {
     addRoad('dirt', from.road, from.i, branch);
     routes[lv.id] = [...routeTo(from.road, from.i), ...branch.slice(1)];
   }
-  const v = { roads, routes };
+  // The arch: some way in from the way out, where neither pillar stands by a track leaving the trunk.
+  let archBack: number | undefined;
+  if (r.look?.arch) {
+    const total = lineLength(trunk);
+    archBack = [14, 12, 16, 10, 18, 20, 9].find((b) => {
+      const p = alongLine(trunk, total - b);
+      return [-1, 1].every((s) => {
+        const x = p.x + Math.cos(p.yaw) * s * ARCH_PILLAR;
+        const z = p.z - Math.sin(p.yaw) * s * ARCH_PILLAR;
+        return roads.slice(1).every((rd) => rd.pts.every((q) => Math.hypot(q.x - x, q.z - z) > ARCH_CLEAR));
+      });
+    });
+  }
+  const v = { roads, routes, archBack };
   built.set(r.id, v);
   return v;
 }

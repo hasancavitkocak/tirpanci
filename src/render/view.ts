@@ -3,6 +3,12 @@ import { Session } from '../game/session';
 import { GrassView } from './grass';
 import { Models } from './models';
 import { FpvRig } from './fpvRig';
+import { DogView } from './dog';
+import { CowsView } from './cows';
+import { TILLER_AHEAD, TillerRig } from './tiller';
+import { blowerModel, blowerTube } from './burn';
+import { Dusk } from './dusk';
+import { TallGrassView } from './tallgrass';
 import { Particles } from './particles';
 import { HEAD_LIFT, TRIMMER_RIG } from './trimmerRig';
 import { PATPAT, PLAYER, SLOPE, TRIMMER } from '../game/config';
@@ -24,6 +30,9 @@ const PATPAT_START_POPS = [
 
 export type Quality = 'low' | 'medium' | 'high';
 
+/** The grass's light by day and fallen night (an evening). */
+const DAY = new THREE.Color(1, 1, 1);
+const NIGHT_GRASS = new THREE.Color('#2b3349');
 /** The first-person hands are placed as seen with this downward look (radians). */
 const FPV_HANDS_PITCH = -0.55;
 /** How much of the trimmer head's side swing the eyes follow in first person (the hands and bar turn the rest). */
@@ -97,6 +106,28 @@ export class View {
   private grass: GrassView | null = null;
   private worker: WorkerView | null = null;
   critters: CrittersView | null = null;
+  /** The motor çapa, pushed ahead of the worker while `tillerInHand`, its tines turning with `tillerGas` (0..1, running) . */
+  tiller: TillerRig | null = null;
+  tillerInHand = false;
+  tillerGas = 0;
+  tillerOn = false;
+  /** The backpack blower worn (on the back; in first person its tube ahead on the right), running, its throttle. */
+  blowerInHand = false;
+  blowerOn = false;
+  blowerGas = 0;
+  private blowerFpv: THREE.Object3D | null = null;
+  private blowerBack: THREE.Object3D | null = null;
+  /** The village's cows (not on the menu); one wanders into the garden when `cowIntruder` is set for the job. */
+  cows: CowsView | null = null;
+  cowIntruder: { after: number } | null = null;
+  /** The evening's cows to bring home (0: none), and how far the dark has fallen (null: no evening: daylight). */
+  herd = 0;
+  duskLevel: number | null = null;
+  private dusk: Dusk | null = null;
+  /** Boy boyu ot: the man-high clumps in the giant weeds (gardens with them). */
+  tallGrass: TallGrassView | null = null;
+  /** Karabaş, the yard's dog, with the player once the kennel is bought (not on the menu). */
+  dog: DogView | null = null;
   private tracks: TrackView | null = null;
   /** Distance the pat pat has rolled since the last tyre mark. */
   private trackAcc = 0;
@@ -149,6 +180,14 @@ export class View {
   private readonly tmp = new THREE.Vector3();
   /** The sky dome (WorldView's), kept round the camera. */
   private sky: THREE.Object3D | null = null;
+  /** Odun İşi: the chainsaw in the worker's hands (on foot by the tree), and cutting (it shakes). */
+  sawInHand = false;
+  /** The chainsaw's throttle (0 ticking over .. 1 flat out), and its engine running. */
+  sawing = 0;
+  sawOn = false;
+  /** The chainsaw held: in first person before the eyes (as the gloves are), else in the worker's hands. */
+  private sawFpv: THREE.Object3D | null = null;
+  private sawHand: THREE.Object3D | null = null;
 
   constructor(canvas: HTMLCanvasElement, quality: Quality) {
     this.quality = quality;
@@ -158,6 +197,8 @@ export class View {
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.12;
+    // (Odun İşi's tree is cut back with a clipping plane on its own materials.)
+    this.renderer.localClippingEnabled = true;
     this.scene.fog = new THREE.Fog(SKY_HORIZON.clone(), 40, 260);
     this.scene.background = SKY_HORIZON.clone();
     this.scene.add(this.particles.points);
@@ -209,6 +250,32 @@ export class View {
     if (session.gear.earmuffs && !menu) this.worker.wearEarmuffs(models.earmuffs?.[0]);
     this.critters = new CrittersView(session.field, models, (x, z) => worldHeight(session.field, x, z));
     this.scene.add(this.world.group, this.grass.group, this.worker.root, this.worker.extras, this.critters.group);
+    if (models.tiller?.[0] && !menu) {
+      this.tiller = new TillerRig(models.tiller[0]);
+      this.scene.add(this.tiller.group);
+    }
+    if (models.blower?.[0] && !menu) {
+      // First person: the pad behind the eyes, the tube along the right and out ahead (camera -z).
+      this.blowerFpv = blowerTube(models.blower[0]);
+      this.blowerFpv.visible = false;
+      this.scene.add(this.blowerFpv);
+      // From behind: on his back (he faces +z: the model turned round, its tube on his right).
+      this.blowerBack = blowerModel(models.blower[0]);
+      this.blowerBack.rotation.y = Math.PI;
+      this.blowerBack.position.set(0, 1.05, -0.32);
+      this.blowerBack.visible = false;
+      this.worker.root.add(this.blowerBack);
+    }
+    if (models.cow?.[0] && !menu) {
+      this.cows = new CowsView(session.field, models.cow[0], this.cowIntruder, this.herd);
+      this.scene.add(this.cows.group);
+    }
+    // The dog, once adopted: by the worker to start with.
+    if (models.dog?.[0] && !menu && WorldView.dog) {
+      const p = DogView.spawn(session.field, session);
+      this.dog = new DogView(models.dog[0], p.x, p.z, session.yaw);
+      this.scene.add(this.dog.root);
+    }
     // Weather: haze, fog distance and exposure; rain streaks round the camera.
     const look = WEATHER[session.field.level.weather];
     const fog = this.scene.fog as THREE.Fog;
@@ -228,6 +295,47 @@ export class View {
       this.rain = new Rain();
       this.scene.add(this.rain.lines);
     }
+    // The chainsaw (0.8 m long, its bar along the model's -x): pointing ahead and a little down.
+    const saw = models.chainsaw?.[0];
+    if (saw && !menu) {
+      const make = () => {
+        const s = saw.scene.clone(true);
+        const box = new THREE.Box3().setFromObject(s);
+        const k = 0.8 / (box.max.x - box.min.x);
+        s.scale.setScalar(k);
+        s.position.set((-(box.min.x + box.max.x) / 2) * k, (-(box.min.y + box.max.y) / 2) * k, (-(box.min.z + box.max.z) / 2) * k);
+        s.traverse((o) => {
+          o.frustumCulled = false;
+          o.castShadow = true;
+        });
+        const g = new THREE.Group();
+        g.add(s);
+        g.visible = false;
+        return g;
+      };
+      // First person: down to the right before the eyes, the bar ahead (camera -z).
+      this.sawFpv = make();
+      this.sawFpv.children[0].rotation.set(0, -Math.PI / 2, 0);
+      this.sawFpv.children[0].position.applyEuler(new THREE.Euler(0, -Math.PI / 2, 0));
+      this.scene.add(this.sawFpv);
+      // Third person: in front of him at the hips, the bar ahead (he faces +z).
+      this.sawHand = make();
+      this.sawHand.children[0].rotation.set(0, Math.PI / 2, 0);
+      this.sawHand.children[0].position.applyEuler(new THREE.Euler(0, Math.PI / 2, 0));
+      this.sawHand.position.set(-0.18, 0.88, 0.5);
+      this.worker.root.add(this.sawHand);
+    }
+    if (session.field.level.giant) {
+      this.tallGrass = new TallGrassView(session.field, (x, z) => worldHeight(session.field, x, z), session.field.level.seed);
+      this.scene.add(this.tallGrass.group);
+    }
+    // An evening: the dark falling, the lamps (built once the sky is known).
+    if (this.duskLevel !== null && !menu) {
+      this.dusk = new Dusk(session.field, (x, z) => worldHeight(session.field, x, z), { hemi: this.world.hemi, sun: this.world.sun, sky: this.sky, fog, background: this.scene.background as THREE.Color, exposure: look.exposure });
+      this.scene.add(this.dusk.group);
+      this.dusk.forehead.position.set(0, 1.71, 0.11);
+      this.worker.root.add(this.dusk.forehead);
+    }
     if (models.hands?.[0] && models.handlebar?.[0] && models.trimmer?.[0]) {
       this.fpvRig = new FpvRig(models.hands[0], models.handlebar[0]);
       this.fpvBody.add(this.fpvRig.root);
@@ -246,6 +354,41 @@ export class View {
       this.grass.dispose();
     }
     if (this.worker) this.scene.remove(this.worker.root, this.worker.extras);
+    if (this.dog) {
+      disposeTree(this.dog.root);
+      this.scene.remove(this.dog.root);
+      this.dog = null;
+    }
+    if (this.blowerFpv) {
+      disposeTree(this.blowerFpv);
+      this.scene.remove(this.blowerFpv);
+    }
+    this.blowerFpv = this.blowerBack = null;
+    if (this.tallGrass) {
+      disposeTree(this.tallGrass.group);
+      this.scene.remove(this.tallGrass.group);
+      this.tallGrass = null;
+    }
+    if (this.dusk) {
+      disposeTree(this.dusk.group);
+      this.scene.remove(this.dusk.group);
+      this.dusk = null;
+    }
+    if (this.tiller) {
+      disposeTree(this.tiller.group);
+      this.scene.remove(this.tiller.group);
+      this.tiller = null;
+    }
+    if (this.cows) {
+      disposeTree(this.cows.group);
+      this.scene.remove(this.cows.group);
+      this.cows = null;
+    }
+    if (this.sawFpv) {
+      disposeTree(this.sawFpv);
+      this.scene.remove(this.sawFpv);
+    }
+    this.sawFpv = this.sawHand = null;
     if (this.critters) this.scene.remove(this.critters.group);
     if (this.rain) {
       this.scene.remove(this.rain.lines);
@@ -367,6 +510,10 @@ export class View {
     this.exhaustSmoke(dt, s);
     this.patpatSmoke(dt, s);
     this.critters?.update(dt, this.time, s.x, s.z);
+    this.tallGrass?.update();
+    this.dog?.update(dt, s, ground, this.time);
+    this.cows?.update(dt, s, ground, this.dog);
+    this.poseTiller(s, ground, dt);
     this.rain?.update(this.time, this.camera.position);
     // A cut hose sprays water for the rest of the job.
     const hc = s.field.hoseCut;
@@ -379,11 +526,80 @@ export class View {
     this.particles.update(dt, ground);
     this.updateCamera(dt, false);
     this.poseFirstPerson(s, ground);
+    this.poseSaw(fpv);
+    this.poseBlower(fpv);
+    if (this.dusk) {
+      this.dusk.update(this.duskLevel ?? 0, s, this.camera, this.renderer, fpv);
+      // (The grass has its own light: darkened with the rest.)
+      this.grass?.setLight(DAY.clone().lerp(NIGHT_GRASS, this.duskLevel ?? 0));
+    }
     if (this.sky) {
       this.camera.getWorldPosition(this.sky.position);
       this.sky.updateMatrix();
     }
     this.renderer.render(this.scene, this.camera);
+  }
+
+  /** The blower worn: on his back from behind; in first person low on the right, its tube pointing ahead. */
+  private poseBlower(fpv: boolean): void {
+    const on = this.blowerInHand && !this.menu;
+    const shake = this.blowerOn ? (Math.sin(this.time * 80) * 0.003 + Math.sin(this.time * 51) * 0.002) * (0.5 + this.blowerGas) : 0;
+    if (this.blowerBack) this.blowerBack.visible = on && !fpv;
+    const f = this.blowerFpv;
+    if (!f) return;
+    f.visible = on && fpv;
+    if (!f.visible) return;
+    f.position.copy(this.camera.position);
+    f.quaternion.copy(this.camera.quaternion);
+    // (Its tube out along the right, its mouth tipped down ahead into the grass.)
+    f.translateX(shake);
+    f.translateY(shake);
+  }
+
+  /** Smoke rising at a point (a fire). */
+  smoke(x: number, y: number, z: number, n: number): void {
+    this.particles.emit(x, y, z, n, 'smoke', 0, 0, 0.6, 1.6, 1.6);
+  }
+
+  /** The tiller pushed ahead of the worker (on foot), on the ground, tipped with the slope under it. */
+  private poseTiller(s: Session, ground: (x: number, z: number) => number, dt: number): void {
+    const t = this.tiller;
+    if (!t) return;
+    t.group.visible = this.tillerInHand && !s.driving;
+    if (!t.group.visible) return;
+    const fx = Math.sin(s.yaw);
+    const fz = Math.cos(s.yaw);
+    const x = s.x + fx * TILLER_AHEAD;
+    const z = s.z + fz * TILLER_AHEAD;
+    const front = ground(x + fx * 0.6, z + fz * 0.6);
+    const back = ground(x - fx * 0.6, z - fz * 0.6);
+    // (Shaking a little as it runs, harder on the throttle.)
+    const shake = this.tillerOn ? (Math.sin(this.time * 70) * 0.004 + Math.sin(this.time * 43) * 0.003) * (0.4 + this.tillerGas) : 0;
+    t.place(x, ground(x, z) + shake, z, s.yaw, -Math.atan2(front - back, 1.2), this.tillerOn ? 0.15 + this.tillerGas : 0, dt);
+  }
+
+  /** The chainsaw in hand (Odun İşi): before the eyes in first person, in his hands from behind; shaking while it cuts. */
+  private poseSaw(fpv: boolean): void {
+    const on = this.sawInHand && !this.menu;
+    // It shakes with the revs (a little ticking over), tips down into the wood with the throttle.
+    const shake = (this.sawOn ? 0.3 + this.sawing * 0.7 : 0) * (Math.sin(this.time * 90) * 0.006 + Math.sin(this.time * 53) * 0.004);
+    if (this.sawHand) {
+      this.sawHand.visible = on && !fpv;
+      this.sawHand.rotation.x = 0.12 + this.sawing * 0.23;
+      this.sawHand.position.y = 0.88 + shake;
+    }
+    const f = this.sawFpv;
+    if (!f) return;
+    f.visible = on && fpv;
+    if (!f.visible) return;
+    f.position.copy(this.camera.position);
+    f.quaternion.copy(this.camera.quaternion);
+    // Down and to the right, the bar tipped down towards what it cuts (more while cutting).
+    f.translateX(0.22 + shake);
+    f.translateY(-0.27 + shake);
+    f.translateZ(-0.52);
+    f.rotateX(-0.16 - this.sawing * 0.22);
+    f.rotateY(0.08);
   }
 
   /** First person: gloves fixed to the camera, handlebar under them, shaft from the clamp to the head. */

@@ -150,7 +150,12 @@ export class Input {
     });
     rethread.addEventListener('pointerdown', (e) => {
       e.preventDefault();
-      rethread.setPointerCapture(e.pointerId);
+      // (Capturing can fail on some browsers for a pointer already gone: the hold must still count.)
+      try {
+        rethread.setPointerCapture(e.pointerId);
+      } catch {
+        /* held without capture */
+      }
       this.rethreadHeld = true;
     });
     const rethreadUp = () => (this.rethreadHeld = false);

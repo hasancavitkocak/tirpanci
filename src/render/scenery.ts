@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { REGIONS } from '../game/village';
 import { makeNoise, makeRng } from '../game/rng';
 import { MOBILE } from '../platform/device';
 
@@ -222,8 +223,43 @@ export async function preloadGround(): Promise<void> {
   // The harman's old village concrete (the painted look only).
   const concrete = PAINTED_GROUND ? await texLoader.loadAsync('./textures/zemin-beton-boya.jpg').catch(() => undefined) : undefined;
   groundTex = { grass, soil, concrete };
+  // A village's own meadow picture and sky.
+  await Promise.all(
+    REGIONS.map(async (r) => {
+      if (r.look?.stoneYard && r.look.cobble) {
+        const t = await texLoader.loadAsync(`./textures/${r.look.cobble}`).catch(() => null);
+        if (t) regionStone.set(r.id, t);
+      }
+      if (r.look?.sky) {
+        const t = await texLoader.loadAsync(`./textures/${r.look.sky}`).catch(() => null);
+        if (t) regionSkies.set(r.id, t);
+      }
+      if (!r.look?.grass) return;
+      const t = await texLoader.loadAsync(`./textures/${r.look.grass}`).catch(() => null);
+      if (!t) return;
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.anisotropy = MOBILE ? 2 : 4;
+      regionGrass.set(r.id, t);
+    }),
+  );
+}
+const regionGrass = new Map<number, THREE.Texture>();
+const regionSkies = new Map<number, THREE.Texture>();
+const regionStone = new Map<number, THREE.Texture>();
+
+/** A village's paving stones for its harman (Region.look.stoneYard), loaded with the ground. */
+export function regionPaving(region: number): THREE.Texture | undefined {
+  return regionStone.get(region);
 }
 
-export function groundTextures(): { grass: THREE.Texture; soil: THREE.Texture; concrete?: THREE.Texture } | null {
-  return groundTex;
+/** A village's own sky panorama (Region.look.sky), loaded with the ground; undefined: the common one. */
+export function regionSky(region: number): THREE.Texture | undefined {
+  return regionSkies.get(region);
+}
+
+/** The ground's pictures (in a village with its own meadow picture, that one for the grass). */
+export function groundTextures(region?: number): { grass: THREE.Texture; soil: THREE.Texture; concrete?: THREE.Texture } | null {
+  const g = region === undefined ? undefined : regionGrass.get(region);
+  return groundTex && g ? { ...groundTex, grass: g } : groundTex;
 }

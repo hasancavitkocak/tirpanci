@@ -57,13 +57,26 @@ export function showRewarded(text = 'Ödül'): Promise<boolean> {
   if (!ready) return Promise.resolve(false);
   return new Promise((resolve) => {
     let earned = false;
+    let settled = false;
     const handles: Promise<{ remove: () => Promise<void> }>[] = [];
     const done = () => {
+      if (settled) return;
+      settled = true;
       for (const h of handles) void h.then((x) => x.remove());
       resolve(earned);
     };
-    handles.push(AdMob.addListener(RewardAdPluginEvents.Rewarded, () => (earned = true)));
-    handles.push(AdMob.addListener(RewardAdPluginEvents.Dismissed, done));
+    // (On iOS the ad can say it closed before it says the reward was earned: once closed, the answer
+    // waits a moment for the reward before saying there was none.)
+    let closed = false;
+    handles.push(AdMob.addListener(RewardAdPluginEvents.Rewarded, () => {
+      earned = true;
+      if (closed) done();
+    }));
+    handles.push(AdMob.addListener(RewardAdPluginEvents.Dismissed, () => {
+      closed = true;
+      if (earned) done();
+      else setTimeout(done, 1500);
+    }));
     handles.push(AdMob.addListener(RewardAdPluginEvents.FailedToShow, done));
     AdMob.prepareRewardVideoAd({ adId: units.rewarded, isTesting: TESTING, immersiveMode: true })
       .then(() => AdMob.showRewardVideoAd())

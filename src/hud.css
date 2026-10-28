@@ -293,7 +293,7 @@ body.freecam #hud, body.freecam #touch, body.freecam #toasts, body.freecam .scre
 .call-card.pano { width: min(340px, 100%); overflow: visible; gap: 0; }
 /* A phone held sideways: too short for the card's column (its buttons fell off the screen), so the
    face on the left, the words and the two buttons side by side on the right. */
-@media (orientation: landscape) and (max-height: 520px) {
+@media (orientation: landscape) and (max-height: 1100px) {
   .call-card.pano { width: min(620px, 100%); display: grid; grid-template-columns: auto 1fr 1fr; grid-template-areas: 'face name name' 'face place place' 'face text text' 'face facts facts' 'face ok no'; column-gap: 14px; align-items: center; }
   .call-card.pano .job-facts { grid-area: facts; margin-bottom: 8px; }
   .call-card.pano .call-ring { grid-area: face; margin: 0; }
@@ -365,7 +365,7 @@ body.gas-on .gas-btn { display: block; }
 .shop-card-board .shop-card.selected .buy { background: linear-gradient(180deg, #f1e6c8, #dccca2); box-shadow: 0 3px 0 #b39d6c; color: #5e4426; text-shadow: none; }
 /* A phone held sideways: a thinner board, no title (the tabs say where you are), the money beside the
    tabs, so the items get the height. */
-@media (orientation: landscape) and (max-height: 520px) {
+@media (orientation: landscape) and (max-height: 1100px) {
   .card.pano.shop-card-board { width: min(640px, 100%); border-width: 34px 26px 44px; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto 1fr; column-gap: 8px; row-gap: 6px; }
   .shop-card-board h2 { display: none; }
   .shop-card-board .wallet { grid-column: 1; grid-row: 1; font-size: 13px; padding: 4px 10px 4px 6px; }
@@ -430,7 +430,7 @@ body.visor-dirty .ctl-btn.visor { animation: btn-glow 0.8s infinite alternate; }
 body.engine-off .gas-btn { display: none !important; }
 /* At the right edge over the hands on screen (level with them it read as a second handlebar grip). */
 .gas-btn { right: calc(6px + var(--safe-r)); bottom: max(calc(170px + var(--safe-b)), 44vh); }
-@media (orientation: landscape) and (max-height: 520px) { .gas-btn { bottom: calc(96px + var(--safe-b)); } }
+@media (orientation: landscape) and (max-height: 1100px) { .gas-btn { bottom: calc(96px + var(--safe-b)); } }
 
 /* Driving the pat pat or the tractor: the steering wheel bottom left, the pedals bottom right (FREN a
    wide red-rimmed pad, GAZ a tall green-rimmed one beside it, at the right thumb). */
@@ -456,7 +456,7 @@ body.driving #stick { display: none !important; }
 
 /* A phone held sideways (the game is played so): cards that stood in a tall column are laid out wide,
    the hazelnut board's frame thinner, so nothing falls off the bottom of the screen. */
-@media (orientation: landscape) and (max-height: 520px) {
+@media (orientation: landscape) and (max-height: 1100px) {
   .card.pano { border-width: 34px 26px 44px; }
   /* Daily reward: the days and the amount, the two buttons side by side under them. */
   #daily .card.pano { width: min(620px, 100%); display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; row-gap: 6px; }
@@ -527,7 +527,7 @@ body.driving #stick { display: none !important; }
 /* ---- Held sideways on a phone (360 px high and so): every screen fits without scrolling to its buttons.
    The screens stand clear of the notch; the cards lose height (titles smaller, padding less); lists go
    wide (more cards side by side, each smaller). */
-@media (orientation: landscape) and (max-height: 520px) {
+@media (orientation: landscape) and (max-height: 1100px) {
   .screen { padding: calc(8px + var(--safe-t)) calc(14px + var(--safe-r)) calc(8px + var(--safe-b)) calc(14px + var(--safe-l)); }
   .card { padding: 12px 14px; gap: 7px; }
   .card h2 { font-size: 20px; margin: 0; }
@@ -642,10 +642,13 @@ body.driving #stick { display: none !important; }
 .saga-map.wide .saga-node .sn-stars img { width: 11px; height: 11px; }
 .saga-map.wide .saga-node .sn-pin { width: 26px; }
 .saga-map.wide .saga-node .sn-tag { font-size: 9px; }
+/* (A wide picture: the stops close together at its far end; only the next job shows its pay, the rest on their cards.) */
 .saga-map.wide .saga-sign { width: 22%; bottom: auto; top: 4px; }
 /* A wide map fills the frame's height and is dragged sideways (no empty bands over and under it). */
 .saga.wide-map { overflow-x: auto; overflow-y: hidden; }
-.saga.wide-map .saga-map.wide { width: auto; height: 100%; }
+.saga.wide-map { container-type: size; }
+/* (As tall as the list, but no taller than its width calls for: on a tall card, a tablet, the village still shows wide.) */
+.saga.wide-map .saga-map.wide { width: auto; height: min(100%, 72cqw); }
 .saga-map.wide .saga-node .sn-pin { top: -14px; left: calc(50% + 12px); }
 .saga-map.wide .saga-node.pin-left .sn-pin { left: auto; right: calc(50% + 12px); }
 .saga:has(.saga-map.wide) { display: flex; align-items: center; }
@@ -720,7 +723,8 @@ body.obj-brief .objective small { display: none; }
 .card.settings.pano > .howto, .card.settings.pano > .set-links, #btn-settings-close { grid-column: 1 / 3; }
 .card.settings.pano .setting { font-size: 13.5px; font-weight: 800; color: #4a2a0c; min-height: 30px; }
 .card.settings.pano .setting.column { gap: 3px; }
-.card.settings.pano .setting small { font-size: 10.5px; color: #6a4a28; line-height: 1.2; }
+/* (On a light plate of their own, a little room under them: the board’s plank seam ran through them.) */
+.card.settings.pano .setting small { font-size: 10.5px; color: #5a3a18; line-height: 1.25; background: rgba(255, 244, 220, 0.72); border-radius: 6px; padding: 2px 7px; margin-bottom: 6px; align-self: flex-start; }
 .card.settings.pano .segmented { background: rgba(120, 80, 30, 0.18); padding: 2px; }
 .card.settings.pano .segmented button { padding: 4px 2px; font-size: 12px; color: #4a2a0c; white-space: nowrap; }
 .card.settings.pano #set-weather button[data-w="auto"] { flex: 2.2; }
@@ -732,3 +736,46 @@ body.obj-brief .objective small { display: none; }
 .set-links .link-btn { font-size: 11.5px; font-weight: 800; color: #6a4a28; text-decoration: underline; background: none; border: 0; padding: 0; cursor: pointer; }
 .set-links .link-btn.danger { color: #b0301c; }
 #btn-settings-close { justify-self: center; width: auto; min-width: 190px; padding: 7px 26px; font-size: 15px; order: 8; }
+
+/* The starting hint: a small dark pill over the engine plate, one short line (was a big wooden box). */
+.starter .hint { max-width: none; white-space: nowrap; align-self: center; padding: 5px 12px; border-radius: 16px; border: 0; font-size: 12.5px; font-weight: 800; background: rgba(14, 18, 12, 0.72); color: #fff; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
+/* (Sideways: the short pill fits over the plate, under the map button.) */
+@media (orientation: landscape) and (max-height: 1100px) {
+  .starter { flex-direction: column; align-items: center; gap: 4px; }
+  .starter .hint { align-self: center; }
+}
+/* Sideways every wide wooden window on the wide board (pano-yatay.webp: its hazelnut corners kept, its
+   straight beams stretched); the tall board's corners squashed out of shape stretched across. */
+@media (orientation: landscape) and (max-height: 1100px) {
+  .card.pano:not(.shop-card-board), #result .card.pano { border-style: solid; border-color: transparent; border-width: 46px 52px 48px 51px; border-image: url(/harita/pano-yatay.webp) 260 295 270 285 fill stretch; }
+}
+
+/* On the way to the next job (the finished field left behind): no gauges or progress, only the way. */
+body.travel .hud-top .hud-mid, body.travel #request-chip { display: none !important; }
+body.travel #btn-finish, body.travel #btn-rethread, body.travel .gas-btn, body.travel .starter { display: none !important; }
+/* The coffee house's notices (and the harvest's old tab): the same frame as the village maps when held
+   sideways (tabs on the left, the list on the right, scrolling), the cards on the wooden board's
+   colours; three to a row. */
+@media (orientation: landscape) and (max-height: 1100px) {
+  #levels:not(.saga-on) .card { height: 100%; width: min(720px, 100%); display: grid; grid-template-columns: 170px minmax(0, 1fr); grid-template-rows: auto auto 1fr; column-gap: 12px; position: relative; overflow: hidden; }
+  #levels:not(.saga-on) #level-list { overflow-y: auto; align-content: start; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 2px 4px 10px; overscroll-behavior: contain; scrollbar-width: none; }
+  #levels:not(.saga-on) #level-list .lv-head { grid-column: 1 / -1; }
+  #levels:not(.saga-on) #level-list .lv-head b { font-size: 16px; }
+  #levels:not(.saga-on) #level-list .lv-head small { font-size: 11.5px; }
+}
+.level.ilan { background: rgba(255, 248, 230, 0.92); border: 2px solid #d9b277; box-shadow: 0 3px 0 rgba(120, 80, 30, 0.35); }
+.level.ilan b { color: #4a2a0c; }
+.level.ilan small { color: #6a4a28; }
+
+/* A shop item for later on (not on sale yet): faded, its padlock button still tappable (it says when). */
+.shop-card.locked .pic,
+.shop-card.locked b,
+.shop-card.locked small { opacity: 0.45; filter: grayscale(0.7); }
+.shop-card.locked .btn.buy { background: #6d6255; color: #f3ead8; }
+
+/* The chainsaw: its starter has no primer (choke and cord only); running, only its STOP of the trimmer's controls. */
+body.saw-start #btn-prime, body.saw-start .st-col:has(#btn-prime) { display: none; }
+body.saw-hand #btn-bump, body.saw-hand #btn-visor, body.saw-hand .pad, body.saw-hand #btn-rethread { display: none !important; }
+
+/* A tablet held sideways (main.ts fitTablet): the menu and the cards over it as on a phone, scaled up. */
+#menu > *, .screen.dim > * { zoom: var(--ui-zoom, 1); }

@@ -1,6 +1,6 @@
-import { BRAMBLE, BUSH_KINDS, BushKind, CELL, CUT_HEIGHT, HIVE, HOSE, LevelDef, MOWN_AT, PATPAT, SLOPE, TRACTOR, VehicleDims, TRAILER, GARAGE } from './config';
+import { BIG_TRACTOR, BRAMBLE, BUSH_KINDS, BushKind, CELL, CUT_HEIGHT, HIVE, HOSE, LevelDef, MOWN_AT, PATPAT, SLOPE, TRACTOR, VehicleDims, TRAILER, GARAGE } from './config';
 import { makeNoise, makeRng } from './rng';
-import { ASPHALT_X, Bridge, EAST_EDGE, deckRise, Pt, Region, RoadKind, entryX, fieldRect, placement, regionLevels, regionOf, streamX as villageStreamX, village } from './village';
+import { ARCH_PILLAR, ASPHALT_X, alongLine, Bridge, lineLength, EAST_EDGE, deckRise, Pt, Region, RoadKind, entryX, fieldRect, placement, regionLevels, regionOf, streamX as villageStreamX, village } from './village';
 
 export interface Bush {
   kind: BushKind;
@@ -120,6 +120,15 @@ function smooth01(t: number): number {
 }
 
 /** Distance from a point to a polyline. */
+/**
+ * The village arch (kemer-karadere.glb, 5.36 m tall as placed): how far in from the way out it stands, its
+ * pillars' middles out from the road's line, their reach, their depth along the road (m).
+ */
+/** The barn (ahir.glb, 5.2 m to the ridge as placed): its width, depth, and how far round it is solid (m). */
+export const BARN = { height: 5.2, w: 10.1, d: 9, r: 5.2 };
+
+export const ARCH = { height: 5.36, pillar: ARCH_PILLAR, pillarR: 0.95, pillarDepth: 2.15 };
+
 function polyDist(x: number, z: number, pts: Pt[]): number {
   let d = Infinity;
   for (let i = 1; i < pts.length; i++) d = Math.min(d, segDist(x, z, pts[i - 1].x, pts[i - 1].z, pts[i].x, pts[i].z));
@@ -185,8 +194,13 @@ export class Field {
   readonly roadJoints: Pt[] = [];
   /** This field's fence (the low side open), as segments. */
   readonly fences: { ax: number; az: number; bx: number; bz: number }[] = [];
+  /** The dry-stone walls along the trunk (Region.look.walls): their runs of points, and as segments. */
+  readonly roadWallRuns: Pt[][] = [];
+  readonly roadWalls: { ax: number; az: number; bx: number; bz: number }[] = [];
   /** The village this field is in. */
   readonly region: Region;
+  /** The tractor driven is the big one (BIG_TRACTOR: its measures, its pull). */
+  bigTractor = false;
   /** Sacks of hazelnuts on the vehicle and how many it takes (the harvest: game/harvest.ts); the load slows it. */
   cargo = 0;
   cargoCap = 0;
@@ -233,7 +247,17 @@ export class Field {
   garage: { x: number; z: number; yaw: number; w: number; d: number } | null = null;
   readonly garageWalls: { ax: number; az: number; bx: number; bz: number }[] = [];
   gateOpen = 0;
-  readonly yardProps: { x: number; z: number; r: number; kind: 'hay' | 'wood' | 'post' }[] = [];
+  readonly yardProps: { x: number; z: number; r: number; kind: 'hay' | 'wood' | 'post' | 'serender' | 'pillar' | 'barn' | 'bales' | 'rack' }[] = [];
+  /** Things lying in the way for a while (a storm's fallen tree): circles, solid as the yard's things. */
+  blocks: { x: number; z: number; r: number }[] = [];
+  /** Animals standing in the way (the cows), moved every frame: the worker walks round them. */
+  movers: { x: number; z: number; r: number }[] = [];
+  /** Grass lying under something (the fallen tree) that cannot be mown till it is cleared away. */
+  shade: ((x: number, z: number) => boolean) | null = null;
+  /** How far round the house is solid (a village's bigger house: more). */
+  get houseR(): number {
+    return this.region.look?.house?.r ?? 3.4;
+  }
   /** Where the way comes up to the field (x of the way in, at its bottom edge). */
   readonly entryX: number;
   /** Puddles standing in the lane's wheel ruts: centre, radius, the lane's direction there. */
@@ -254,9 +278,9 @@ export class Field {
   trailer: { yaw: number } | null = null;
   /** Its measures. */
   get dims(): VehicleDims {
-    return this.tractor ? TRACTOR : PATPAT_DIMS;
+    return this.tractor ? (this.bigTractor ? BIG_TRACTOR : TRACTOR) : PATPAT_DIMS;
   }
-  readonly total: number;
+  total: number;
   private mownCount = 0;
   private dirty: DirtyRect | null = null;
   private readonly noise: (x: number, y: number) => number;
@@ -333,6 +357,7 @@ export class Field {
       if (!this.hasStream) this.fences.push({ ax: fx, az: top, bx: fx, bz: bot });
     }
     this.buildYard();
+    this.buildRoadWalls();
     this.placePuddles(makeRng(level.seed * 13 + 7));
     this.wallX = level.width / 2 + 1.6;
     this.wallTop = -level.depth / 2 - 1.6;
@@ -698,6 +723,85 @@ export class Field {
     return { x, z, yaw: Math.atan2(gx - x, gz - z) };
   }
 
+  /**
+   * Dry-stone walls along both sides of the trunk, a little off the track: left open where another track
+   * leaves it, by the yard, the mosque, the stream and the fields, and over the last metres to the way
+   * out (its board stands there).
+   */
+  private buildRoadWalls(): void {
+    const t = this.roads[0]?.pts;
+    if (!this.region.look?.walls || !t || t.length < 2) return;
+    const others = this.roads.slice(1).map((r) => r.pts);
+    const OFF = 3.4;
+    const STEP = 2;
+    const near = (x: number, z: number, r: { minX: number; maxX: number; minZ: number; maxZ: number }, m: number) => x > r.minX - m && x < r.maxX + m && z > r.minZ - m && z < r.maxZ + m;
+    const me = { minX: -this.width / 2, maxX: this.width / 2, minZ: -this.depth / 2, maxZ: this.depth / 2 };
+    const clear = (x: number, z: number) =>
+      !others.some((o) => polyDist(x, z, o) < 5) &&
+      Math.hypot(x - this.plateau.x, z - this.plateau.z) > this.plateau.r + 10 &&
+      Math.hypot(x - this.mosque.x, z - this.mosque.z) > 14 &&
+      this.streamDistance(x, z) > 5 &&
+      !near(x, z, me, 5) &&
+      !this.others.some((o) => near(x, z, o, 5));
+    const total = this.trunkLength;
+    // (Up to the arch's pillars, where it has one: the walls run into them; else short of the way out's board.)
+    const stop = this.archBack !== undefined ? this.archBack + ARCH.pillarDepth / 2 : 12;
+    const marks: number[] = [];
+    for (let d = STEP; d < total - stop; d += STEP) marks.push(d);
+    marks.push(total - stop);
+    for (const side of [-1, 1]) {
+      let run: Pt[] = [];
+      const flush = () => {
+        // (No stubs: a run shorter than about 6 m is left out.)
+        if (run.length >= 4) {
+          this.roadWallRuns.push(run);
+          for (let k = 1; k < run.length; k++) this.roadWalls.push({ ax: run[k - 1].x, az: run[k - 1].z, bx: run[k].x, bz: run[k].z });
+        }
+        run = [];
+      };
+      for (const d of marks) {
+        const p = this.alongTrunk(d);
+        const x = p.x + Math.cos(p.yaw) * side * OFF;
+        const z = p.z - Math.sin(p.yaw) * side * OFF;
+        if (clear(x, z)) run.push({ x, z });
+        else flush();
+      }
+      flush();
+    }
+  }
+
+  /** How long the trunk road is (m). */
+  get trunkLength(): number {
+    return lineLength(this.roads[0]?.pts ?? []);
+  }
+
+  /** The point `d` metres along the trunk from its start, and its heading there (yaw: atan2(dx, dz)). */
+  alongTrunk(d: number): { x: number; z: number; yaw: number } {
+    return alongLine(this.roads[0].pts, d);
+  }
+
+  /** How far in from the way out the arch stands (none: undefined). */
+  get archBack(): number | undefined {
+    return village(this.region).archBack;
+  }
+
+  /** The stone arch over the trunk (Region.look.arch): its middle, facing out along the road. */
+  get archAt(): { x: number; z: number; yaw: number } | null {
+    const b = this.archBack;
+    if (b === undefined || (this.roads[0]?.pts.length ?? 0) < 4) return null;
+    return this.alongTrunk(this.trunkLength - b);
+  }
+
+  /** The nearest dry-stone wall by the trunk (Infinity: none within a few metres). */
+  roadWallDistance(x: number, z: number): number {
+    let d = Infinity;
+    for (const w of this.roadWalls) {
+      if (Math.abs(x - w.ax) > 4 || Math.abs(z - w.az) > 4) continue;
+      d = Math.min(d, segDist(x, z, w.ax, w.az, w.bx, w.bz));
+    }
+    return d;
+  }
+
   /** The fence round the yard with its gate where the trunk leaves, and the woodpile. */
   private buildYard(): void {
     const p = this.plateau;
@@ -729,7 +833,8 @@ export class Field {
     this.yardGate = { ax: last.bx, az: last.bz, bx: first.ax, bz: first.az };
     // The garage at the back, between the house and the harman, its mouth towards the harman; its
     // stone back and sides are walls.
-    const gz = p.z - GARAGE.back + GARAGE.d / 2;
+    // (A wider yard: the garage that much further back.)
+    const gz = p.z - GARAGE.back - (p.r - 15) + GARAGE.d / 2;
     this.garage = { x: p.x, z: gz, yaw: 0, w: GARAGE.w, d: GARAGE.d };
     const L = p.x - GARAGE.w / 2;
     const Rx = p.x + GARAGE.w / 2;
@@ -737,7 +842,29 @@ export class Field {
     const F = gz + GARAGE.d / 2;
     this.garageWalls.push({ ax: L, az: F, bx: L, bz: B }, { ax: L, az: B, bx: Rx, bz: B }, { ax: Rx, az: B, bx: Rx, bz: F });
     // The woodpile against the house's side (no haystacks: they stood in the house).
-    this.yardProps.push({ x: this.house.x + 0.6, z: this.house.z + 3.7, r: 0.8, kind: 'wood' });
+    this.yardProps.push({ x: this.house.x + 0.6, z: this.house.z + this.houseR + 0.3, r: 0.8, kind: 'wood' });
+    // The arch's two stone pillars either side of the trunk.
+    const ar = this.archAt;
+    if (ar) for (const s of [-1, 1]) this.yardProps.push({ x: ar.x + Math.cos(ar.yaw) * s * ARCH.pillar, z: ar.z - Math.sin(ar.yaw) * s * ARCH.pillar, r: ARCH.pillarR, kind: 'pillar' });
+    // The serender on its stilts, where the village has one.
+    const sr = this.region.look?.serender;
+    if (sr) this.yardProps.push({ x: sr.x - this.origin.x, z: sr.z - this.origin.z, r: 1.9, kind: 'serender' });
+    // The barn, and the hay bales bought in stacked by its door (to the right of it, seen from the yard).
+    const bn = this.region.look?.barn;
+    if (bn) {
+      const x = bn.x - this.origin.x;
+      const z = bn.z - this.origin.z;
+      this.yardProps.push({ x, z, r: BARN.r, kind: 'barn' });
+      const yaw = Math.atan2(this.plateau.x - x, this.plateau.z - z);
+      const f = BARN.d / 2 + 1.6;
+      const s = -(BARN.w / 2 - 1.2);
+      this.yardProps.push({ x: x + Math.sin(yaw) * f + Math.cos(yaw) * s, z: z + Math.cos(yaw) * f - Math.sin(yaw) * s, r: 1.5, kind: 'bales' });
+    }
+    // The woodpile rack east of the harman (Odun İşi's logs stacked by it): solid along its length.
+    if (this.region.look?.woodRack) {
+      const h = this.harman;
+      for (const dz of [-0.55, 0.55]) this.yardProps.push({ x: h.x + h.r + 5.6, z: h.z + 0.5 + dz, r: 0.6, kind: 'rack' });
+    }
     // Two old posts either side of the way into this field.
     if (this.level.theme !== 'mezarlik') for (const s of [-1, 1]) this.yardProps.push({ x: this.entryX + s * 2.6, z: this.depth / 2 + 1.2, r: 0.12, kind: 'post' });
   }
@@ -980,6 +1107,18 @@ export class Field {
     return gap;
   }
 
+  /**
+   * The village's way out: near the end of its trunk road, where a board points to the other village
+   * (field coordinates; the heading out along the road).
+   */
+  get exit(): { x: number; z: number; yaw: number } | null {
+    const t = this.roads[0]?.pts;
+    if (!t || t.length < 4) return null;
+    const a = t[t.length - 4];
+    const b = t[t.length - 1];
+    return { x: b.x, z: b.z, yaw: Math.atan2(b.x - a.x, b.z - a.z) };
+  }
+
   /** A point of the pat pat may be here. */
   pointFree(px: number, pz: number): boolean {
     if (this.bushes.some((b) => Math.hypot(b.x - px, b.z - pz) < BUSH_KINDS[b.kind].block * (b.kind === 'ocak' ? 0.8 : b.scale))) return false;
@@ -988,15 +1127,17 @@ export class Field {
     if (!this.tractor && Math.abs(px - this.streamX(pz)) < STREAM.width && this.streamStones.some((s) => s.s > 0.3 && Math.hypot(s.x - px, s.z - pz) < s.s * 1.3 + 0.15)) return false;
     const c = this.clampWalk(px, pz);
     if (Math.hypot(c.x - px, c.z - pz) > 0.01) return false;
-    if (Math.hypot(px - this.house.x, pz - this.house.z) < 3.4) return false;
+    if (Math.hypot(px - this.house.x, pz - this.house.z) < this.houseR) return false;
     if (Math.hypot(px - this.mosque.x, pz - this.mosque.z) < 6.5 || (this.hut && Math.hypot(px - this.hut.x, pz - this.hut.z) < 3)) return false;
     if (this.fences.some((w) => segDist(px, pz, w.ax, w.az, w.bx, w.bz) < 0.3)) return false;
     if (this.yardWalls.length && this.yardWallDistance(px, pz) < 0.35) return false;
+    if (this.roadWalls.length && this.roadWallDistance(px, pz) < 0.35) return false;
     if (this.garageWalls.some((w) => segDist(px, pz, w.ax, w.az, w.bx, w.bz) < 0.45)) return false;
     const gl = this.gateLeaf;
     if (gl && segDist(px, pz, gl.ax, gl.az, gl.bx, gl.bz) < 0.35) return false;
     // The thin posts at a field's way in don't stop the pat pat (it brushes past them).
     if (this.yardProps.some((y) => y.kind !== 'post' && Math.hypot(y.x - px, y.z - pz) < y.r + 0.1)) return false;
+    if (this.blocks.some((b) => Math.hypot(b.x - px, b.z - pz) < b.r)) return false;
     // Not into the walled mosque yard (it stays outside, at the gate).
     return !(this.walls.length && Math.abs(px) < this.wallX + 0.3 && pz > this.wallTop - 0.3 && pz < this.wallBottom + 0.3);
   }
@@ -1059,7 +1200,7 @@ export class Field {
   /** Where the worker comes out of the house at the start of the very first job. */
   get doorstep(): { x: number; z: number } {
     // In front of the door (the model's +z).
-    return { x: this.house.x + Math.sin(this.house.rot) * 4.2, z: this.house.z + Math.cos(this.house.rot) * 4.2 };
+    return { x: this.house.x + Math.sin(this.house.rot) * (this.houseR + 0.8), z: this.house.z + Math.cos(this.house.rot) * (this.houseR + 0.8) };
   }
 
   /** Distance from a point to the hose (Infinity without one). */
@@ -1070,6 +1211,20 @@ export class Field {
   }
 
   /** Fraction of the grass that has been mown, 0..1. */
+  /** No grass where `gone` says (under something that came to lie there for good): out of the mowing too. */
+  maskOut(gone: (x: number, z: number) => boolean): void {
+    for (let j = 0; j < this.gd; j++) {
+      const z = this.cellZ(j);
+      for (let i = 0; i < this.gw; i++) {
+        const k = j * this.gw + i;
+        if (!this.mask[k] || !gone(this.cellX(i), z)) continue;
+        this.mask[k] = 0;
+        this.grass[k] = 0;
+        this.total--;
+      }
+    }
+  }
+
   get coverage(): number {
     return this.total ? this.mownCount / this.total : 1;
   }
@@ -1108,6 +1263,7 @@ export class Field {
         const k = j * this.gw + i;
         if (!this.mask[k] || this.grass[k] <= CUT_HEIGHT) continue;
         const x = this.cellX(i);
+        if (this.shade?.(x, z)) continue;
         let t = len2 > 0 ? ((x - ax) * dx + (z - az) * dz) / len2 : 0;
         t = t < 0 ? 0 : t > 1 ? 1 : t;
         const ex = ax + dx * t - x;
@@ -1169,7 +1325,7 @@ export class Field {
     }
   }
 
-  private nearDepot(x: number, z: number, r: number): boolean {
+  nearDepot(x: number, z: number, r: number): boolean {
     return Math.hypot(x - this.depot.x, z - this.depot.z) < r;
   }
 

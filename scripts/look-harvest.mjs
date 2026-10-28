@@ -58,7 +58,7 @@ const start = async (setup, harvest = true) => {
     Object.assign(g.save, setup);
     document.querySelectorAll('.screen').forEach((s) => s.classList.remove('show'));
     g.levelTab = 1;
-    g.startRoam(harvest);
+    g.startRoam(harvest ? 'harvest' : '');
   }, setup, harvest);
   await page.waitForFunction('window.__game.mode === "playing"', { timeout: 60000 });
   await sleep(1500);

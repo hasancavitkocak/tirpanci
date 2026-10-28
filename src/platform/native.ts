@@ -105,6 +105,12 @@ export interface SaveData {
   driveTips?: number;
   harvestRound?: number;
   harvestOffered?: number;
+  /** The player's wood from the storms' trees (game/wood.ts): logs by the gates, on the vehicle, in the yard. */
+  wood?: import('../game/wood').WoodState;
+  /** The day the evening's cows were last brought home (today(): once a day). */
+  eveningDay?: string;
+  /** Karabaş, the dog, adopted (free, once the kennel is bought). */
+  dog?: boolean;
   /**
    * The level numbering the save is in: unset = the first one, where Karadere's jobs were 9-13 (two
    * jobs were added to Yeşilyamaç as 9 and 10, Karadere's became 11-15; see loadSave).

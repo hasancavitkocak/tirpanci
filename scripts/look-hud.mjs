@@ -24,6 +24,13 @@ const ok = (c, t) => {
 const shot = (n) => p.screenshot({ path: `${OUT}/${n}.png` });
 await p.goto(`${base}?quality=medium`);
 await p.waitForFunction('window.__ready === true', { timeout: 120000 });
+// (The jobs' random extras off: the messages looked at here are the plain job's.)
+await p.evaluate(async () => {
+  const mod = (path) => import(performance.getEntriesByType('resource').map((e) => e.name).find((n) => n.includes(path)) ?? path);
+  (await mod('/src/game/burn.ts')).BURN.chance = 0;
+  (await mod('/src/game/tiller.ts')).TILL.chance = 0;
+  (await mod('/src/game/config.ts')).COW.chance = 0;
+});
 // Every message shown, when it came and went; and the most on screen at once.
 await p.evaluate(() => {
   window.__toasts = [];
@@ -173,7 +180,7 @@ await p.evaluate(() => {
   const g = window.__game;
   document.querySelectorAll('.screen').forEach((s) => s.classList.remove('show'));
   g.levelTab = 1;
-  g.startRoam(false);
+  g.startRoam('');
 });
 await p.waitForFunction('window.__game.mode === "playing"', { timeout: 60000 });
 await sleep(1200);

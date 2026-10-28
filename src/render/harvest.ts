@@ -73,7 +73,7 @@ export function tarpSpot(f: Field): { x: number; z: number; yaw: number } {
 }
 
 /** A spot's mark on the ground: a yellow frame, its name painted in it. */
-function spotMark(sp: Spot, label: string, ground: (x: number, z: number) => number): THREE.Group {
+export function spotMark(sp: Spot, label: string, ground: (x: number, z: number) => number): THREE.Group {
   const g = new THREE.Group();
   const mat = new THREE.MeshBasicMaterial({ color: '#ffd23a', transparent: true, opacity: 0.85, depthWrite: false });
   const t = 0.14;

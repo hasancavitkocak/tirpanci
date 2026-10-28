@@ -205,6 +205,79 @@ export function stoneWall(points: THREE.Vector3[]): THREE.Mesh {
   return m;
 }
 
+/** A piece of the artist's dry-stone wall (tas-duvar.glb, along its x): its height as laid, and how much each piece overlaps the next. */
+const WALL_PIECE = { height: 0.8, overlap: 0.08 };
+const wallPieces = new WeakMap<THREE.Object3D, { geo: THREE.BufferGeometry; mat: THREE.Material; len: number }>();
+
+/**
+ * A dry-stone wall along `points` (each on the ground) from the artist's piece: laid end to end along
+ * the line, each tipped with the slope under it (no steps), the last one shortened to end where the
+ * line does; one draw for the whole run.
+ */
+export function stoneWallModel(points: THREE.Vector3[], model: THREE.Object3D): THREE.Object3D {
+  let piece = wallPieces.get(model);
+  if (!piece) {
+    // Its mesh in the model's own space, its foot at y = 0, centred, scaled to WALL_PIECE.height.
+    let mesh: THREE.Mesh | null = null;
+    model.updateMatrixWorld(true);
+    model.traverse((o) => {
+      if (!mesh && (o as THREE.Mesh).isMesh) mesh = o as THREE.Mesh;
+    });
+    if (!mesh) return stoneWall(points);
+    const m = mesh as THREE.Mesh;
+    // (Its positions and normals packed small, as integers, by the compression: unpacked first, or moving
+    // them would wrap them round.)
+    const geo = m.geometry.clone();
+    for (const name of ['position', 'normal'] as const) {
+      const at = geo.getAttribute(name);
+      if (!at || at.array instanceof Float32Array) continue;
+      const out = new Float32Array(at.count * 3);
+      for (let i = 0; i < at.count; i++) out.set([at.getX(i), at.getY(i), at.getZ(i)], i * 3);
+      geo.setAttribute(name, new THREE.BufferAttribute(out, 3));
+    }
+    geo.applyMatrix4(m.matrixWorld);
+    geo.computeBoundingBox();
+    // (Its box read off first: moving the geometry works the box out afresh in the same object.)
+    const b = geo.boundingBox!.clone();
+    const k = WALL_PIECE.height / (b.max.y - b.min.y);
+    geo.translate(-(b.min.x + b.max.x) / 2, -b.min.y, -(b.min.z + b.max.z) / 2);
+    geo.scale(k, k, k);
+    piece = { geo, mat: m.material as THREE.Material, len: (b.max.x - b.min.x) * k };
+    wallPieces.set(model, piece);
+  }
+  // Along the line: where each piece goes.
+  const cum = [0];
+  for (let i = 1; i < points.length; i++) cum.push(cum[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].z - points[i - 1].z));
+  const total = cum[cum.length - 1];
+  const at = (s: number): THREE.Vector3 => {
+    const t = Math.max(0, Math.min(total, s));
+    let i = 1;
+    while (i < cum.length - 1 && cum[i] < t) i++;
+    const u = (t - cum[i - 1]) / Math.max(1e-6, cum[i] - cum[i - 1]);
+    return points[i - 1].clone().lerp(points[i], u);
+  };
+  const step = piece.len * (1 - WALL_PIECE.overlap);
+  const items: { a: number; b: number }[] = [];
+  for (let s = 0; s < total - 0.05; s += step) items.push({ a: s, b: Math.min(total, s + piece.len) });
+  const inst = new THREE.InstancedMesh(piece.geo, piece.mat, Math.max(1, items.length));
+  const o = new THREE.Object3D();
+  items.forEach((it, i) => {
+    const p0 = at(it.a);
+    const p1 = at(it.b);
+    const len = Math.hypot(p1.x - p0.x, p1.z - p0.z);
+    o.position.set((p0.x + p1.x) / 2, Math.min(p0.y, p1.y) + Math.abs(p1.y - p0.y) / 2 - 0.08, (p0.z + p1.z) / 2);
+    o.rotation.set(0, -Math.atan2(p1.z - p0.z, p1.x - p0.x), Math.atan2(p1.y - p0.y, Math.max(0.01, len)), 'YZX');
+    // (The last one, short: squeezed to end there.)
+    o.scale.set(Math.max(0.2, (it.b - it.a) / piece.len), 1, 1);
+    o.updateMatrix();
+    inst.setMatrixAt(i, o.matrix);
+  });
+  inst.count = items.length;
+  inst.castShadow = inst.receiveShadow = true;
+  inst.computeBoundingSphere();
+  return inst;
+}
+
 /** Two-lane country road along z at x = cx, following the ground. */
 export function roadMesh(cx: number, z0: number, z1: number, heightAt: (x: number, z: number) => number): THREE.Group {
   const grp = new THREE.Group();

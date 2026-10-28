@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { TRACTOR, TRACTOR_LOCK, TRAILER } from '../game/config';
+import { BIG_TRACTOR, TRACTOR, TRACTOR_LOCK, TRAILER, VehicleDims } from '../game/config';
 import type { Field } from '../game/field';
 
 /**
@@ -21,6 +21,34 @@ const BODY = {
 /** Rear and front tyre diameters, metres (the front two thirds of the rear, as on a real one). */
 const REAR = 1.38;
 const FRONT = 0.76;
+
+/** A tractor's drawing: its body's measures (model units), its tyres, its vehicle measures; the front tyre's axle along the model's Z. */
+export interface TractorSpec {
+  body: typeof BODY;
+  rear: number;
+  front: number;
+  dims: VehicleDims;
+  frontAxleZ: boolean;
+}
+export const SMALL: TractorSpec = { body: BODY, rear: REAR, front: FRONT, dims: TRACTOR, frontAxleZ: true };
+/**
+ * The big tractor (buyuk-traktor: one mesh, its front towards -X, wheels left off but for their hubs), with
+ * its own lugged tyres (both axles along X). Measured from the model (model units).
+ */
+export const BIG: TractorSpec = {
+  body: {
+    k: 4.15,
+    rearHub: { x: 0.27, y: 0.105 },
+    frontHub: { x: -0.27, y: 0.07 },
+    seat: { x: 0.12, y: 0.25 },
+    pipe: { x: -0.08, y: 0.56, z: -0.15 },
+    wheel: { x: 0.02, y: 0.34, r: 0.035 },
+  },
+  rear: 1.62,
+  front: 1.12,
+  dims: BIG_TRACTOR,
+  frontAxleZ: false,
+};
 
 /** A copy of a model with its own geometry (the old field's scene is disposed under the new one). */
 export function prepared(gltf: GLTF): THREE.Object3D {
@@ -74,8 +102,14 @@ export class TractorRig {
   /** Each wheel's spin, radius and way round (the right-hand ones are turned about: they roll the other way in their own frame). */
   private readonly wheels: { spin: THREE.Object3D; r: number; dir: number }[] = [];
   private readonly fronts: THREE.Object3D[] = [];
+  private readonly dims: VehicleDims;
 
-  constructor(parts: { body: GLTF; rear: GLTF; front: GLTF }) {
+  constructor(parts: { body: GLTF; rear: GLTF; front: GLTF }, spec: TractorSpec = SMALL) {
+    const BODY = spec.body;
+    const REAR = spec.rear;
+    const FRONT = spec.front;
+    const TRACTOR = spec.dims;
+    this.dims = TRACTOR;
     const k = BODY.k;
     const R = REAR / 2;
     // The model floor rides so the rear hubs stand at the rear tyres' radius.
@@ -106,7 +140,7 @@ export class TractorRig {
       this.wheels.push({ spin: w.spin, r: R, dir: s < 0 ? -1 : 1 });
     }
     for (const s of [-1, 1]) {
-      const w = tyre(parts.front, frontD, s, true);
+      const w = tyre(parts.front, frontD, s, spec.frontAxleZ);
       // A pivot at the hub for the steering.
       const pivot = new THREE.Group();
       pivot.position.set(s * TRACTOR.headTrack, frontD / 2, 0);
@@ -142,13 +176,14 @@ export class TractorRig {
     // Wheels: [front right, front left, rear right, rear left].
     const front = (g[0] + g[1]) / 2;
     const rear = (g[2] + g[3]) / 2;
-    const span = TRACTOR.joint + TRACTOR.rearAxle;
+    const D = this.dims;
+    const span = D.joint + D.rearAxle;
     const lim = (a: number, m: number) => Math.max(-m, Math.min(m, a));
     this.kasa.position.set(v.x, (front + rear) / 2, v.z);
-    this.kasa.rotation.set(lim(Math.atan2(rear - front, span), 0.35), v.yaw, lim(Math.atan2(g[3] - g[2], TRACTOR.kasaTrack * 2), 0.3), 'YXZ');
+    this.kasa.rotation.set(lim(Math.atan2(rear - front, span), 0.35), v.yaw, lim(Math.atan2(g[3] - g[2], D.kasaTrack * 2), 0.3), 'YXZ');
     // The front axle follows the body (it does not swing on its own).
     this.kasa.updateMatrixWorld(true);
-    this.head.position.set(0, 0, TRACTOR.joint).applyMatrix4(this.kasa.matrixWorld);
+    this.head.position.set(0, 0, D.joint).applyMatrix4(this.kasa.matrixWorld);
     this.head.quaternion.copy(this.kasa.quaternion);
   }
 }

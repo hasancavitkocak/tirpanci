@@ -7,6 +7,7 @@ import { broadleafTrees, hazelnutBushes } from './hazelnut';
 import { shootBushes } from './shootBush';
 import { boulderGeometry, graveGeometry, stoneWall } from './landmarks';
 import { oldPostGroup, paint, postGeometry } from './props';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 /**
  * The rest of the village round the field being mown: the other fields (fenced, their gates shut, a
@@ -357,15 +358,17 @@ function mergeAll(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
   return g;
 }
 
-/** The cobblestone photo (public/textures). */
-let cobbleTex: THREE.Texture | null = null;
-function cobbleTexture(): THREE.Texture {
-  if (cobbleTex) return cobbleTex;
-  cobbleTex = new THREE.TextureLoader().load('./textures/kaldirim.webp');
-  cobbleTex.wrapS = cobbleTex.wrapT = THREE.RepeatWrapping;
-  cobbleTex.colorSpace = THREE.SRGBColorSpace;
-  cobbleTex.anisotropy = 4;
-  return cobbleTex;
+/** The cobblestone photo (public/textures; a village may have its own). */
+const cobbleTex = new Map<string, THREE.Texture>();
+function cobbleTexture(file = 'kaldirim.webp'): THREE.Texture {
+  const done = cobbleTex.get(file);
+  if (done) return done;
+  const t = new THREE.TextureLoader().load(`./textures/${file}`);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  cobbleTex.set(file, t);
+  return t;
 }
 
 /**
@@ -374,14 +377,18 @@ function cobbleTexture(): THREE.Texture {
  */
 export function cobbleRoads(f: Field, heightAt: Height): THREE.Group {
   const grp = new THREE.Group();
-  const mat = new THREE.MeshLambertMaterial({ map: cobbleTexture(), vertexColors: true, transparent: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  const tile = f.region.look?.cobbleSize ?? 1.5;
+  const mat = new THREE.MeshLambertMaterial({ map: cobbleTexture(f.region.look?.cobble), vertexColors: true, transparent: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  // (A paved village: its dirt tracks set with stones as well, a strip of earth left at their edges.)
+  const allPaved = !!f.region.look?.paved;
   for (const r of f.roads) {
-    if (r.kind !== 'cobble') continue;
+    if (r.kind !== 'cobble' && !allPaved) continue;
+    const paved = r.kind !== 'cobble';
     const pos: number[] = [];
     const uv: number[] = [];
     const col: number[] = [];
     const idx: number[] = [];
-    const half = 1.5;
+    const half = paved ? 1.6 : 1.5;
     const across = 7;
     let along = 0;
     r.pts.forEach((p, i) => {
@@ -396,10 +403,10 @@ export function cobbleRoads(f: Field, heightAt: Height): THREE.Group {
         const x = p.x + nx * s;
         const z = p.z + nz * s;
         pos.push(x, heightAt(x, z) + 0.06, z);
-        uv.push((s + half) / 1.5, along / 1.5);
+        uv.push((s + half) / tile, along / tile);
         // Out of the track: muddy at first (darker), the setts showing more and more, ragged at the edge.
         // (Within the dirt track's width, so no half-clear setts lie out on the grass beside it.)
-        const t = Math.min(1, Math.max(0, (along - 0.6 - Math.abs(Math.sin(s * 3.1 + along)) * 0.8) / 1.6));
+        const t = paved ? (k === 0 || k === across - 1 ? 0.55 + 0.3 * Math.abs(Math.sin(along * 1.7)) : 1) : Math.min(1, Math.max(0, (along - 0.6 - Math.abs(Math.sin(s * 3.1 + along)) * 0.8) / 1.6));
         const mud = 0.55 + 0.45 * t;
         col.push(mud, mud * 0.95, mud * 0.88, t);
       }
@@ -451,6 +458,7 @@ export function villageTrees(f: Field, heightAt: Height, count: number): THREE.G
     const inRect = (r: { minX: number; maxX: number; minZ: number; maxZ: number }, m: number) => x > r.minX - m && x < r.maxX + m && z > r.minZ - m && z < r.maxZ + m;
     if (inRect({ minX: -f.width / 2, maxX: f.width / 2, minZ: -f.depth / 2, maxZ: f.depth / 2 }, 7)) return false;
     if (f.others.some((o) => inRect(o, 6))) return false;
+    if (f.yardProps.some((y) => y.r > 1 && Math.hypot(x - y.x, z - y.z) < y.r + 4)) return false;
     return !spots.some((s) => Math.hypot(s.x - x, s.z - z) < 7);
   };
   const xMax = f.eastLimit(0) + (f.streamEast ? 0 : 12);
@@ -479,10 +487,155 @@ export function villageTrees(f: Field, heightAt: Height, count: number): THREE.G
       }
     }
   }
-  return broadleafTrees(
-    spots.map((s) => {
-      const sc = 0.75 + rnd() * 0.5;
-      return new THREE.Matrix4().compose(new THREE.Vector3(s.x, heightAt(s.x, s.z) - 0.1, s.z), new THREE.Quaternion().setFromAxisAngle(up, rnd() * 6), new THREE.Vector3(sc, sc, sc));
-    }),
-  );
+  // Some of them spruces, in a village that has them.
+  const share = f.region.look?.spruce ?? 0;
+  const broad: THREE.Matrix4[] = [];
+  const spruce: THREE.Matrix4[] = [];
+  for (const s of spots) {
+    const sc = 0.75 + rnd() * 0.5;
+    (rnd() < share ? spruce : broad).push(new THREE.Matrix4().compose(new THREE.Vector3(s.x, heightAt(s.x, s.z) - 0.1, s.z), new THREE.Quaternion().setFromAxisAngle(up, rnd() * 6), new THREE.Vector3(sc, sc, sc)));
+  }
+  const g = broadleafTrees(broad, f.region.look?.treeTint);
+  if (spruce.length) g.add(spruceTrees(spruce));
+  return g;
+}
+
+/** One spruce: a brown stem under five stacked dark cones (about 11 m), flat-shaded. */
+let spruceGeo: THREE.BufferGeometry | null = null;
+function spruceGeometry(): THREE.BufferGeometry {
+  if (spruceGeo) return spruceGeo;
+  const rnd = makeRng(611);
+  const coloured = (g: THREE.BufferGeometry, hex: string, vary: number) => {
+    const n = g.getAttribute('position').count;
+    const col = new Float32Array(n * 3);
+    const c = new THREE.Color();
+    for (let k = 0; k < n; k++) {
+      c.set(hex).multiplyScalar(1 - vary / 2 + rnd() * vary);
+      col.set([c.r, c.g, c.b], k * 3);
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.deleteAttribute('uv');
+    return g.toNonIndexed();
+  };
+  const parts = [coloured(new THREE.CylinderGeometry(0.16, 0.32, 3.2, 6).translate(0, 1.6, 0), '#5a3d26', 0.2)];
+  for (let i = 0; i < 5; i++) {
+    const r = 2.7 - i * 0.5;
+    parts.push(coloured(new THREE.ConeGeometry(r, 3.1 - i * 0.2, 8, 1, true).rotateY(i * 0.7).translate(0, 3.6 + i * 1.75, 0), i % 2 ? '#24452c' : '#2b5233', 0.25));
+  }
+  spruceGeo = mergeGeometries(parts)!;
+  spruceGeo.computeVertexNormals();
+  return spruceGeo;
+}
+
+/** Spruces at the given transforms (instanced: one draw call for all of them). */
+function spruceTrees(matrices: THREE.Matrix4[]): THREE.InstancedMesh {
+  const im = new THREE.InstancedMesh(spruceGeometry(), new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, side: THREE.DoubleSide }), matrices.length);
+  matrices.forEach((m, i) => im.setMatrixAt(i, m));
+  im.castShadow = true;
+  im.computeBoundingSphere();
+  return im;
+}
+
+/**
+ * Clumps of bracken (eğrelti): along the tracks just off their edge, by the walls and in the woods, clear
+ * of the fields, the yard and the buildings (instanced: one draw call for all of them).
+ */
+export function fernClumps(f: Field, heightAt: Height, count: number): THREE.InstancedMesh {
+  const rnd = makeRng(f.level.seed + 41);
+  const up = new THREE.Vector3(0, 1, 0);
+  const inRect = (x: number, z: number, r: { minX: number; maxX: number; minZ: number; maxZ: number }, m: number) => x > r.minX - m && x < r.maxX + m && z > r.minZ - m && z < r.maxZ + m;
+  const me = { minX: -f.width / 2, maxX: f.width / 2, minZ: -f.depth / 2, maxZ: f.depth / 2 };
+  const free = (x: number, z: number) => {
+    if (x < f.map.minX + 2 || z < f.map.minZ + 2 || z > f.map.maxZ - 2 || x > f.eastLimit(z) - 1) return false;
+    const rd = f.roadDistance(x, z);
+    if (rd < 2.4 || f.streamDistance(x, z) < 3.5) return false;
+    if (Math.hypot(x - f.plateau.x, z - f.plateau.z) < f.plateau.r + 1.5 || Math.hypot(x - f.mosque.x, z - f.mosque.z) < 10) return false;
+    if (inRect(x, z, me, 4) || f.others.some((o) => inRect(x, z, o, 4))) return false;
+    return !f.yardProps.some((y) => Math.hypot(x - y.x, z - y.z) < y.r + 1);
+  };
+  const spots: { x: number; z: number }[] = [];
+  // Most along the tracks (2.5 to 5 m off their line), the rest anywhere.
+  for (let tries = 0; spots.length < count && tries < count * 25; tries++) {
+    let x: number;
+    let z: number;
+    if (rnd() < 0.7) {
+      const r = f.roads[Math.floor(rnd() * f.roads.length)];
+      const i = 1 + Math.floor(rnd() * (r.pts.length - 1));
+      const a = r.pts[i - 1];
+      const b = r.pts[i];
+      const l = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+      const off = (rnd() < 0.5 ? -1 : 1) * (2.6 + rnd() * 2.6);
+      x = b.x - ((b.z - a.z) / l) * off;
+      z = b.z + ((b.x - a.x) / l) * off;
+    } else {
+      x = f.map.minX + rnd() * (f.eastLimit(0) - f.map.minX);
+      z = f.map.minZ + rnd() * (f.map.maxZ - f.map.minZ);
+    }
+    if (free(x, z)) spots.push({ x, z });
+  }
+  const im = new THREE.InstancedMesh(fernGeometry(), fernMaterial(), Math.max(1, spots.length));
+  spots.forEach((s, i) => {
+    const sc = 0.65 + rnd() * 0.7;
+    im.setMatrixAt(i, new THREE.Matrix4().compose(new THREE.Vector3(s.x, heightAt(s.x, s.z) - 0.04, s.z), new THREE.Quaternion().setFromAxisAngle(up, rnd() * 6.3), new THREE.Vector3(sc, sc * (0.85 + rnd() * 0.3), sc)));
+  });
+  im.count = spots.length;
+  im.computeBoundingSphere();
+  return im;
+}
+
+/** One clump: seven fronds (0.9 m) out from its heart, arching up and out. */
+let fernGeo: THREE.BufferGeometry | null = null;
+function fernGeometry(): THREE.BufferGeometry {
+  if (fernGeo) return fernGeo;
+  const parts: THREE.BufferGeometry[] = [];
+  const n = 7;
+  for (let k = 0; k < n; k++) {
+    // A frond bent in two pieces: rising, then bowing out.
+    const g = new THREE.PlaneGeometry(0.34, 0.95, 1, 4);
+    g.translate(0, 0.475, 0);
+    const p = g.getAttribute('position');
+    for (let i = 0; i < p.count; i++) {
+      const y = p.getY(i);
+      const t = y / 0.95;
+      // Out along z as it rises, drooping at the tip.
+      p.setZ(i, t * 0.62);
+      p.setY(i, y * 0.8 - t * t * 0.35);
+    }
+    g.rotateY((k / n) * Math.PI * 2 + (k % 2) * 0.3);
+    g.scale(1, 0.85 + (k % 3) * 0.12, 1);
+    parts.push(g);
+  }
+  fernGeo = mergeGeometries(parts)!;
+  fernGeo.computeVertexNormals();
+  return fernGeo;
+}
+
+/** A bracken frond drawn on a canvas: a stem with paired leaflets shrinking to its tip. */
+let fernMat: THREE.MeshLambertMaterial | null = null;
+function fernMaterial(): THREE.MeshLambertMaterial {
+  if (fernMat) return fernMat;
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 192;
+  const g = c.getContext('2d')!;
+  g.strokeStyle = '#3d5a22';
+  g.lineWidth = 3;
+  g.beginPath();
+  g.moveTo(32, 192);
+  g.lineTo(32, 4);
+  g.stroke();
+  for (let y = 180; y > 8; y -= 9) {
+    const t = y / 192;
+    const len = 6 + 22 * Math.sin(t * Math.PI * 0.95);
+    for (const s of [-1, 1]) {
+      g.fillStyle = `rgb(${70 + Math.round(30 * (1 - t))}, ${120 + Math.round(30 * (1 - t))}, ${46})`;
+      g.beginPath();
+      g.ellipse(32 + (s * len) / 2, y - 3, len / 2, 3.2, s * -0.35, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  fernMat = new THREE.MeshLambertMaterial({ map: tex, alphaTest: 0.45, side: THREE.DoubleSide, emissive: '#0b1405' });
+  return fernMat;
 }

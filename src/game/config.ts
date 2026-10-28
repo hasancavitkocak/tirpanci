@@ -133,6 +133,26 @@ export const LEVELS: LevelDef[] = [
     id: 15, name: 'Büyük Bahçe', place: 'Karadere', region: 2, theme: 'findik', weather: 'sunny', grass: 'kuru', width: 30, depth: 40, rowGap: 6.5, plantGap: 5.4, stones: 22, slope: 9, bumps: 0.9, pay: 3600, parTime: 900, seed: 149, stream: true, hives: 4, snakes: 3, banks: 2, giant: true,
     client: { name: 'Arıcı Cemal', face: 'arici', call: 'Kardeşim Kemal sana güveniyor, ben de güveniyorum. Bahçe büyük, kovanlar dört tane, yılan da çıkar. Kolay gelsin!', request: 'bees', tip: 500 },
   },
+  {
+    id: 16, name: 'Taşlı Yamaç', place: 'Karadere', region: 2, theme: 'findik', weather: 'sunny', grass: 'kuru', width: 26, depth: 30, rowGap: 6.5, plantGap: 5.4, stones: 30, slope: 10, bumps: 1.1, pay: 3200, parTime: 720, seed: 157, banks: 3, giant: true,
+    client: { name: 'Hacı Dede', face: 'dede', call: 'Yamaçtaki bahçe taş dolu, bayırı da diktir. Ayağına dikkat et evladım, misinanı da taşa vurma.', request: 'clean', tip: 450 },
+  },
+  {
+    id: 17, name: 'Kovanlı Sırt', place: 'Karadere', region: 2, theme: 'yayla', weather: 'sunny', grass: 'cayir', width: 34, depth: 34, rowGap: 6, plantGap: 6, stones: 14, slope: 7, bumps: 1, pay: 3400, parTime: 780, seed: 163, hives: 6, snakes: 2, banks: 2,
+    client: { name: 'Arıcı Kemal', face: 'arici', call: 'Sırttaki çayıra altı kovan koydum. Arıları kızdırma, motoru yanlarında bağırtma kardeşim.', request: 'bees', tip: 520 },
+  },
+  {
+    id: 18, name: 'Sisli Çayır', place: 'Karadere', region: 2, theme: 'yayla', weather: 'fog', grass: 'cayir', width: 36, depth: 32, rowGap: 6, plantGap: 6, stones: 18, slope: 5, bumps: 0.9, pay: 3500, parTime: 800, seed: 167, snakes: 4, giant: true,
+    client: { name: 'Karadere Muhtarı', face: 'muhtar', call: 'Çayır sisten görünmüyor ama hayvanlar aç kaldı. Yılan da çok, gözünü dört aç!', request: 'fast', tip: 480 },
+  },
+  {
+    id: 19, name: 'Bostan Yanı', place: 'Karadere', region: 2, theme: 'findik', weather: 'rain', grass: 'koyu', width: 28, depth: 30, rowGap: 6.5, plantGap: 5.4, stones: 16, slope: 6, bumps: 0.8, pay: 3600, parTime: 820, seed: 173, chickens: 6, hose: true, giant: true,
+    client: { name: 'Nazife Teyze', face: 'teyze', call: 'Bostanın yanındaki fındıklık yine ot doldu. Tavuklar orada, hortum da sulama için uzanıyor, ikisine de dokunma oğlum.', request: 'hose', tip: 520 },
+  },
+  {
+    id: 20, name: 'Karadere Sırtı', place: 'Karadere', region: 2, theme: 'findik', weather: 'sunny', grass: 'kuru', width: 34, depth: 42, rowGap: 6.5, plantGap: 5.4, stones: 26, slope: 11, bumps: 1.1, pay: 4400, parTime: 1080, seed: 181, hives: 4, snakes: 4, banks: 3, chickens: 4, giant: true,
+    client: { name: 'Değirmenci Hüseyin', face: 'remzi', call: 'Köyün en büyük bahçesi bu, sırtın en tepesinde. Bayır, taş, kovan, yılan... ne ararsan var. Bunu da bitirirsen sen bu köyün kralısın!', request: 'no-knock', tip: 700 },
+  },
 ];
 
 /** What the customer's request means, for the HUD chip and the result screen. */
@@ -228,6 +248,8 @@ export const HIVE = {
 
 /** Snakes hide in tall grass; they bolt when the head or the worker comes close and give him a fright. */
 export const SNAKE = { notice: 1.7, speed: 1.7, flee: 4, scare: 0.9 };
+/** A cow wandering into the garden during a job: from which job on, and how often (only where the owner tips). */
+export const COW = { from: 4, chance: 0.3 };
 
 /** Hens wander round the field and run from the line. */
 export const HEN = { walk: 0.35, run: 2.6, panic: 2.2, hit: 0.28, penalty: 50 };
@@ -286,6 +308,17 @@ export const TRACTOR: VehicleDims = {
   joint: 0.933, rearAxle: 0.933, headAxle: 0, headFront: 0.65,
   headTrack: 0.66, kasaTrack: 0.8, seat: -0.97, seatLift: 0.32, forward: 5.6,
 };
+/**
+ * The big tractor (Büyük Traktör, render/tractor.ts BIG): as the tractor, bigger (its wheels further apart
+ * and wider), faster. Its body for running into things is the tractor's (it fits the same gates and the
+ * garage).
+ */
+export const BIG_TRACTOR: VehicleDims = {
+  joint: 1.12, rearAxle: 1.12, headAxle: 0, headFront: 0.75,
+  headTrack: 0.86, kasaTrack: 0.98, seat: -1.1, seatLift: 0.75, forward: 7.2,
+};
+/** The big tractor's pull: a load slows it this much less, and its trailer takes this much more (sacks, logs). */
+export const BIG_PULL = { load: 0.5, carry: 1.5 };
 /** The tractor's wheelbase and full lock of its front wheels (radians). */
 export const TRACTOR_WHEELBASE = 1.866;
 export const TRACTOR_LOCK = 0.6;
@@ -419,13 +452,15 @@ export interface EquipDef<T extends string> {
   name: string;
   desc: string;
   price: number;
+  /** For later on: on sale once this job is open (save.unlocked), so a beginner does not spend on it too soon. */
+  needs?: number;
 }
 
 /** Brush cutters: more power and better cooling, at the cost of fuel. */
 export const MACHINES: (EquipDef<MachineId> & { power: number; fuel: number; cooling: number; walk: number })[] = [
   { id: 'standart', name: 'Emektar 33cc', desc: 'Dededen kalma, idare eder', price: 0, power: 1, fuel: 1, cooling: 0, walk: 1 },
-  { id: 'usta', name: 'Usta 43cc', desc: 'Sık otta az zorlanır, biraz fazla yakar', price: 1500, power: 1.3, fuel: 1.2, cooling: 0.04, walk: 1 },
-  { id: 'sirt', name: 'Sırt Motoru 52cc', desc: 'Motor sırtta: en güçlüsü, adım hafif, iyi soğur', price: 3800, power: 1.6, fuel: 1.35, cooling: 0.08, walk: 1.08 },
+  { id: 'usta', name: 'Usta 43cc', desc: 'Sık otta az zorlanır, biraz fazla yakar', price: 1500, needs: 3, power: 1.3, fuel: 1.2, cooling: 0.04, walk: 1 },
+  { id: 'sirt', name: 'Sırt Motoru 52cc', desc: 'Motor sırtta: en güçlüsü, adım hafif, iyi soğur', price: 3800, needs: 7, power: 1.6, fuel: 1.35, cooling: 0.08, walk: 1.08 },
 ];
 
 /** Line types: cutting effort against wear. */
@@ -488,13 +523,15 @@ export const DAILY = [100, 150, 200, 250, 300, 400, 600];
 /**
  * Vehicles to drive to the jobs: bought once, then picked. `soon`: in the shop to look forward to,
  * not for sale yet (its 3D model is still being made). `attach`: hitched behind the tractor (taken off
- * and put back on), not driven.
+ * and put back on), not driven. `needs`: on sale once that job is open (the trailer and the patos with
+ * the harvest, after Yeşilyamaç's gardens).
  */
-export const VEHICLES: { id: string; name: string; desc: string; price: number; soon?: boolean; attach?: boolean }[] = [
+export const VEHICLES: { id: string; name: string; desc: string; price: number; soon?: boolean; attach?: boolean; needs?: number }[] = [
   { id: 'patpat', name: 'Patpat', desc: 'Köyün emektarı. Belinden kırma, her yola girer.', price: 0 },
-  { id: 'traktor', name: 'Traktör', desc: 'Daha hızlı, yokuşta daha güçlü. Uzak tarlalara çabuk gidersin.', price: 30000 },
-  { id: 'romork', name: 'Römork', desc: 'Traktörün arkasına takılır. Fındık çuvalı taşır (16 çuval).', price: 12000, attach: true },
-  { id: 'patos', name: 'Patos', desc: 'Fındık harman makinesi. Traktöre takılır; hortumla fındığı çeker, temizleyip brandaya döker.', price: 45000, attach: true },
+  { id: 'traktor', name: 'Traktör', desc: 'Daha hızlı, yokuşta daha güçlü. Uzak tarlalara çabuk gidersin.', price: 30000, needs: 6 },
+  { id: 'buyuk', name: 'Büyük Traktör', desc: 'Kabinli, çok güçlü. En hızlısı; yükte yavaşlamaz, römorkuna yarısı kadar daha çok yük alır.', price: 75000, needs: 16 },
+  { id: 'romork', name: 'Römork', desc: 'Traktörün arkasına takılır. Fındık çuvalı taşır (16 çuval).', price: 12000, attach: true, needs: 11 },
+  { id: 'patos', name: 'Patos', desc: 'Fındık harman makinesi. Traktöre takılır; hortumla fındığı çeker, temizleyip brandaya döker.', price: 45000, attach: true, needs: 11 },
 ];
 
 /** The village made nicer: paints for the pat pat (one at a time) and things for the yard (all bought stay). */
@@ -507,6 +544,6 @@ export const PAINTS: { id: string; name: string; price: number; hue: number | nu
 export const DECOR: { id: string; name: string; desc: string; price: number }[] = [
   { id: 'saksi', name: 'Saksı Çiçekleri', desc: 'Evin önüne rengârenk saksılar.', price: 1500 },
   { id: 'cardak', name: 'Çardak', desc: 'Harmanın kenarına gölgelik, altında bank.', price: 4000 },
-  { id: 'kulube', name: 'Köpek Kulübesi', desc: 'Avlunun bekçisine bir yuva.', price: 3000 },
+  { id: 'kulube', name: 'Köpek Kulübesi', desc: 'Avlunun bekçisine bir yuva. Alınca Karabaş’ı sahiplenebilirsin.', price: 3000 },
   { id: 'camasir', name: 'Çamaşır İpi', desc: 'Rüzgârda sallanan çamaşırlar.', price: 800 },
 ];
