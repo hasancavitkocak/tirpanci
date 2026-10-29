@@ -107,7 +107,8 @@ export function groundHeight(f: Field, x: number, z: number): number {
 
 /** The ground `base` worn down by a track `r` metres from its middle: the ruts, puddles and prints. */
 export function laneSurface(f: Field, x: number, z: number, r: number, base: number): number {
-  if (r === Infinity) return base;
+  // (Set with stones: hard and even.)
+  if (r === Infinity || f.paved) return base;
   return base - (laneDip(r, x, z) + puddleDip(f, x, z) + f.sinkAt(x, z)) * f.laneEndFade(x, z);
 }
 
@@ -233,6 +234,37 @@ function terrain(f: Field, cut: THREE.Texture, lane: LaneView): THREE.Mesh {
 }
 
 /** The refill kit: the jerrycan (artist model) and the spool of line (model, or the drawn one) side by side. */
+/** The wooden crate (sele) on a tractor's hitch with nothing behind it: outside width, depth, height, its floor's height inside (m). */
+const SELE = { w: 1.2, d: 0.62, h: 0.44, floor: 0.06 };
+
+/**
+ * The crate drawn: a plank floor, slatted sides with gaps, corner posts, weathered wood; origin at the
+ * middle of its underside, the long side across the tractor. (Until there is the artist's.)
+ */
+function tractorCrate(): THREE.Group {
+  const g = new THREE.Group();
+  const wood = new THREE.MeshLambertMaterial({ color: '#8a6038' });
+  const dark = new THREE.MeshLambertMaterial({ color: '#5e3d22' });
+  const board = (w: number, h: number, d: number, x: number, y: number, z: number, m = wood) => {
+    const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+    b.position.set(x, y, z);
+    b.castShadow = true;
+    g.add(b);
+  };
+  const { w, d, h, floor } = SELE;
+  board(w, floor, d, 0, floor / 2, 0, dark);
+  // Three slats a side, a hand's gap between.
+  for (let k = 0; k < 3; k++) {
+    const y = floor + 0.06 + k * 0.13;
+    board(w, 0.1, 0.025, 0, y, d / 2 - 0.0125);
+    board(w, 0.1, 0.025, 0, y, -d / 2 + 0.0125);
+    board(0.025, 0.1, d, w / 2 - 0.0125, y, 0);
+    board(0.025, 0.1, d, -w / 2 + 0.0125, y, 0);
+  }
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) board(0.05, h, 0.05, sx * (w / 2 - 0.025), h / 2, sz * (d / 2 - 0.025), dark);
+  return g;
+}
+
 function depotModels(models: Models): THREE.Group {
   const g = new THREE.Group();
   if (models.fuelcan?.[0]) {
@@ -313,6 +345,17 @@ export class WorldView {
   /** The pat pat's chassis object (null without the model). */
   get chassis(): THREE.Object3D | null {
     return this.patRig?.kasa ?? null;
+  }
+
+  /**
+   * Where Karabaş rides along when the worker drives: in the trailer (behind a tractor, at its front,
+   * clear of the sacks and logs at its back), or in the pat pat's box beside the can; on a tractor alone
+   * there is no room (null: it runs behind). The object it stands on and the spot on it, facing +z.
+   */
+  dogSeat(): { on: THREE.Object3D; x: number; y: number; z: number } | null {
+    if (this.trailerRig?.group.visible) return { on: this.trailerRig.group, x: 0.35, y: TRAILER_BED.floorY, z: TRAILER_BED.z1 - 0.35 };
+    if (this.patRig instanceof PatpatRig) return { on: this.patRig.kasa, x: -0.05, y: this.patRig.floorY, z: -0.95 };
+    return null;
   }
 
   steeringGrips(): [THREE.Vector3, THREE.Vector3] | null {
@@ -878,7 +921,7 @@ export class WorldView {
     const big = f.bigTractor && models.bigTractor?.[0] && models.bigTractorRear?.[0] && models.bigTractorFront?.[0];
     const tractor = f.tractor && models.tractor?.[0] && models.tractorRear?.[0] && models.tractorFront?.[0];
     if (tractor || (body && teker)) {
-      // The tractor bought and driven, or the pat pat. (No trimmer rides on the tractor: the worker keeps it.)
+      // The tractor bought and driven, or the pat pat.
       const rig = tractor
         ? big
           ? new TractorRig({ body: models.bigTractor![0], rear: models.bigTractorRear![0], front: models.bigTractorFront![0] }, BIG)
@@ -896,17 +939,38 @@ export class WorldView {
         g.add(this.trailerRig.group);
       }
       this.cargoHides = [depot];
-      // The fuel can and the spare line ride in the trailer, behind the seat.
-      depot.position.set(-0.3, rig.floorY, -0.5);
-      depot.rotation.y = Math.PI / 2;
+      // Where the trimmer (when the worker hasn't got it: menu, first job, driving) and the fuel can ride:
+      // the pat pat's box; behind a tractor, its trailer, else the wooden crate (sele) on its hitch; a
+      // patos behind it is the harvest's, no trimmer. `from`..`to`: the trimmer's engine end on the floor,
+      // its head end raised; `pack`: the backpack engine standing beside it.
+      type Carry = { on: THREE.Object3D; depot: [number, number, number]; depotYaw?: number; from: THREE.Vector3; to: THREE.Vector3; pack: [number, number, number] };
+      let carry: Carry | null = null;
+      if (!tractor) {
+        carry = { on: rig.kasa, depot: [-0.3, rig.floorY, -0.5], from: new THREE.Vector3(0.3, rig.floorY, -1.15), to: new THREE.Vector3(0.45, rig.floorY + 0.38, -0.05), pack: [0.25, rig.floorY, -1.05] };
+      } else if (this.trailerRig) {
+        // Along its left side (Karabaş stands at its front right, the sacks and logs behind).
+        const y = TRAILER_BED.floorY;
+        carry = { on: this.trailerRig.group, depot: [0.45, y, -0.3], from: new THREE.Vector3(-0.5, y, -0.55), to: new THREE.Vector3(-0.45, y + 0.4, 0.6), pack: [-0.15, y, -0.5] };
+      } else if (!this.patosRig && 'hitch' in rig) {
+        // The crate hung on the hitch, behind the rear wheels; the trimmer across it, its head out over one side.
+        const crate = tractorCrate();
+        const h = rig.hitch.position;
+        crate.position.set(0, h.y - 0.05, h.z - SELE.d / 2 - 0.08);
+        rig.kasa.add(crate);
+        const y = crate.position.y + SELE.floor;
+        const z = crate.position.z;
+        // (The can and the spare spool side by side along its long side, in its back half: turned across,
+        // the spool stood out of its back.)
+        carry = { on: rig.kasa, depot: [-0.08, y, z - 0.15], depotYaw: 0, from: new THREE.Vector3(-0.45, y, z + 0.08), to: new THREE.Vector3(0.55, y + 0.5, z + 0.12), pack: [-0.3, y, z - 0.08] };
+      }
+      depot.rotation.y = carry?.depotYaw ?? Math.PI / 2;
       depot.scale.setScalar(0.9);
-      // (Nothing rides on the tractor.)
-      if (!tractor) rig.kasa.add(depot);
-      // The trimmer rides in the trailer whenever the worker hasn't got it (menu, first job, driving).
-      if (models.trimmer?.[0] && !tractor) {
-        // Engine on the floor at the back, the shaft rising forward so the head stands up beside the seat.
-        const from = new THREE.Vector3(0.3, rig.floorY, -1.15);
-        const to = new THREE.Vector3(0.45, rig.floorY + 0.38, -0.05);
+      if (carry) {
+        depot.position.set(...carry.depot);
+        carry.on.add(depot);
+      }
+      if (models.trimmer?.[0] && carry) {
+        const { from, to } = carry;
         // Without the baked line strands: it gets line only when the worker fits it.
         const t = cutTriangles(prepare(models.trimmer[0].scene), isBakedLine, true);
         // (Its box is still the whole model's, so cutting the engine off keeps it in place.)
@@ -925,13 +989,13 @@ export class WorldView {
         const load = new THREE.Group();
         load.add(lean);
         if (WorldView.backpack && models.backpack?.[0]) {
-          // The pack stands at the back of the trailer, the shaft's end beside it.
+          // The pack stands beside the shaft's end.
           const pack = backpackPart(models.backpack[0], 0.5);
-          pack.position.set(0.25, rig.floorY, -1.05);
+          pack.position.set(...carry.pack);
           pack.rotation.y = Math.PI;
           load.add(pack);
         }
-        rig.kasa.add(load);
+        carry.on.add(load);
         load.visible = trimmerInTrailer;
         this.trailerTrimmer = load;
         this.cargoHides.push(load);

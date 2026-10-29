@@ -211,20 +211,23 @@ export const REGIONS: Region[] = [
   {
     id: 2,
     name: 'Karadere',
-    // (A bigger stone house: a wider yard.)
-    ...home(-14, -140, 3),
-    mosque: { x: -62, z: -82 },
+    // (A bigger stone house: a wider yard.) Laid out unlike Yeşilyamaç (whose yard is up the middle,
+    // its mosque in the middle of the village): the yard down at the village's foot by the way in, the
+    // mosque and its graveyard beside it, Uzun Tarla off to the south-west; up the valley the stream's
+    // gardens along the east, the others in two rows west of the track.
+    ...home(-14, 30, 3),
+    mosque: { x: -52, z: 33 },
     hut: null,
-    map: { minX: -125, minZ: -190, maxZ: 70 },
-    place: { 11: { z: -95 }, 12: { z: -45 }, 13: { x: -52, z: -60 }, 14: { x: -100, z: 5 }, 15: { z: 12 }, 16: { x: -62, z: -158 }, 17: { x: -100, z: -160 }, 18: { x: -98, z: -110 }, 19: { x: -95, z: -60 }, 20: { x: -60, z: -10 } },
+    map: { minX: -125, minZ: -190, maxZ: 110 },
+    place: { 11: { z: -140 }, 12: { z: -75 }, 13: { x: -45, z: 55 }, 14: { x: -100, z: 40 }, 15: { z: -20 }, 16: { x: -28, z: -170 }, 17: { x: -80, z: -160 }, 18: { x: -75, z: -110 }, 19: { x: -28, z: -100 }, 20: { x: -31, z: -40 } },
     slots: [],
-    north: false,
-    trunkEnd: 52,
-    look: { paved: true, walls: true, spruce: 0.6, tint: [0.97, 1, 0.95], grass: 'zemin-cim-karadere.webp', cobble: 'kaldirim-karadere.webp', cobbleSize: 2.6, house: { model: 'houseKaradere', height: 7.6, r: 4.6 }, serender: { x: -17, z: -127.5 }, barn: { x: -35, z: -168 }, sky: 'gokyuzu-karadere.jpg', arch: true, stoneYard: true, treeTint: { bark: '#7a5a40', leaf: '#b9cfa2' }, ferns: 3, woodRack: true },
-    // The stone bridge over the stream between Değirmen Bahçesi and Köprübaşı (turned: the village on
-    // its west), the mill on the near bank just above Değirmen Bahçesi.
-    bridge: { x: 0, z: -71, rot: Math.PI, len: 11.6, width: 3.2, hump: 0.45, ramp: 2.2 },
-    mill: { x: 0, z: -124, rot: Math.PI / 2 },
+    north: true,
+    trunkEnd: 92,
+    look: { paved: true, walls: true, spruce: 0.6, tint: [0.97, 1, 0.95], grass: 'zemin-cim-karadere.webp', cobble: 'kaldirim-karadere.webp', cobbleSize: 2.6, house: { model: 'houseKaradere', height: 7.6, r: 4.6 }, serender: { x: -17, z: 42.5 }, barn: { x: 25, z: 32 }, sky: 'gokyuzu-karadere.jpg', arch: true, stoneYard: true, treeTint: { bark: '#7a5a40', leaf: '#b9cfa2' }, ferns: 3, woodRack: true },
+    // The stone bridge over the stream below Köprübaşı (turned: the village on its west), the mill on
+    // the near bank between Köprübaşı and Değirmen Bahçesi.
+    bridge: { x: 0, z: -50, rot: Math.PI, len: 11.6, width: 3.2, hump: 0.45, ramp: 2.2 },
+    mill: { x: 0, z: -108, rot: Math.PI / 2 },
     // A broad valley: gentler than Yeşilyamaç, rolling more.
     ground: (x, z) => {
       const u = Math.max(0, 60 - z);
@@ -303,6 +306,59 @@ function bezier(p0: Pt, p1: Pt, p2: Pt, p3: Pt, n: number, sway = 0, seed = 0): 
 }
 
 /** Points along x = f(z) from z0 to z1, about 0.8 m apart. */
+/**
+ * A field's wooden fence, out from its rectangle (as the village draws it, VillageView): this far at its
+ * sides and top, this far below (its gate side).
+ */
+const FENCE_OUT = { side: 2.9, front: 1.5 };
+/** A track's middle at least this far from a fence (m): the lane is 1.9 either side of it. */
+const FENCE_CLEAR = 2.6;
+
+/**
+ * A track coming a long way to a field's gate runs flat along the front before turning in (Değirmen
+ * Önü's, right on its fence line: the posts and wires down the middle of the lane). Pushed out from the
+ * fence to FENCE_CLEAR (outside it), but for its last metres into the gate (blended in from 3 to 6 m off it).
+ */
+function keepOffFence(pts: Pt[], r: { minX: number; maxX: number; minZ: number; maxZ: number }, gate: Pt): void {
+  const x0 = r.minX - FENCE_OUT.side;
+  const x1 = r.maxX + FENCE_OUT.side;
+  const top = r.minZ - FENCE_OUT.side;
+  const bot = r.maxZ + FENCE_OUT.front;
+  // Its runs (the gate's gap, 2 m either side of it, left out), each with the way out from it.
+  const runs = [
+    { ax: x0, az: bot, bx: x0, bz: top, ox: -1, oz: 0 },
+    { ax: x0, az: top, bx: x1, bz: top, ox: 0, oz: -1 },
+    { ax: x1, az: top, bx: x1, bz: bot, ox: 1, oz: 0 },
+    { ax: x1, az: bot, bx: gate.x + 2, bz: bot, ox: 0, oz: 1 },
+    { ax: gate.x - 2, az: bot, bx: x0, bz: bot, ox: 0, oz: 1 },
+  ];
+  // (Not its first point: the track it leaves.)
+  for (const p of pts.slice(1)) {
+    let best = { d: Infinity, qx: 0, qz: 0, ox: 0, oz: 1 };
+    for (const w of runs) {
+      const vx = w.bx - w.ax;
+      const vz = w.bz - w.az;
+      const t = Math.max(0, Math.min(1, ((p.x - w.ax) * vx + (p.z - w.az) * vz) / (vx * vx + vz * vz || 1)));
+      const qx = w.ax + vx * t;
+      const qz = w.az + vz * t;
+      const d = Math.hypot(p.x - qx, p.z - qz);
+      if (d < best.d) best = { d, qx, qz, ox: w.ox, oz: w.oz };
+    }
+    if (best.d >= FENCE_CLEAR) continue;
+    const s = Math.min(1, Math.max(0, (Math.hypot(p.x - gate.x, p.z - gate.z) - 3) / 3));
+    if (!s) continue;
+    // Out to FENCE_CLEAR on the outside of the fence (a point on the line, or a hair inside it: out).
+    const ux = best.d > 0.05 ? (p.x - best.qx) / best.d : best.ox;
+    const uz = best.d > 0.05 ? (p.z - best.qz) / best.d : best.oz;
+    const out = ux * best.ox + uz * best.oz >= 0;
+    const k = s * s * (3 - 2 * s);
+    const tx = best.qx + (out ? ux : best.ox) * FENCE_CLEAR;
+    const tz = best.qz + (out ? uz : best.oz) * FENCE_CLEAR;
+    p.x += (tx - p.x) * k;
+    p.z += (tz - p.z) * k;
+  }
+}
+
 function along(f: (z: number) => number, z0: number, z1: number): Pt[] {
   const out: Pt[] = [];
   const dir = Math.sign(z1 - z0);
@@ -479,6 +535,9 @@ export function village(r: Region = REGIONS[0]): Village {
       const side = Math.sign(ex - t.x) || 1;
       const n = Math.max(24, Math.round(Math.hypot(ex - t.x, end.z - t.z) * 1.3));
       branch = [t, ...bezier(t, { x: t.x + side * 6, z: t.z }, { x: ex, z: fr.maxZ + 7.5 }, end, n, 0.25, seed)];
+      keepOffFence(branch, fr, end);
+      // (And off the other gardens' fences it passes by.)
+      for (const o of regionLevels(r)) if (o.id !== lv.id && o.theme !== 'mezarlik') keepOffFence(branch, fieldRect(o), { x: entryX(o), z: fieldRect(o).maxZ + 0.4 });
     }
     addRoad('dirt', from.road, from.i, branch);
     routes[lv.id] = [...routeTo(from.road, from.i), ...branch.slice(1)];

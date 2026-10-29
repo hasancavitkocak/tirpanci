@@ -623,6 +623,8 @@ body.driving #stick { display: none !important; }
   body.playing.easy:not(.freecam) #stick:not(.show) { left: calc(130px + var(--safe-l, 0px)); top: calc(100% - 78px - var(--safe-b, 0px)); }
   /* MİSİNA TAK over the trimmer's buttons, left of the trigger (high up it lay over the top bar). */
   .rethread { right: calc(112px + var(--safe-r)); bottom: calc(92px + var(--safe-b)); padding: 7px 14px 7px 9px; }
+  /* The engine off, the starter's plate (about 215 px wide from the right) is where it was: beside it. */
+  body.engine-off .rethread { right: calc(236px + var(--safe-r)); }
   /* The how-to words along the very bottom, between the stick and the buttons (higher up they met the
      messages under the objective). */
   .tutorial, body.has-acts .tutorial { bottom: calc(10px + var(--safe-b)); padding: 0 calc(300px + var(--safe-r)) 0 calc(240px + var(--safe-l)); font-size: 12px; }
@@ -649,6 +651,9 @@ body.driving #stick { display: none !important; }
 .saga.wide-map { container-type: size; }
 /* (As tall as the list, but no taller than its width calls for: on a tall card, a tablet, the village still shows wide.) */
 .saga.wide-map .saga-map.wide { width: auto; height: min(100%, 72cqw); }
+/* A phone held upright (a browser: the app is locked sideways): the full height, dragged sideways; capped to
+   its width, the stops at the far end sat on top of each other. */
+@media (orientation: portrait) and (max-width: 600px) { .saga.wide-map .saga-map.wide { height: 100%; } }
 .saga-map.wide .saga-node .sn-pin { top: -14px; left: calc(50% + 12px); }
 .saga-map.wide .saga-node.pin-left .sn-pin { left: auto; right: calc(50% + 12px); }
 .saga:has(.saga-map.wide) { display: flex; align-items: center; }
@@ -771,7 +776,8 @@ body.travel #btn-finish, body.travel #btn-rethread, body.travel .gas-btn, body.t
 .shop-card.locked .pic,
 .shop-card.locked b,
 .shop-card.locked small { opacity: 0.45; filter: grayscale(0.7); }
-.shop-card.locked .btn.buy { background: #6d6255; color: #f3ead8; }
+.shop-card.locked .btn.buy,
+.shop-card.needs .btn.buy { background: #6d6255; color: #f3ead8; box-shadow: 0 3px 0 #463d33; text-shadow: none; }
 
 /* The chainsaw: its starter has no primer (choke and cord only); running, only its STOP of the trimmer's controls. */
 body.saw-start #btn-prime, body.saw-start .st-col:has(#btn-prime) { display: none; }
@@ -779,3 +785,24 @@ body.saw-hand #btn-bump, body.saw-hand #btn-visor, body.saw-hand .pad, body.saw-
 
 /* A tablet held sideways (main.ts fitTablet): the menu and the cards over it as on a phone, scaled up. */
 #menu > *, .screen.dim > * { zoom: var(--ui-zoom, 1); }
+
+/* The shop held sideways: on the same wide board as the settings (its thick leafy frame took the room),
+   wider; the cards plain cream plates with a thin edge, as the settings' (the parchment with its leaves
+   was wide-set and big), four to a row and two rows in sight. */
+@media (orientation: landscape) and (max-height: 1100px) {
+  .card.pano.shop-card-board { width: min(780px, 100%); border-width: 40px 46px 42px 46px; border-image: url(/harita/pano-yatay.webp) 260 295 270 285 fill stretch; }
+  /* (Inside the board: past its edge the board's own edge cut it.) */
+  .shop-card-board .close-x { top: 0; right: 0; width: 34px; height: 34px; }
+  .shop-card-board .tabs { margin-right: 40px; }
+  .shop-card-board #shop-list { grid-template-columns: repeat(4, minmax(0, 1fr)); justify-content: stretch; gap: 6px; padding: 2px 2px 8px; }
+  .shop-card-board .shop-card { border: 2px solid #c09257; border-image: none; border-radius: 10px; background: linear-gradient(#fcf3dd, #f2e1bd); box-shadow: 0 2px 0 rgba(110, 70, 25, 0.3); padding: 4px 6px 6px; gap: 1px; }
+  .shop-card-board .shop-card.selected { border-color: #4fae2a; box-shadow: 0 0 0 1px #4fae2a, 0 2px 0 rgba(110, 70, 25, 0.3); }
+  .shop-card-board .shop-card.selected::after { top: -7px; right: -7px; }
+  .shop-card-board .shop-card .pic { height: 41px; background: none; }
+  .shop-card-board .shop-card .pic .gold-art { width: 41px; height: 41px; }
+  .shop-card-board .shop-card b { font-size: 12.5px; }
+  .shop-card-board .shop-card small { font-size: 10.5px; line-height: 1.2; -webkit-line-clamp: 2; }
+  .shop-card-board .shop-card .buy { padding: 3px 4px; font-size: 12.5px; margin-top: 2px; }
+  .shop-card .swatch { height: 38px; }
+  .shop-card-board .shop-preview { min-height: 130px; }
+}

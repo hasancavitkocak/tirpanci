@@ -24,6 +24,7 @@
     "@capacitor/preferences": "^8.0.1",
     "@capacitor/status-bar": "^8.0.4",
     "@capgo/native-purchases": "^8.9.6",
+    "kraltirpan-thermal": "file:plugins/thermal",
     "three": "^0.186.1"
   },
   "devDependencies": {

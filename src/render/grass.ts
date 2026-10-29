@@ -293,11 +293,22 @@ function flowerGeometry(): THREE.BufferGeometry {
 }
 
 /** All grass of a field, drawn as instanced clumps whose height comes from the field's grass grid. */
+/**
+ * Far grass drawn lighter: within GRASS_LOD.near metres every blade of a clump, out to GRASS_LOD.far
+ * down to `keep` of them (the clumps all kept: the green as thick, each clump's blades fewer where a
+ * blade is less than a pixel). The grass was more than half of what a phone drew.
+ */
+const GRASS_LOD = { near: 8, far: 28, keep: 0.34 };
+
 export class GrassView {
   readonly group = new THREE.Group();
   readonly texture: THREE.DataTexture;
   readonly material: THREE.ShaderMaterial;
   private readonly data: Uint8Array;
+  /** The clump-drawn tiles (their geometries and bounds), the clump's blades, its indices a blade. */
+  private readonly tiles: { g: THREE.InstancedBufferGeometry; s: THREE.Sphere }[] = [];
+  private bladeCount = 0;
+  private perBlade = 9;
 
   /**
    * @param wild width (m) of the meadow strip drawn round the field, at a lower density;
@@ -336,6 +347,8 @@ export class GrassView {
     this.material.uniforms.uCut.value = this.texture;
 
     const clump = clumpGeometry(blades, simple);
+    this.bladeCount = blades;
+    this.perBlade = simple ? 3 : 9;
     const rnd = makeRng(f.level.seed + 99);
     const step = CLUMP / Math.sqrt(density);
     const hx = f.width / 2 + wild;
@@ -390,6 +403,7 @@ export class GrassView {
         const mesh = new THREE.Mesh(g, this.material);
         mesh.frustumCulled = true;
         this.group.add(mesh);
+        if (g.boundingSphere) this.tiles.push({ g, s: g.boundingSphere });
       }
     }
     this.addFlowers(wild, ground);
@@ -461,6 +475,7 @@ export class GrassView {
         const mesh = new THREE.Mesh(g, this.material);
         mesh.frustumCulled = true;
         this.group.add(mesh);
+        if (g.boundingSphere) this.tiles.push({ g, s: g.boundingSphere });
       }
     }
   }
@@ -509,6 +524,18 @@ export class GrassView {
   }
 
   /** Copy changed grass cells to the GPU texture. */
+  /** Each frame, from where the camera is: each tile's clumps drawn with as many blades as its distance wants (GRASS_LOD). */
+  lod(cam: THREE.Vector3): void {
+    const n = this.bladeCount;
+    const min = Math.max(1, Math.round(n * GRASS_LOD.keep));
+    for (const t of this.tiles) {
+      const d = Math.max(0, Math.hypot(cam.x - t.s.center.x, cam.z - t.s.center.z) - t.s.radius);
+      const k = Math.min(1, Math.max(0, (d - GRASS_LOD.near) / (GRASS_LOD.far - GRASS_LOD.near)));
+      const blades = Math.max(min, Math.round(n - (n - min) * k));
+      t.g.setDrawRange(0, blades * this.perBlade);
+    }
+  }
+
   sync(time: number, headX: number, headZ: number, spin: number): void {
     const d = this.field.takeDirty();
     if (d) this.upload(d.i0, d.j0, d.i1, d.j1);

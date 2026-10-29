@@ -491,6 +491,9 @@ await section('H. Mola, kamera, oyun içi harita', async () => {
 await section('J. Serbest gez: dükkân, kapıda iş', async () => {
   await fresh();
   await click('#btn-roam');
+  // (Which village: the first.)
+  await sleep(400);
+  await ev(() => document.getElementById('confirm').classList.contains('show') && document.getElementById('btn-confirm-yes').click());
   await p.waitForFunction('window.__game.mode === "playing"', { timeout: 60000 });
   await sleep(800);
   ok(await ev(() => window.__game.roaming), 'SERBEST GEZ: roaming');

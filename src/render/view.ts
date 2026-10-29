@@ -207,10 +207,19 @@ export class View {
     window.addEventListener('resize', () => this.resize());
   }
 
+  /** The phone warming (Game's thermal easing): its pixels drawn at this share of the quality's (1: as they are). */
+  private resScale = 1;
+
+  setResScale(k: number): void {
+    if (Math.abs(k - this.resScale) < 0.01) return;
+    this.resScale = k;
+    this.resize();
+  }
+
   resize(): void {
     const w = window.innerWidth;
     const h = window.innerHeight;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MOBILE ? PHONE_RATIO[this.quality] : QUALITY[this.quality].ratio));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MOBILE ? PHONE_RATIO[this.quality] : QUALITY[this.quality].ratio) * this.resScale);
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     // Portrait phones need a wider view to see enough of the field around the worker.
@@ -356,7 +365,8 @@ export class View {
     if (this.worker) this.scene.remove(this.worker.root, this.worker.extras);
     if (this.dog) {
       disposeTree(this.dog.root);
-      this.scene.remove(this.dog.root);
+      // (Off whatever it stood on: riding, it is the vehicle's.)
+      this.dog.root.removeFromParent();
       this.dog = null;
     }
     if (this.blowerFpv) {
@@ -507,11 +517,12 @@ export class View {
     this.worker.update(dt, s, ground);
     // The line spinning (the engine's revs, the line on and in hand): the grass round the head moves.
     this.grass.sync(this.time, s.headX, s.headZ, s.running && s.hasTrimmer && !s.broken ? s.rpm : 0);
+    this.grass.lod(this.camera.position);
     this.exhaustSmoke(dt, s);
     this.patpatSmoke(dt, s);
     this.critters?.update(dt, this.time, s.x, s.z);
     this.tallGrass?.update();
-    this.dog?.update(dt, s, ground, this.time);
+    this.dog?.update(dt, s, ground, this.time, s.driving ? (this.world?.dogSeat() ?? null) : null, this.scene);
     this.cows?.update(dt, s, ground, this.dog);
     this.poseTiller(s, ground, dt);
     this.rain?.update(this.time, this.camera.position);

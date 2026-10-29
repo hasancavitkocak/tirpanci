@@ -91,8 +91,11 @@ export class ShopPreview {
           this.frame = 0;
           return;
         }
-        this.draw((t - this.last) / 1000);
-        this.last = t;
+        // (30 frames a second are plenty for a slow turn: at the screen's own 60 or 120 it heated the phone.)
+        if (t - this.last >= 1000 / 30 - 2) {
+          this.draw((t - this.last) / 1000);
+          this.last = t;
+        }
         this.frame = requestAnimationFrame(tick);
       };
       this.frame = requestAnimationFrame(tick);

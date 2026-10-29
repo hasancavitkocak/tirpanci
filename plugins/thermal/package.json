@@ -1,0 +1,13 @@
+{
+  "name": "kraltirpan-thermal",
+  "version": "0.1.0",
+  "description": "Kral Tırpan's own plugin: how warm the phone is, its low power mode and its battery (the game eases off as it warms).",
+  "main": "index.js",
+  "license": "UNLICENSED",
+  "private": true,
+  "files": ["index.js", "Package.swift", "ios/Sources", "android/src/main", "android/build.gradle"],
+  "capacitor": {
+    "ios": { "src": "ios" },
+    "android": { "src": "android" }
+  }
+}

@@ -578,8 +578,9 @@ class LaneStrip {
     const coarse = new THREE.BufferAttribute(new Uint32Array(cidx), 1);
     const tex = { value: NO_PRINTS as THREE.Texture };
     // (The coarse terrain under it is pushed back in depth instead, world.ts: pulling the track forward
-    // drew it over the pat pat's low parts too.)
-    const mat = new THREE.MeshStandardMaterial({ map, normalMap, normalScale: new THREE.Vector2(0.8, 0.8), roughnessMap, roughness: 1, metalness: 0, vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide });
+    // drew it over the pat pat's low parts too. Blended and double-sided, three drew each piece twice, its
+    // back then its front, and checked its shader each time: flat on the ground, once is enough.)
+    const mat = new THREE.MeshStandardMaterial({ map, normalMap, normalScale: new THREE.Vector2(0.8, 0.8), roughnessMap, roughness: 1, metalness: 0, vertexColors: true, transparent: true, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true });
     // The prints: darker where the tyres ran (and more so where they ran again), and wet there.
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.uPrints = tex;

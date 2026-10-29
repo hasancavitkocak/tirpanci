@@ -87,7 +87,8 @@ export function runBot(s: Session, maxSeconds: number, rowGap = 1.5, straight = 
       continue;
     }
     if (s.overheated) {
-      while (s.overheated && s.time < end) s.step({ moveX: 0, moveZ: 0, throttle: false, bump: false });
+      // (Waiting it out takes five minutes now: watches the ad, as a player would.)
+      s.coolNow();
       continue;
     }
     if (!s.running && s.fuel > 0) crank(s);

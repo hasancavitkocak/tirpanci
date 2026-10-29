@@ -402,7 +402,9 @@ export function cobbleRoads(f: Field, heightAt: Height): THREE.Group {
         const s = -half + (2 * half * k) / (across - 1);
         const x = p.x + nx * s;
         const z = p.z + nz * s;
-        pos.push(x, heightAt(x, z) + 0.06, z);
+        // (A paved village's setts just over its even track's dirt ribbon (2.5 cm up), the wheels on them: lifted the 6 cm the
+        // cobbled road needs over its dirt, they rode in them.)
+        pos.push(x, heightAt(x, z) + (paved ? 0.035 : 0.06), z);
         uv.push((s + half) / tile, along / tile);
         // Out of the track: muddy at first (darker), the setts showing more and more, ragged at the edge.
         // (Within the dirt track's width, so no half-clear setts lie out on the grass beside it.)

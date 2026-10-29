@@ -2,7 +2,7 @@ import './styles.css';
 import './hud.css';
 import * as THREE from 'three';
 import { GameAudio } from './audio/audio';
-import { BushKind, DAILY, ENGINE, EXTRAS, HIVE, LEVELS, LINE_TYPES, LevelDef, MACHINES, NO_UPGRADES, PLAYER, REQUEST_TEXT, SNAKE, COW, BIG_PULL, THEME_NAME, TRIMMER, Theme, UPGRADES, WEATHER_ICON, WEATHER_NAME, Weather, VEHICLES, DECOR, PAINTS } from './game/config';
+import { BushKind, DAILY, ENGINE, EXTRAS, HIVE, LEVELS, LINE_TYPES, LevelDef, MACHINES, NO_UPGRADES, PLAYER, REQUEST_TEXT, SNAKE, COW, BIG_PULL, OVERHEAT_COOL, THEME_NAME, TRIMMER, Theme, UPGRADES, WEATHER_ICON, WEATHER_NAME, Weather, VEHICLES, DECOR, PAINTS } from './game/config';
 import { CarryOver, Result, Session } from './game/session';
 import { PRIMES_NEEDED, PullResult, Starter } from './game/starter';
 import { Input } from './input/input';
@@ -17,6 +17,7 @@ import { Models, loadModels } from './render/models';
 import { Quality, View } from './render/view';
 import { WorldView } from './render/world';
 import { MOBILE } from './platform/device';
+import { PhoneState, phoneState } from './platform/thermal';
 import { drawVillageMap, preloadVillageArt } from './ui/villageMap';
 import { formatWait, readyIn } from './game/regrow';
 import { makeIlan } from './game/ilan';
@@ -142,10 +143,18 @@ const ORBIT_HOLD = 4;
 const TRIMMER_PITCH = -0.75;
 
 /** Shop pictures in public/textures (shop-<id>.webp), preloaded at start. */
-const SHOP_PICTURES = ['patpat', 'traktor', 'romork', 'patos', 'emektar', 'usta', 'sirt', 'yuvarlak', 'koseli', 'burgulu', 'kulaklik', 'siperlik', 'depo', 'kalin', 'kafa', 'motor', 'cizme'];
+const SHOP_PICTURES = ['patpat', 'traktor', 'romork', 'patos', 'emektar', 'usta', 'sirt', 'yuvarlak', 'koseli', 'burgulu', 'kulaklik', 'siperlik', 'depo', 'kalin', 'kafa', 'motor', 'cizme', 'testere', 'buyuk'];
 
 /** Development: every field playable without unlocking. Set to false before release. */
 const UNLOCK_ALL = true;
+/** Development: with every field open, the shop's later things on sale too (no "16. İŞ"); ?locked keeps their job gates (the tests). */
+const SHOP_GATES = !UNLOCK_ALL || new URLSearchParams(location.search).has('locked');
+/**
+ * A side job (the cow, ot yakma, çapa, the fallen tree) in a job: from its job on, now and then (`chance`).
+ * Development, every field open: in every job it fits, every time (all of them to be tried; the rules
+ * come back with UNLOCK_ALL off, or ?locked; a chance set to 0, as the tests do, still none).
+ */
+const sideJob = (id: number, from: number, chance: number): boolean => id < 100 && (!SHOP_GATES ? chance > 0 : id >= from && Math.random() < chance);
 /** Development: ?tirpan in the address starts jobs in the field, trimmer in hand (no pat pat ride). */
 const DEV_TRIMMER = new URLSearchParams(location.search).has('tirpan');
 
@@ -154,6 +163,18 @@ const DEV_TRIMMER = new URLSearchParams(location.search).has('tirpan');
  * screen would otherwise have them drawn twice as often for nothing: a powerful phone keeps up and heats.
  */
 const FPS_CAP = 60;
+/**
+ * Playing on a phone: half that, unless the settings ask for Akıcı. Ten minutes at 60 frames (and the
+ * automatic quality climbing as long as it kept up) and an iPhone was too hot to hold; at 30 it does
+ * half the work, and a mowing game hardly shows the difference.
+ */
+const PHONE_FPS = 30;
+/**
+ * Easing off for a warming phone (Game.easeForPhone): asked every `every` seconds; its pixels' share at
+ * each step (cool, fair, serious, critical); a step back after `coolFor` seconds cool; the battery low
+ * under this (off the charger).
+ */
+const EASE = { every: 8, res: [1, 0.85, 0.75, 0.7], coolFor: 60, lowBattery: 0.2 };
 const MENU_FPS = 30;
 /** On the menu with a screen over it (the shop, the store, the job map, a card): the yard behind needs only this. */
 const OVERLAY_FPS = 5;
@@ -278,6 +299,9 @@ class Game {
     void this.checkStore();
     const q = (params.get('quality') as Quality) || this.save.quality || this.defaultQuality();
     this.view = new View($<HTMLCanvasElement>('game'), q);
+    // The phone's warmth and power watched: the game eases off as it warms (see easeForPhone).
+    void this.easeForPhone();
+    setInterval(() => void this.easeForPhone(), EASE.every * 1000);
     // The 3D context dropped by the phone (the screen off a while, the GPU memory taken back): asked
     // back, and once it is, the game opened again from the save (the textures and models are gone with
     // the old context). Saved first so nothing of the job's progress outside it is lost.
@@ -435,7 +459,9 @@ class Game {
   private defaultQuality(): Quality {
     if (!MOBILE) return 'high';
     const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 0;
-    return (navigator.hardwareConcurrency ?? 0) >= 8 && memory >= 6 ? 'medium' : 'low';
+    // (An iPhone or iPad tells neither: medium, its screen too fine for low's single pixel.)
+    const apple = /iPhone|iPad|Macintosh/.test(navigator.userAgent);
+    return apple || ((navigator.hardwareConcurrency ?? 0) >= 8 && memory >= 6) ? 'medium' : 'low';
   }
 
   // ---------------------------------------------------------------- screens
@@ -491,6 +517,20 @@ class Game {
         if (e.target === box && performance.now() - opened > 500) close(false);
       };
     });
+  }
+
+  /** One of two over whatever is on screen (the question's two buttons): which, or null for neither (a tap outside). */
+  private async choose(title: string, html: string, a: string, b: string): Promise<'a' | 'b' | null> {
+    const no = $('btn-confirm-no');
+    no.textContent = b;
+    // (The backdrop tapped: neither; the second button: b.)
+    let second = false;
+    const mark = () => (second = true);
+    no.addEventListener('click', mark, { once: true });
+    const yes = await this.ask(title, html, a);
+    no.removeEventListener('click', mark);
+    no.textContent = 'Vazgeç';
+    return yes ? 'a' : second ? 'b' : null;
   }
 
   private show(id: string | null): void {
@@ -755,7 +795,9 @@ class Game {
     const e = s.field.exit;
     const v = s.field.vehicle;
     if (!e || !s.driving || Math.hypot(v.x - e.x, v.z - e.z) > 10) return null;
-    if (!this.roaming && !(this.travelTo && (this.travelTo.region ?? 1) !== s.field.region.id)) return null;
+    // (In the middle of a job too: asked first, the job left unpaid. Only the way to the next one in
+    // this village keeps to it.)
+    if (this.travelTo && (this.travelTo.region ?? 1) === s.field.region.id) return null;
     return this.otherRegion(s);
   }
 
@@ -781,6 +823,14 @@ class Game {
   }
 
   /** Off to the other village: Serbest gez there, or the job there being travelled to. */
+  /** KÖYE GİT: in the middle of a job, asked first (it is left, unpaid); roaming or on the way to a job there, straight off. */
+  private async leaveVillageAsked(to: (typeof REGIONS)[number]): Promise<void> {
+    if (!this.roaming && !this.travelTo && this.session?.level.id !== undefined) {
+      if (!(await this.ask(`${to.name} köyüne git`, `<b>${this.session.level.name}</b> işi yarım kalır, parası verilmez. ${to.name} köyünde serbest gezersin.`, 'Git'))) return;
+    }
+    this.leaveVillage(to);
+  }
+
   private leaveVillage(to: (typeof REGIONS)[number]): void {
     const s = this.session;
     if (!s || this.mode !== 'playing') return;
@@ -898,6 +948,11 @@ class Game {
 
   /** The job list's tab: a village (its id) or the coffee house (0); null = where the next job is. */
   private levelTab: number | null = null;
+  /**
+   * Where each village's job map was scrolled to (its tab): back on it (a job looked at and not taken,
+   * the other tab and back) it stays there; it went back to the next job each time. A job begun: forgotten.
+   */
+  private sagaScroll = new Map<number, { left: number; top: number }>();
 
   /**
    * The job list, one tab at a time: each village's jobs, and the coffee house's odd jobs. It opens on
@@ -932,6 +987,7 @@ class Game {
     const list = $('level-list');
     list.innerHTML = '';
     list.scrollTop = 0;
+    list.onscroll = null;
     // The villages are maps with a path through their jobs; the coffee house's jobs a list.
     list.className = tab === 0 || tab === HARVEST_TAB ? 'level-grid' : 'saga';
     $('levels').classList.toggle('saga-on', tab !== 0 && tab !== HARVEST_TAB);
@@ -989,8 +1045,13 @@ class Game {
     const map = list.firstElementChild as HTMLElement;
     list.classList.toggle('wide-map', map.classList.contains('wide'));
     this.show('levels');
-    if (map.classList.contains('wide')) list.scrollLeft = Math.max(0, (focus.x / 100) * map.clientWidth - list.clientWidth * 0.5);
+    const kept = this.sagaScroll.get(tab);
+    if (kept) {
+      list.scrollLeft = kept.left;
+      list.scrollTop = kept.top;
+    } else if (map.classList.contains('wide')) list.scrollLeft = Math.max(0, (focus.x / 100) * map.clientWidth - list.clientWidth * 0.5);
     else list.scrollTop = Math.max(0, (focus.y / 100) * map.clientHeight - list.clientHeight * 0.55);
+    list.onscroll = () => this.sagaScroll.set(tab, { left: list.scrollLeft, top: list.scrollTop });
   }
 
   /**
@@ -1526,7 +1587,8 @@ class Game {
           const canBuy = tractor && this.save.money >= v.price;
           const label = has ? (hitched ? 'ÇIKAR' : 'TAK') : tractor ? `${v.price.toLocaleString('tr-TR')} TL` : 'ÖNCE TRAKTÖR';
           const state = has ? `<span class="hitch-badge${hitched ? ' on' : ''}">${hitched ? (isTractor(using) ? 'TAKILI' : 'TAKILI · TRAKTÖRÜ SEÇ') : 'TAKILI DEĞİL'}</span>` : '';
-          card(pic(v.id, 'i-tractor') + state, v.name, v.desc, '', label, has || canBuy || !tractor, () => {
+          // (Without a tractor: greyed like a padlock, still tapped for the note that says why.)
+          const c = card(pic(v.id, 'i-tractor') + state, v.name, v.desc, '', label, has || canBuy || !tractor, () => {
             if (!has && !tractor) {
               this.shopNote = { text: `${v.name} sadece traktöre takılır: önce traktörü al`, kind: 'warn' };
               return;
@@ -1555,6 +1617,7 @@ class Game {
             if (this.mode === 'menu') this.view.load(this.menuSession(), this.models, true);
             else if (this.shopInGame) this.applyVehicle();
           }, hitched);
+          if (!has && !tractor) c.classList.add('needs');
           continue;
         }
         const on = using === v.id;
@@ -1659,6 +1722,7 @@ class Game {
     $<HTMLInputElement>('set-sfx').value = String(Math.round(this.save.sfxVolume * 100));
     $<HTMLInputElement>('set-vibration').checked = this.save.vibration;
     document.querySelectorAll<HTMLButtonElement>('#set-quality button').forEach((b) => b.classList.toggle('on', b.dataset.q === (this.save.quality ?? 'auto')));
+    document.querySelectorAll<HTMLButtonElement>('#set-fps button').forEach((b) => b.classList.toggle('on', (b.dataset.fps === '60') === !!this.save.smooth));
     document.querySelectorAll<HTMLButtonElement>('#set-weather button').forEach((b) => b.classList.toggle('on', b.dataset.w === (this.save.weather ?? 'auto')));
     $('settings').classList.add('show');
   }
@@ -1728,7 +1792,7 @@ class Game {
         if (left <= 0) this.drawHarvest($('harvest-body'));
       }
     }, 1000);
-    on('btn-roam', () => void this.startRoam());
+    on('btn-roam', () => void this.roamWhere());
     on('btn-settings', () => this.openSettings());
     // From the pause menu: the settings over the game, back to the pause menu when done.
     on('btn-pause-settings', () => {
@@ -1743,7 +1807,7 @@ class Game {
     on('btn-reset', () => {
       if (!confirm('Tüm para, yükseltme ve bahçe ilerlemen silinsin mi?')) return;
       // Settings and the bought "remove ads" stay.
-      const keep = { sfxVolume: this.save.sfxVolume, vibration: this.save.vibration, quality: this.save.quality, noAds: this.save.noAds };
+      const keep = { sfxVolume: this.save.sfxVolume, vibration: this.save.vibration, quality: this.save.quality, smooth: this.save.smooth, noAds: this.save.noAds };
       this.save = { ...structuredClone(DEFAULT_SAVE), ...keep };
       void writeSave(this.save);
       this.updateMoney();
@@ -1766,6 +1830,8 @@ class Game {
     document.querySelectorAll<HTMLButtonElement>('#set-quality button').forEach((b) =>
       b.addEventListener('click', () => {
         const q = b.dataset.q as Quality | 'auto';
+        // (Chosen anew: whatever the phone's easing had put by to go back to is forgotten; it caps this.)
+        this.easedFrom = null;
         if (q === 'auto') {
           delete this.save.quality;
           this.autoCeiling = 'high';
@@ -1775,6 +1841,12 @@ class Game {
           this.view.setQuality(q);
         }
         document.querySelectorAll('#set-quality button').forEach((x) => x.classList.toggle('on', x === b));
+      }),
+    );
+    document.querySelectorAll<HTMLButtonElement>('#set-fps button').forEach((b) =>
+      b.addEventListener('click', () => {
+        this.save.smooth = b.dataset.fps === '60';
+        document.querySelectorAll('#set-fps button').forEach((x) => x.classList.toggle('on', x === b));
       }),
     );
     on('btn-pause', () => this.pause());
@@ -2183,6 +2255,20 @@ class Game {
    * (the vehicle in the garage, the trimmer left in it), in first person; walk, drive, look round, the
    * shop by the house. No objective, gauges, time or pay; the pause card's Ana Menü ends it.
    */
+  /** SERBEST GEZ: with more than one village open, which (it went to the one whose job map was looked at last). */
+  private async roamWhere(): Promise<void> {
+    const open = REGIONS.filter((r) => {
+      const jobs = LEVELS.filter((l) => (l.region ?? 1) === r.id);
+      return jobs.length && (UNLOCK_ALL || jobs[0].id <= this.save.unlocked);
+    });
+    if (open.length === 2) {
+      const c = await this.choose('Serbest gez', 'Hangi köyde gezmek istersin?', open[0].name, open[1].name);
+      if (!c) return;
+      this.levelTab = (c === 'a' ? open[0] : open[1]).id;
+    } else if (open.length === 1) this.levelTab = open[0].id;
+    await this.startRoam();
+  }
+
   private async startRoam(job: '' | 'harvest' | 'evening' = ''): Promise<void> {
     const tab = this.levelTab ?? 1;
     const def = LEVELS.find((l) => (l.region ?? 1) === tab) ?? LEVELS[0];
@@ -2200,6 +2286,7 @@ class Game {
   }
 
   start(def: LevelDef): void {
+    this.sagaScroll.clear();
     // Today's events may raise the pay.
     // (The evening's cows: Serbest gez of a late afternoon, the dark falling.)
     if (!this.roaming) this.eveningRun = false;
@@ -2276,7 +2363,7 @@ class Game {
     this.sawRunning = this.sawWasInHand = false;
     if (wd) {
       wd.piles = wd.piles.filter((q) => q.n > 0);
-      if (!this.roaming && def.id >= WOOD.from && def.id < 100 && (!wd.intro || Math.random() < (lv.weather === 'rain' ? WOOD.rainChance : WOOD.chance))) {
+      if (!this.roaming && (!wd.intro ? sideJob(def.id, WOOD.from, 1) : sideJob(def.id, WOOD.from, lv.weather === 'rain' ? WOOD.rainChance : WOOD.chance))) {
         const t = pickFieldTree(this.session.field, Math.random);
         if (t) {
           layTree(this.session.field, t);
@@ -2290,13 +2377,13 @@ class Game {
     WorldView.wood = wd ? { tree: this.woodTree, piles: wd.piles } : null;
     // Now and then a cow wanders into the garden: in a job whose owner tips (left in, no tip).
     const cowGarden = (def.theme === 'findik' || def.theme === 'yayla') && def.client.request !== 'none';
-    this.view.cowIntruder = !this.roaming && !this.eveningRun && def.id >= COW.from && def.id < 100 && cowGarden && Math.random() < COW.chance ? { after: 40 + Math.random() * 50 } : null;
+    this.view.cowIntruder = !this.roaming && !this.eveningRun && cowGarden && sideJob(def.id, COW.from, COW.chance) ? { after: 40 + Math.random() * 50 } : null;
     // Now and then the owner wants some tilling too: the bostan in a corner, or the ocaks' feet.
     this.tillTask = null;
     this.tillerInHand = this.tillWasInHand = this.tillRunning = false;
     this.tillStarter = sawStarter();
     this.tillQuarter = 0;
-    if (!this.roaming && def.id >= TILL.from && def.id < 100 && (def.theme === 'findik' || def.theme === 'yayla') && Math.random() < TILL.chance) {
+    if (!this.roaming && (def.theme === 'findik' || def.theme === 'yayla') && sideJob(def.id, TILL.from, TILL.chance)) {
       const f = this.session.field;
       const kind = Math.random() < 0.5 ? 'bostan' : 'ocak';
       const t = pickTillTask(f, kind, Math.random) ?? pickTillTask(f, kind === 'bostan' ? 'ocak' : 'bostan', Math.random);
@@ -2309,7 +2396,7 @@ class Game {
     this.blowerInHand = this.blowerWasInHand = this.blowerRunning = this.burnReady = false;
     this.blowerStarter = sawStarter();
     this.burnReveal = 0;
-    if (!this.roaming && def.id >= BURN.from && def.id < 100 && (def.theme === 'findik' || def.theme === 'yayla') && Math.random() < BURN.chance) this.burnTask = pickBurnTask(this.session.field, Math.random);
+    if (!this.roaming && (def.theme === 'findik' || def.theme === 'yayla') && sideJob(def.id, BURN.from, BURN.chance)) this.burnTask = pickBurnTask(this.session.field, Math.random);
     WorldView.burn = this.burnTask;
     this.patosRunning = this.hoseInHand = false;
     this.view.load(this.session, this.models);
@@ -2375,7 +2462,7 @@ class Game {
 
   /** A shop item for later on not yet on sale: the job it waits for (null: on sale). */
   private lockedUntil(needs?: number): number | null {
-    return needs && this.save.unlocked < needs ? needs : null;
+    return needs && SHOP_GATES && this.save.unlocked < needs ? needs : null;
   }
 
   /** The harvest is open: Yeşilyamaç's gardens done (or every job open while developing). */
@@ -3773,9 +3860,9 @@ class Game {
     document.body.classList.toggle('overheated', s.overheated);
     if (s.overheated) {
       // Off-engine cooling: temp(t) = temp0 * exp(-k t) until it reaches the restart temperature.
-      const left = Math.max(0, Math.log(s.temp / ENGINE.restart) / ENGINE.coolOffK);
+      const left = Math.ceil(Math.max(0, Math.log(s.temp / ENGINE.restart) / OVERHEAT_COOL));
       $('oh-fill').style.width = `${Math.min(100, ((1 - s.temp) / (1 - ENGINE.restart)) * 100)}%`;
-      $('oh-text').textContent = `Soğuması bekleniyor… yaklaşık ${Math.ceil(left)} sn`;
+      $('oh-text').textContent = `Soğuması bekleniyor… ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
     }
     $('hud-time').textContent = `${Math.floor(s.time / 60)}:${String(Math.floor(s.time % 60)).padStart(2, '0')}`;
     $('hud-knocks').textContent = String(s.knocks);
@@ -3892,8 +3979,9 @@ class Game {
 
   private loop(t: number): void {
     requestAnimationFrame((n) => this.loop(n));
-    // (At most FPS_CAP frames a second; MENU_FPS on the menu and the screens over it.)
-    const fps = this.mode === 'playing' ? FPS_CAP : this.mode === 'menu' && document.querySelector('.screen.show:not(#menu)') ? OVERLAY_FPS : MENU_FPS;
+    // (At most FPS_CAP frames a second; MENU_FPS on the menu; OVERLAY_FPS under any screen over it or
+    // over the game: the shop, the cards, the pause, the result. Paused or paid, it drew 30 for nothing.)
+    const fps = this.mode === 'playing' ? this.playFps : document.querySelector('.screen.show:not(#menu):not(#hud)') ? OVERLAY_FPS : MENU_FPS;
     if (t - this.last < 1000 / fps - 2) return;
     const dt = Math.min(0.05, (t - this.last) / 1000);
     this.last = t;
@@ -4171,7 +4259,7 @@ class Game {
     if (gate?.kind === 'buy') acts.push({ id: 'unlock', icon: 'i-lock', label: 'BÖLÜMÜ AÇ', sub: this.unlockLabel(gate.lv), run: () => void this.buyUnlock(gate.lv) });
     if (gate?.kind === 'switch') acts.push({ id: 'switch', icon: 'i-map', label: 'BU İŞE GEÇ', sub: gate.lv.name, run: () => void this.switchJob(gate.lv) });
     const away = this.exitNear(s);
-    if (away) acts.push({ id: 'exit', icon: 'i-map', label: 'KÖYE GİT', sub: away.name, run: () => this.leaveVillage(away) });
+    if (away) acts.push({ id: 'exit', icon: 'i-map', label: 'KÖYE GİT', sub: away.name, run: () => void this.leaveVillageAsked(away) });
     this.harvestActions(s, acts);
     this.woodActions(s, acts);
     this.tillActions(s, acts);
@@ -4350,9 +4438,54 @@ class Game {
 
   /**
    * Automatic quality (none chosen in the settings): a step down when the game is clearly struggling
-   * (under 40 fps over 4 s), and that level is the most it goes to from then on; a step up after three
-   * smooth spells in a row (57 fps or more), up to that.
+   * (under two thirds of its frames over 4 s), and that level is the most it goes to from then on; on a
+   * computer, a step up after three smooth spells in a row (57 fps or more), up to that.
    */
+  /** Frames a second at most while playing: PHONE_FPS on a phone unless Akıcı is chosen. */
+  private get playFps(): number {
+    return MOBILE && (!this.save.smooth || this.ease.fps30) ? PHONE_FPS : FPS_CAP;
+  }
+
+  /** Eased off for the phone now (easeForPhone): how far (0 not), its pixels' share, a quality it may not go over, held to 30 frames. */
+  private ease: { step: number; res: number; cap: Quality | null; fps30: boolean } = { step: 0, res: 1, cap: null, fps30: false };
+  /** The quality it was at before a cap brought it down (back to it when the cap goes). */
+  private easedFrom: Quality | null = null;
+  /** When it last went up a step (it comes back down one step a minute once the phone is cool). */
+  private easedAt = 0;
+
+  /**
+   * Every few seconds: how warm the phone is (its own thermal state), Low Power Mode or battery saver, the
+   * battery low off the charger. Warming, the game eases off before the phone gets hot (and throttles
+   * itself, choppy): first its pixels a little fewer (hardly seen), then a quality down and 30 frames,
+   * at critical the lowest; low power or a low battery, 30 frames and no more than medium. Cool again
+   * for a minute, a step back. The settings' choices are left as they were.
+   */
+  private async easeForPhone(): Promise<void> {
+    const p: PhoneState = await phoneState();
+    const saving = p.lowPower || (p.battery >= 0 && p.battery < EASE.lowBattery && !p.charging);
+    const want = Math.max(p.thermal, saving ? 1 : 0);
+    const now = performance.now();
+    let step = this.ease.step;
+    if (want > step) {
+      step = want;
+      this.easedAt = now;
+    } else if (want < step && now - this.easedAt > EASE.coolFor * 1000) {
+      step--;
+      this.easedAt = now;
+    }
+    const order: Quality[] = ['low', 'medium', 'high'];
+    const cap: Quality | null = step >= 3 ? 'low' : step === 2 ? order[Math.max(0, order.indexOf(this.easedFrom ?? this.view.quality) - 1)] : saving ? 'medium' : null;
+    this.ease = { step, res: EASE.res[Math.min(3, step)], cap, fps30: step >= 2 || saving };
+    this.view.setResScale(this.ease.res);
+    if (cap && order.indexOf(this.view.quality) > order.indexOf(cap)) {
+      this.easedFrom ??= this.view.quality;
+      this.view.setQuality(cap);
+    } else if (!cap && this.easedFrom) {
+      this.view.setQuality(this.easedFrom);
+      this.easedFrom = null;
+    }
+  }
+
   private trackFps(dt: number): void {
     if (this.mode !== 'playing' || params.has('quality') || this.save.quality) return;
     this.fpsAcc += dt;
@@ -4363,11 +4496,13 @@ class Game {
     this.fpsFrames = 0;
     const order: Quality[] = ['low', 'medium', 'high'];
     const at = order.indexOf(this.view.quality);
-    if (fps < 40 && at > 0) {
+    // (Struggling: two thirds of its frames or fewer: 40 at 60, 20 at 30, a hot phone held back.)
+    if (fps < this.playFps * 0.67 && at > 0) {
       this.autoCeiling = order[at - 1];
       this.view.setQuality(this.autoCeiling);
       this.fpsSmooth = 0;
-    } else if (fps >= 57 && at < order.indexOf(this.autoCeiling)) {
+      // (On a phone never up again: smooth is no reason to make it work harder and heat.)
+    } else if (!MOBILE && fps >= 57 && at < order.indexOf(this.autoCeiling)) {
       if (++this.fpsSmooth >= 3) {
         this.view.setQuality(order[at + 1]);
         this.fpsSmooth = 0;

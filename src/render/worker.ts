@@ -226,13 +226,13 @@ class TrimmerView {
     // ... and their motion blur when spinning: a faint disc with streaks, brightest at the line tips.
     this.blur = new THREE.Mesh(
       new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2),
-      new THREE.MeshBasicMaterial({ map: lineBlurTexture(), transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }),
+      new THREE.MeshBasicMaterial({ map: lineBlurTexture(), transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true }),
     );
     this.blur.position.y = 0.03;
     this.head.add(this.blur);
     this.trail = new THREE.Mesh(
       new THREE.CircleGeometry(1, 40).rotateX(-Math.PI / 2),
-      new THREE.MeshBasicMaterial({ map: lineTrailTexture(), transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }),
+      new THREE.MeshBasicMaterial({ map: lineTrailTexture(), transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true }),
     );
     this.trail.position.y = 0.02;
     this.head.add(this.trail);

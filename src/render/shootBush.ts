@@ -6,7 +6,7 @@ import { makeRng } from '../game/rng';
 /**
  * Hazelnut ocak built from one artist shoot (a single hazel stem with leaves, models.json "shoot"):
  * 10–14 copies rise from one root clump, some upright, most leaning out at 10–40°, of different
- * lengths, turned every way — the way a real ocak grows. Far away a lighter version (fewer shoots).
+ * lengths, turned every way — the way a real ocak grows. Further away lighter versions (fewer shoots: BUSH_LOD).
  */
 
 /** Height of a full shoot in the game, metres. */
@@ -14,8 +14,16 @@ const SHOOT_LEN = 4.6;
 
 interface Variant {
   near: THREE.BufferGeometry;
+  mid: THREE.BufferGeometry;
   far: THREE.BufferGeometry;
 }
+
+/**
+ * Where an ocak of the field being mown goes lighter (m): every shoot up close, under half of them past
+ * `mid`, three past `far` (at 16 m it kept six shoots of 1,455 triangles each, to the far end of the
+ * field: a quarter of a phone's triangles).
+ */
+const BUSH_LOD = { mid: 12, far: 22, farShoots: 3 };
 
 let source: { geo: THREE.BufferGeometry; mat: THREE.Material } | null = null;
 const variants = new Map<number, Variant>();
@@ -91,13 +99,14 @@ export function shootBush(gltf: GLTF, variant: number, shoots: number): THREE.Ob
   const { mat } = prepareSource(gltf);
   let v = variants.get(variant);
   if (!v) {
-    v = { near: build(variant, shoots), far: build(variant + 10, Math.max(4, Math.round(shoots * 0.45))) };
+    v = { near: build(variant, shoots), mid: build(variant + 10, Math.max(4, Math.round(shoots * 0.45))), far: build(variant + 30, BUSH_LOD.farShoots) };
     variants.set(variant, v);
   }
   const lod = new THREE.LOD();
   for (const [geo, dist] of [
     [v.near, 0],
-    [v.far, 16],
+    [v.mid, BUSH_LOD.mid],
+    [v.far, BUSH_LOD.far],
   ] as const) {
     const mesh = new THREE.Mesh(geo, mat);
     mesh.castShadow = true;

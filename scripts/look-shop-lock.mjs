@@ -21,7 +21,7 @@ const ok = (c, t) => {
   if (!c) bad++;
   console.log(`${c ? 'OK  ' : 'FAIL'} ${t}`);
 };
-await p.goto(`${base}?quality=low`);
+await p.goto(`${base}?locked&quality=low`);
 await p.waitForFunction('window.__ready === true', { timeout: 120000 });
 
 // Open a shop tab with the save as given; the cards as { name, label, locked }.

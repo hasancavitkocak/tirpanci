@@ -23,9 +23,12 @@ export interface MapState {
   patpat: Pt;
 }
 
+/** A village's part shown where the plain one would cut its fields (Karadere: Taşlı Yamaç at its north end, the far row at its west). */
+const VIEWS: Record<number, { minX: number; maxX: number; minZ: number; maxZ: number }> = { 2: { minX: -116, maxX: 52, minZ: -194, maxZ: 100 } };
+
 /** The part of the village shown. */
 function viewOf(r: Region): { minX: number; maxX: number; minZ: number; maxZ: number } {
-  return { minX: r.map.minX + 12, maxX: 52, minZ: r.map.minZ + 8, maxZ: r.map.maxZ - 8 };
+  return VIEWS[r.id] ?? { minX: r.map.minX + 12, maxX: 52, minZ: r.map.minZ + 8, maxZ: r.map.maxZ - 8 };
 }
 
 /**
@@ -60,7 +63,7 @@ let cache: { key: string; canvas: HTMLCanvasElement } | null = null;
  * the game's are. It is laid exactly over the part of the village shown; the labels and the markers go
  * on it. `true`: there is one for the village.
  */
-const ART: Record<number, boolean> = { 1: true };
+const ART: Record<number, boolean> = { 1: true, 2: true };
 const artImg: Record<number, HTMLImageElement | 'failed'> = {};
 /** Every village's painting, loaded and decoded (awaited with the game's first load: the map opens on it at once). */
 export async function preloadVillageArt(): Promise<void> {

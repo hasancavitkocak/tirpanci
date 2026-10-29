@@ -342,6 +342,9 @@ await section('C. İş bitir, sıradaki iş', async () => {
 // ---- D. Serbest gez: walked to a garden's gate, its job taken there.
 await section('D. Serbest gez, kapıda iş', async () => {
   await click('#btn-roam');
+  // (Which village: the first.)
+  await sleep(400);
+  await ev(() => document.getElementById('confirm').classList.contains('show') && document.getElementById('btn-confirm-yes').click());
   const st = await playing('SERBEST GEZ');
   ok(st.roam, 'roaming');
   await step('serbest-gez');
@@ -374,6 +377,9 @@ await section('D. Serbest gez, kapıda iş', async () => {
 // ---- E. Serbest gez left, then straight out to a job (no job taken while roaming).
 await section('E. Serbest gezden menüye, sonra işe', async () => {
   await click('#btn-roam');
+  // (Which village: the first.)
+  await sleep(400);
+  await ev(() => document.getElementById('confirm').classList.contains('show') && document.getElementById('btn-confirm-yes').click());
   await playing('SERBEST GEZ again');
   await ev(() => {
     const s = window.__game.session;

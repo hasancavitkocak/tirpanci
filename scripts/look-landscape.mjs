@@ -129,6 +129,9 @@ await page.evaluate(() => {
 });
 await only('menu');
 await page.click('#btn-roam');
+// (Which village: the first.)
+await new Promise((r) => setTimeout(r, 400));
+await page.evaluate(() => document.getElementById('confirm').classList.contains('show') && document.getElementById('btn-confirm-yes').click());
 await page.waitForFunction('window.__game.mode === "playing"', { timeout: 30000 });
 await sleep(2500);
 await shot('13-roam');

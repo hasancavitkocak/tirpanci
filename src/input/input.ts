@@ -90,7 +90,8 @@ export class Input {
     if (btn) {
       btn.addEventListener('pointerdown', (e) => {
         e.preventDefault();
-        if (this.gasId !== null) return;
+        // (A thumb already on it whose lifting was never heard: this one takes the trigger over, so it
+        // can never stay stuck open.)
         // As far open as the thumb is up the trigger (it eases there: see tickGas).
         this.gasId = e.pointerId;
         this.gasWant = throttleAt(btn, e.clientY);
@@ -114,6 +115,11 @@ export class Input {
       btn.addEventListener('pointerup', leave);
       btn.addEventListener('pointercancel', leave);
       btn.addEventListener('lostpointercapture', leave);
+      // (Lifted off it, or cancelled, where the button never heard: the trigger hidden under the thumb,
+      // its capture refused. Heard on the window first.)
+      window.addEventListener('pointerup', leave, true);
+      window.addEventListener('pointercancel', leave, true);
+      document.addEventListener('visibilitychange', () => document.hidden && this.releaseGas());
     }
     surface.addEventListener('contextmenu', (e) => e.preventDefault());
     window.addEventListener('pointermove', (e) => this.move(e));
@@ -175,8 +181,15 @@ export class Input {
       this.keys.clear();
       this.throttleHeld = false;
       this.rethreadHeld = false;
+      this.releaseGas();
       this.renderPad();
     });
+  }
+
+  /** The thumb off the trigger: it eases back to idle. */
+  private releaseGas(): void {
+    this.gasId = null;
+    this.showGas();
   }
 
   /** A key held down (by its code). */
@@ -241,6 +254,8 @@ export class Input {
     const now = performance.now();
     const dt = Math.min(100, now - (this.gasTick || now));
     this.gasTick = now;
+    // The trigger hidden (on the vehicle, the tool put away, a screen over it): no thumb on it.
+    if (this.gasId !== null && this.gasBtn && !this.gasBtn.getClientRects().length) this.releaseGas();
     // Towards what the thumb asks for (idle once let go): opening over GAS_UP, closing over GAS_DOWN.
     const want = this.gasId !== null ? this.gasWant : 0;
     this.gas = want > this.gas ? Math.min(want, this.gas + dt / GAS_UP) : Math.max(want, this.gas - dt / GAS_DOWN);

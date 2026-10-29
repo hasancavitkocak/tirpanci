@@ -170,7 +170,7 @@ const job = async (id) => {
   await sleep(1500);
 };
 
-await page.goto(`${base}?quality=high`);
+await page.goto(`${base}?locked&quality=high`);
 await page.waitForFunction('window.__ready === true', { timeout: 120000 });
 await page.evaluate(() => {
   const g = window.__game;

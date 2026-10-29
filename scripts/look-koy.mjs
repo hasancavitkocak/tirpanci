@@ -215,7 +215,7 @@ s = await st();
 ok(!s.hasTrimmer && !s.acts.includes('take') && s.acts.includes('board') && /bin/.test(s.objective), `off: to the field first (${s.acts} | ${s.objective})`);
 const m11 = await p.evaluate(() => window.__game.routeAhead(window.__game.session).left);
 ok(m11 > 100, `the metres to job 11 count from the way out: ${m11}`);
-// Mid-job: no way out offered.
+// Mid-job: the way out offered too (asked first whether to leave the job half done).
 await p.evaluate(() => {
   const s = window.__game.session;
   s.board();
@@ -223,7 +223,7 @@ await p.evaluate(() => {
 await toExit(4);
 await sleep(600);
 s = await st();
-ok(!s.acts.includes('exit'), `during a job: no KÖYE GİT (${s.acts})`);
+ok(s.acts.includes('exit'), `during a job: KÖYE GİT, asked first (${s.acts})`);
 // ---- D. The village's map in play (all ten fields), and the job map's Karadere tab.
 await p.evaluate(() => window.__game.session.alight());
 await sleep(300);

@@ -389,7 +389,7 @@ export function wireFence(points: THREE.Vector3[], height = 1.3): THREE.Group {
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   g.setIndex(idx);
   g.computeVertexNormals();
-  const wire = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: wireMeshTexture(), transparent: true, alphaTest: 0.3, side: THREE.DoubleSide }));
+  const wire = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: wireMeshTexture(), transparent: true, alphaTest: 0.3, side: THREE.DoubleSide, forceSinglePass: true }));
   wire.castShadow = true;
   grp.add(wire);
   const top: number[] = [];

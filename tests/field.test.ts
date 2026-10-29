@@ -378,6 +378,23 @@ describe('Session', () => {
     expect(s.overheated).toBe(false);
     expect(s.pull(1)).toBe('start');
   });
+
+  it('overheated, it takes about five minutes to cool enough to restart (or the ad)', () => {
+    const s = new Session(LEVELS[4], NO_UPGRADES);
+    crank(s);
+    s.temp = 0.99;
+    s.throttle = 1;
+    for (let i = 0; i < 60 * 20 && s.running; i++) {
+      s.load = 144;
+      s.step({ moveX: 0, moveZ: 0, throttle: true, bump: false });
+    }
+    expect(s.overheated).toBe(true);
+    const idle = { moveX: 0, moveZ: 0, throttle: false, bump: false };
+    for (let i = 0; i < 60 * 285; i++) s.step(idle);
+    expect(s.overheated).toBe(true);
+    for (let i = 0; i < 60 * 30 && s.overheated; i++) s.step(idle);
+    expect(s.overheated).toBe(false);
+  });
 });
 
 

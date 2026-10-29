@@ -464,7 +464,9 @@ export class Field {
       const n = this.noise(x * 0.12, z * 0.12) * 0.7 + this.noise(x * 0.31 + 17, z * 0.31) * 0.3;
       h += n * this.bumps * k;
       // Steep banks across the slope: a step up (towards -z) over about a metre, wavy along x.
-      const kx = 1 - smooth01(Math.max(0, Math.abs(x) - this.width / 2 - 2) / 6);
+      // (Faded out with the lumps, over the same 12 m: cut off there, the ground dropped up to two metres
+      // in a step, and a track along that line ran in a ditch: Taşlı Yamaç's way in.)
+      const kx = (1 - smooth01(Math.max(0, Math.abs(x) - this.width / 2 - 2) / 6)) * k;
       for (const b of this.banks) h += (SLOPE.bankRise / (1 + Math.exp((z - b - Math.sin(x * 0.21 + b) * 1.4) / SLOPE.bankWidth)) - SLOPE.bankRise * 0.5) * kx;
     }
     return h;
@@ -724,14 +726,25 @@ export class Field {
   }
 
   /**
-   * Dry-stone walls along both sides of the trunk, a little off the track: left open where another track
-   * leaves it, by the yard, the mosque, the stream and the fields, and over the last metres to the way
-   * out (its board stands there).
+   * Dry-stone walls along both sides of the trunk, a little off the track, and of the long track up the
+   * valley where there is one (Region.north: with the yard at the village's foot that is its spine): left
+   * open where another track leaves it, by the yard, the mosque, the stream and the fields, and over the
+   * trunk's last metres to the way out (its board stands there).
    */
   private buildRoadWalls(): void {
     const t = this.roads[0]?.pts;
     if (!this.region.look?.walls || !t || t.length < 2) return;
-    const others = this.roads.slice(1).map((r) => r.pts);
+    // (The trunk up to the arch's pillars, where it has one: the walls run into them; else short of the
+    // way out's board. The track up the valley to its end.)
+    const lines = [{ pts: t, stop: this.archBack !== undefined ? this.archBack + ARCH.pillarDepth / 2 : 12 }];
+    if (this.region.north && this.roads[1]) lines.push({ pts: this.roads[1].pts, stop: 4 });
+    for (const line of lines) {
+      const others = this.roads.map((r) => r.pts).filter((o) => o !== line.pts);
+      this.wallsAlong(line.pts, line.stop, others);
+    }
+  }
+
+  private wallsAlong(t: Pt[], stop: number, others: Pt[][]): void {
     const OFF = 3.4;
     const STEP = 2;
     const near = (x: number, z: number, r: { minX: number; maxX: number; minZ: number; maxZ: number }, m: number) => x > r.minX - m && x < r.maxX + m && z > r.minZ - m && z < r.maxZ + m;
@@ -743,9 +756,7 @@ export class Field {
       this.streamDistance(x, z) > 5 &&
       !near(x, z, me, 5) &&
       !this.others.some((o) => near(x, z, o, 5));
-    const total = this.trunkLength;
-    // (Up to the arch's pillars, where it has one: the walls run into them; else short of the way out's board.)
-    const stop = this.archBack !== undefined ? this.archBack + ARCH.pillarDepth / 2 : 12;
+    const total = lineLength(t);
     const marks: number[] = [];
     for (let d = STEP; d < total - stop; d += STEP) marks.push(d);
     marks.push(total - stop);
@@ -760,7 +771,7 @@ export class Field {
         run = [];
       };
       for (const d of marks) {
-        const p = this.alongTrunk(d);
+        const p = alongLine(t, d);
         const x = p.x + Math.cos(p.yaw) * side * OFF;
         const z = p.z - Math.sin(p.yaw) * side * OFF;
         if (clear(x, z)) run.push({ x, z });
@@ -873,7 +884,16 @@ export class Field {
    * Every ten metres or so along the dirt tracks a puddle in one of the ruts, where the track runs level
    * enough to hold water (not on the harman, not in a field); now and then a big one across half the track.
    */
+  /**
+   * The village's tracks are set with stones (Region.look.paved: Karadere): hard, no ruts, potholes,
+   * puddles or wheel prints (the pat pat sank up to 30 cm into its setts, and rocked on the ruts).
+   */
+  get paved(): boolean {
+    return !!this.region.look?.paved;
+  }
+
   private placePuddles(rnd: () => number): void {
+    if (this.paved) return;
     for (const road of this.roads) {
       if (road.kind !== 'dirt') continue;
       const l = road.pts;
@@ -968,7 +988,7 @@ export class Field {
 
   /** A wheel rolls `travel` metres over (x, z): on a dirt track the soft earth gives under it. */
   press(x: number, z: number, travel: number): void {
-    if (this.laneDistance(x, z) > LANE_SOFT) return;
+    if (this.paved || this.laneDistance(x, z) > LANE_SOFT) return;
     const r = PRINT + LIP;
     const ci = Math.round(x / SINK_CELL - 0.5);
     const cj = Math.round(z / SINK_CELL - 0.5);

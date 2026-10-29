@@ -58,7 +58,7 @@ const look = async (n, c) => {
   await page.evaluate(() => (window.__game.view.freeCam = null));
 };
 
-await page.goto(`${base}?quality=high`, { timeout: 120000 });
+await page.goto(`${base}?locked&quality=high`, { timeout: 120000 });
 await page.waitForFunction('window.__ready === true', { timeout: 120000 });
 await page.evaluate(() => {
   const g = window.__game;

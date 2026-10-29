@@ -67,7 +67,7 @@ export class BurnView {
     this.group.add(this.ash);
     // The flames: a few glowing tongues, flickering.
     for (let i = 0; i < 9; i++) {
-      const f = new THREE.Mesh(new THREE.ConeGeometry(i ? 0.42 : 0.6, i ? 1.6 : 2.2, 7, 1, true), new THREE.MeshBasicMaterial({ color: i % 2 ? '#ffb02e' : '#ff6a1a', transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+      const f = new THREE.Mesh(new THREE.ConeGeometry(i ? 0.42 : 0.6, i ? 1.6 : 2.2, 7, 1, true), new THREE.MeshBasicMaterial({ color: i % 2 ? '#ffb02e' : '#ff6a1a', transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, forceSinglePass: true }));
       const a = (i / 8) * Math.PI * 2;
       f.position.set(h.x + Math.cos(a) * (i ? 0.75 : 0), y + (i ? 0.75 : 1.1), h.z + Math.sin(a) * (i ? 0.75 : 0));
       f.visible = false;
@@ -77,12 +77,18 @@ export class BurnView {
   }
 
   /** Every frame: the tufts where they lie (hidden till mown, gone into the heap), the heap, the fire. */
+  /** Each tuft's ground height where it was last (worked out again only once it has been blown on). */
+  private readonly lie: { x: number; z: number; y: number }[] = [];
+
   update(task: BurnTask, time: number): void {
     task.tufts.forEach((t, i) => {
       const show = t.shown && !t.heaped && task.lit === undefined;
       this.sc.set(show ? 1 : 0, show ? 1 : 0, show ? 1 : 0);
       this.q.setFromAxisAngle(this.v.set(0, 1, 0), i * 2.17);
-      this.m.compose(this.v.set(t.x, this.ground(t.x, t.z), t.z), this.q, this.sc);
+      // (The ground under every tuft every frame was a seventh of the game's own work.)
+      let l = this.lie[i];
+      if (!l || l.x !== t.x || l.z !== t.z) l = this.lie[i] = { x: t.x, z: t.z, y: this.ground(t.x, t.z) };
+      this.m.compose(this.v.set(t.x, l.y, t.z), this.q, this.sc);
       this.tufts.setMatrixAt(i, this.m);
     });
     this.tufts.instanceMatrix.needsUpdate = true;

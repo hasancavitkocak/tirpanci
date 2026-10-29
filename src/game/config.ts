@@ -380,6 +380,11 @@ export const ENGINE = {
   hotWarn: 0.85,
   /** After overheating it can be restarted once it has cooled to this. */
   restart: 0.6,
+  /**
+   * Overheated, seconds before it has cooled enough to restart (from 1 to `restart`): a long wait (five
+   * minutes), the rewarded ad (Hemen soğut) the way out of it.
+   */
+  overheatWait: 300,
   /** Grass cells per second the engine cuts comfortably at full throttle (scales with throttle^1.5). */
   fullLoad: 160,
   /** Overload above this (load / capacity) drags the rpm down and builds strain. */
@@ -390,6 +395,9 @@ export const ENGINE = {
   /** Warn at this strain; stall (bogged down) at 1. */
   strainWarn: 0.35,
 };
+
+/** Overheated and off, its cooling rate (1/s): from 1 down to the restart temperature in ENGINE.overheatWait. */
+export const OVERHEAT_COOL = Math.log(1 / ENGINE.restart) / ENGINE.overheatWait;
 
 export const TRIMMER = {
   /** Fuel use per second at idle / full throttle, litres. */

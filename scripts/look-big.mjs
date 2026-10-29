@@ -44,7 +44,7 @@ const roam = async () => {
   await page.waitForFunction('window.__game.mode === "playing" && !document.getElementById("loading").classList.contains("show")', { timeout: 90000 });
   await sleep(1500);
 };
-await page.goto(`${base}?quality=high`, { timeout: 120000 });
+await page.goto(`${base}?locked&quality=high`, { timeout: 120000 });
 await page.waitForFunction('window.__ready === true', { timeout: 120000 });
 await page.evaluate(() => Object.assign(window.__game.save, { introDone: true, tutorialSeen: true, harvestOffered: 99, unlocked: 15, weather: 'sunny', vehicle: 'patpat', vehicles: ['patpat', 'traktor', 'romork'], trailerOff: false, patosOn: false }));
 

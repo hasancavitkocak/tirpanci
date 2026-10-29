@@ -23,8 +23,8 @@ const COW = { height: 1.65, stride: 1.8, cycle: 2.54, radius: 0.9 };
 /** Its paces (m/s): grazing along, walking, trotting off. */
 const PACE = { amble: 0.45, walk: 0.8, trot: 2.2, turn: 1.6 };
 
-/** One cow: its place, heading, legs. */
-class Cow {
+/** One cow: its place, heading, legs. (Exported for the tests.) */
+export class Cow {
   readonly root = new THREE.Group();
   x: number;
   z: number;
@@ -33,6 +33,12 @@ class Cow {
   private readonly mixer: THREE.AnimationMixer | null = null;
   private readonly walk: THREE.AnimationAction | null = null;
   private weight = 0;
+  /** Going round something in the way: on this heading for this long yet, and the side it went round last. */
+  private detourYaw = 0;
+  private detour = 0;
+  private side = 1;
+  /** Seconds since it last met something in the way (going round the same thing: the same side). */
+  private sinceBlocked = 99;
 
   constructor(gltf: GLTF, black: boolean, x: number, z: number, yaw: number) {
     this.x = x;
@@ -80,20 +86,44 @@ class Cow {
     const d = to ? Math.hypot(to.x - this.x, to.z - this.z) : 0;
     const want = !to || d < 0.3 ? 0 : Math.min(pace, Math.max(0.25, d));
     this.speed += (want - this.speed) * Math.min(1, dt * 2);
+    const goal = to && d > 0.05 ? Math.atan2(to.x - this.x, to.z - this.z) : this.yaw;
+    // (Going round something: that way a while, else straight for it.)
+    if (this.detour > 0) this.detour -= dt;
+    this.sinceBlocked += dt;
+    const head = this.detour > 0 ? this.detourYaw : goal;
     if (to && d > 0.05) {
-      const goal = Math.atan2(to.x - this.x, to.z - this.z);
-      const turn = Math.atan2(Math.sin(goal - this.yaw), Math.cos(goal - this.yaw));
-      this.yaw += Math.max(-PACE.turn * dt, Math.min(PACE.turn * dt, turn));
+      const turn = Math.atan2(Math.sin(head - this.yaw), Math.cos(head - this.yaw));
+      // (Faster round an obstacle: it turns as it finds the way.)
+      const rate = PACE.turn * (this.detour > 0 ? 2.5 : 1);
+      this.yaw += Math.max(-rate * dt, Math.min(rate * dt, turn));
     }
+    const free = (y: number, ahead: number) => f.pointFree(this.x + Math.sin(y) * ahead, this.z + Math.cos(y) * ahead);
     const nx = this.x + Math.sin(this.yaw) * this.speed * dt;
     const nz = this.z + Math.cos(this.yaw) * this.speed * dt;
     if (!solid || f.pointFree(nx, nz) || !f.pointFree(this.x, this.z)) {
       this.x = nx;
       this.z = nz;
-    } else {
-      this.yaw += PACE.turn * dt;
-      this.speed *= 0.5;
-    }
+    } else if (to) {
+      // In the way (a wall, a tree, the barn): round it, on the first free heading out from the one
+      // it wants; nothing free, back the way it came. Still going round the same thing, all of that
+      // side first (taking the other whenever it looked a little shorter, it went to and fro along a
+      // wall; before that it turned a little and back each frame, standing against it for good).
+      const angles = [0.45, 0.8, 1.2, 1.6, 2.1, 2.6];
+      const tries = this.sinceBlocked < 3 ? [...angles.map((a) => this.side * a), ...angles.map((a) => -this.side * a)] : angles.flatMap((a) => [this.side * a, -this.side * a]);
+      this.sinceBlocked = 0;
+      this.detour = 1.4;
+      this.detourYaw = goal + Math.PI;
+      for (const a of tries) {
+        const y = goal + a;
+        // (All the way out: a corner's edge a few centimetres ahead stopped it there for good.)
+        if ([0.01, 0.05, 0.3, 0.6, 0.9].every((k) => free(y, k))) {
+          this.side = Math.sign(a);
+          this.detourYaw = y;
+          break;
+        }
+      }
+      this.speed *= 0.6;
+    } else this.speed = 0;
     if (this.mixer && this.walk) {
       this.weight += ((this.speed > 0.08 ? 1 : 0) - this.weight) * Math.min(1, dt * 4);
       this.walk.setEffectiveWeight(this.weight);

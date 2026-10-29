@@ -29,6 +29,9 @@ export class DogView {
   private wander = { x: 0, z: 0, t: 0 };
   /** A snake it has been called off to (field coordinates), till the time runs out. */
   chase: { x: number; z: number; t: number } | null = null;
+  /** Riding along (the pat pat's box, the trailer): what it stands on. */
+  private riding: THREE.Object3D | null = null;
+  private readonly at = new THREE.Vector3();
 
   constructor(gltf: GLTF, x: number, z: number, yaw: number) {
     this.x = x;
@@ -52,9 +55,50 @@ export class DogView {
     }
   }
 
-  /** Every frame: where it wants to be, getting there, its legs going with its pace. */
-  update(dt: number, s: Session, ground: (x: number, z: number) => number, time: number): void {
+  /**
+   * Every frame: where it wants to be, getting there, its legs going with its pace. The worker driving
+   * where there is room for it (`seat`: the pat pat's box, the trailer), up it jumps and rides standing;
+   * off it jumps beside it when he gets down (it ran along behind before: a dog left out on the road).
+   */
+  update(dt: number, s: Session, ground: (x: number, z: number) => number, time: number, seat: { on: THREE.Object3D; x: number; y: number; z: number } | null = null, scene: THREE.Object3D | null = null): void {
     const f = s.field;
+    if (seat) {
+      if (this.riding !== seat.on) {
+        seat.on.add(this.root);
+        this.riding = seat.on;
+        this.chase = null;
+      }
+      this.root.position.set(seat.x, seat.y, seat.z);
+      this.root.rotation.set(0, 0, 0);
+      this.speed = 0;
+      if (this.mixer && this.walk) {
+        this.weight = 0;
+        this.walk.setEffectiveWeight(0);
+        this.mixer.update(dt);
+      }
+      // (Where it is, for the cows and the snakes.)
+      this.root.getWorldPosition(this.at);
+      this.x = this.at.x;
+      this.z = this.at.z;
+      this.yaw = f.vehicle.yaw;
+      return;
+    }
+    if (this.riding) {
+      // Down beside the vehicle, on the worker's side.
+      this.riding.remove(this.root);
+      scene?.add(this.root);
+      this.riding = null;
+      const v = f.vehicle;
+      for (const side of [1, -1]) {
+        const x = this.x + Math.cos(v.yaw) * 1.3 * side;
+        const z = this.z - Math.sin(v.yaw) * 1.3 * side;
+        if (f.pointFree(x, z)) {
+          this.x = x;
+          this.z = z;
+          break;
+        }
+      }
+    }
     let tx: number;
     let tz: number;
     let pace = PACE.walk;

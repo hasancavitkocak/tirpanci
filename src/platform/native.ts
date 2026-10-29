@@ -61,6 +61,8 @@ export interface SaveData {
   introDone?: boolean;
   /** Fixed graphics quality; unset = automatic. */
   quality?: 'low' | 'medium' | 'high';
+  /** Playing on a phone at 60 frames a second (the settings' Akıcı) rather than 30: smoother, but the phone heats. */
+  smooth?: boolean;
   toggleThrottle?: boolean;
   /** Playing camera: first person (default) or behind the worker. */
   camera?: 'fpv' | 'follow';

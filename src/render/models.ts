@@ -48,6 +48,7 @@ export async function loadModels(onProgress?: (p: number) => void): Promise<Mode
     jobs.map(async ([k, file]) => {
       try {
         const gltf = await loader.loadAsync(`./models/${file}`);
+        solidWhereOpaque(gltf.scene);
         (out[k] ??= []).push(gltf);
       } catch (e) {
         console.warn(`model ${file} could not be loaded, using placeholder`, e);
@@ -56,6 +57,52 @@ export async function loadModels(onProgress?: (p: number) => void): Promise<Mode
     }),
   );
   return out;
+}
+
+/**
+ * The artist's models come with their materials blended (glTF alphaMode BLEND), their pictures opaque
+ * or not: three draws every blended double-sided mesh twice, its back then its front, checking its
+ * shader again each time (a phone's frames went on it). Opaque where its picture is (the same look,
+ * drawn once); where the picture has see-through parts (leaves), cut out at half instead of blended.
+ */
+const seeThrough = new WeakMap<object, boolean>();
+function hasAlpha(image: CanvasImageSource & { width: number; height: number }): boolean {
+  const known = seeThrough.get(image);
+  if (known !== undefined) return known;
+  let any = false;
+  try {
+    // (A small copy is enough to tell: 64 by 64.)
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d', { willReadFrequently: true })!;
+    g.drawImage(image, 0, 0, 64, 64);
+    const d = g.getImageData(0, 0, 64, 64).data;
+    for (let i = 3; i < d.length; i += 4) {
+      if (d[i] < 250) {
+        any = true;
+        break;
+      }
+    }
+  } catch {
+    any = true;
+  }
+  seeThrough.set(image, any);
+  return any;
+}
+
+function solidWhereOpaque(root: THREE.Object3D): void {
+  root.traverse((o) => {
+    const m = (o as THREE.Mesh).material;
+    if (!m) return;
+    for (const mat of (Array.isArray(m) ? m : [m]) as THREE.MeshStandardMaterial[]) {
+      if (!mat.transparent || mat.opacity < 1) continue;
+      const img = mat.map?.image as (CanvasImageSource & { width: number; height: number }) | undefined;
+      mat.transparent = false;
+      mat.depthWrite = true;
+      if (!img || !hasAlpha(img)) continue;
+      mat.alphaTest = 0.5;
+    }
+  });
 }
 
 /** Scale an object so its height is `height` and its base sits on y = 0, centred in x/z. */

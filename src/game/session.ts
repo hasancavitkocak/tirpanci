@@ -1,4 +1,4 @@
-import { BRAMBLE, BUSH_KINDS, CARGO, BushKind, DEFAULT_EQUIPMENT, ENGINE, Equipment, FINISH_AT, HEN, HIVE, HOSE, LevelDef, PATPAT, PLAYER, PRICES, SLOPE, SNAKE, STARS_AT, STONE_SNAP, TRIMMER, Upgrades, WET_LOAD, gearStats, TRACTOR_LOCK, TRACTOR_WHEELBASE, TRAILER, BIG_PULL } from './config';
+import { BRAMBLE, BUSH_KINDS, CARGO, BushKind, DEFAULT_EQUIPMENT, ENGINE, Equipment, FINISH_AT, HEN, HIVE, HOSE, LevelDef, PATPAT, PLAYER, PRICES, SLOPE, SNAKE, STARS_AT, STONE_SNAP, TRIMMER, Upgrades, WET_LOAD, gearStats, TRACTOR_LOCK, TRACTOR_WHEELBASE, TRAILER, BIG_PULL, OVERHEAT_COOL } from './config';
 import { Field } from './field';
 import { PullResult, Starter } from './starter';
 
@@ -1140,7 +1140,7 @@ export class Session {
     // The first jobs heat it less (light work): held flat out there it should not overheat.
     const heat = this.field.level.heat ?? 1;
     const target = this.running ? ENGINE.idleTemp + this.throttle * (ENGINE.revTemp + ENGINE.loadTemp * loadK) * heat - this.gear.cooling * this.throttle : 0;
-    const k = target > this.temp ? (this.running && this.throttle > 0.2 ? ENGINE.heatK : ENGINE.coolRunK * 2) : this.running ? ENGINE.coolRunK : ENGINE.coolOffK;
+    const k = target > this.temp ? (this.running && this.throttle > 0.2 ? ENGINE.heatK : ENGINE.coolRunK * 2) : this.running ? ENGINE.coolRunK : this.overheated ? OVERHEAT_COOL : ENGINE.coolOffK;
     this.temp += (target - this.temp) * Math.min(1, k * dt);
     if (this.running && this.temp >= 1) {
       this.running = false;
