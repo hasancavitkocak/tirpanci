@@ -29,6 +29,8 @@ export interface TractorSpec {
   front: number;
   dims: VehicleDims;
   frontAxleZ: boolean;
+  /** The driver's eyes, when not the pat pat's (world.ts DRIVER_EYE): over the seat, behind it, how far the look tips down. */
+  eye?: { up: number; back: number; down: number };
 }
 export const SMALL: TractorSpec = { body: BODY, rear: REAR, front: FRONT, dims: TRACTOR, frontAxleZ: true };
 /**
@@ -37,17 +39,20 @@ export const SMALL: TractorSpec = { body: BODY, rear: REAR, front: FRONT, dims: 
  */
 export const BIG: TractorSpec = {
   body: {
-    k: 4.15,
-    rearHub: { x: 0.27, y: 0.105 },
-    frontHub: { x: -0.27, y: 0.07 },
-    seat: { x: 0.12, y: 0.25 },
-    pipe: { x: -0.08, y: 0.56, z: -0.15 },
-    wheel: { x: 0.02, y: 0.34, r: 0.035 },
+    k: 4.46,
+    rearHub: { x: 0.24, y: 0.0625 },
+    frontHub: { x: -0.2625, y: 0.056 },
+    // (Lower than the cushion's top, 0.3: the driver's eyes, seatY + DRIVER_EYE.up, under the cab's roof.)
+    seat: { x: 0.095, y: 0.26 },
+    pipe: { x: -0.144, y: 0.53, z: -0.156 },
+    wheel: { x: 0.044, y: 0.3625, r: 0.032 },
   },
-  rear: 1.62,
+  rear: 1.5,
   front: 1.12,
   dims: BIG_TRACTOR,
   frontAxleZ: false,
+  // (In the cab: far enough behind its steering wheel that it sits low in the view, under the roof.)
+  eye: { up: 0.87, back: 0.23, down: 0.2 },
 };
 
 /** A copy of a model with its own geometry (the old field's scene is disposed under the new one). */
@@ -95,6 +100,7 @@ export class TractorRig {
   readonly grips: [THREE.Object3D, THREE.Object3D] = [new THREE.Object3D(), new THREE.Object3D()];
   readonly seatY: number;
   readonly floorY: number;
+  readonly eye: TractorSpec['eye'];
   /** The top of the exhaust stack (the smoke comes out of it, upwards). */
   readonly pipe = new THREE.Object3D();
   /** The hitch pin at the back (the trailer's drawbar rides on it). */
@@ -110,6 +116,7 @@ export class TractorRig {
     const FRONT = spec.front;
     const TRACTOR = spec.dims;
     this.dims = TRACTOR;
+    this.eye = spec.eye;
     const k = BODY.k;
     const R = REAR / 2;
     // The model floor rides so the rear hubs stand at the rear tyres' radius.

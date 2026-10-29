@@ -120,8 +120,10 @@ await page.evaluate(() => {
 });
 await sleep(500);
 let a = await acts();
-ok(a.includes('tiller'), `by the vehicle: ÇAPAYI AL (${a.join(',')})`);
-await press('tiller');
+ok(a.includes('bag'), `by the vehicle: BAGAJ (${a.join(',')})`);
+await press('bag');
+await sleep(300);
+await page.evaluate(() => document.querySelector('#confirm .bag-tool[data-tool="tiller"]').click());
 await sleep(400);
 let u = { starter: await vis('starter'), prime: await vis('btn-prime'), gas: await vis('gas-btn'), bump: await vis('btn-bump') };
 ok(u.starter && !u.prime && !u.gas && !u.bump, `in hand: its starter (no primer), no trigger yet, no MİSİNA (${JSON.stringify(u)})`);

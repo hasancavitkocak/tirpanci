@@ -126,8 +126,10 @@ await page.evaluate(() => {
 });
 await sleep(500);
 let a = await acts();
-ok(a.includes('blower'), `by the vehicle: ÜFLEYİCİYİ AL (${a.join(',')})`);
-await press('blower');
+ok(a.includes('bag'), `by the vehicle: BAGAJ (${a.join(',')})`);
+await press('bag');
+await sleep(300);
+await page.evaluate(() => document.querySelector('#confirm .bag-tool[data-tool="blower"]').click());
 await sleep(400);
 ok((await vis('starter')) && !(await vis('btn-prime')) && !(await vis('btn-bump')), 'worn: its starter (no primer), no MİSİNA');
 await page.click('#btn-choke');

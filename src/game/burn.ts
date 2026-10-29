@@ -16,7 +16,7 @@ export const BURN = {
   from: 8,
   chance: 0.35,
   /** The blower in the shop. */
-  tool: { id: 'ufleyici', name: 'Üfleme Makinesi', desc: 'Sırt tipi. Biçilen otu üfleyip bir yere toplar; sonra yakarsın. Patpatın kasasında taşınır.', price: 6000 },
+  tool: { id: 'ufleyici', name: 'Üfleme Makinesi', desc: 'Sırt tipi. Biçilen otu üfleyip bir yere toplar; sonra yakarsın. Aracın bagajında taşınır.', price: 6000 },
   /** Tufts of clippings over the garden (one every so many square metres, at most so many). */
   every: 2.2,
   most: 420,

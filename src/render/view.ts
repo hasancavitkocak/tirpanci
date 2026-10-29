@@ -847,7 +847,7 @@ export class View {
     if (s.driving && this.mode === 'fpv' && this.world?.driverView(this.camPos, this.tmp)) {
       // From the seat: looking where the pat pat goes (it pitches and rolls with it), dragging looks round.
       const a = Math.atan2(this.tmp.x, this.tmp.z) + this.driveOrbit + this.headTurn;
-      const up = this.tmp.y - DRIVER_EYE.down;
+      const up = this.tmp.y - (this.world?.driverEye.down ?? DRIVER_EYE.down);
       this.camTarget.set(this.camPos.x + Math.sin(a), this.camPos.y + up, this.camPos.z + Math.cos(a));
       this.camera.position.copy(this.camPos);
       if (this.shake > 0) {

@@ -221,11 +221,15 @@ await page.evaluate(() => Object.assign(window.__game.session, { intro: null, ha
 await put(T.cut, T.mid);
 await sleep(500);
 let a = await acts();
-ok(a.includes('cut-trimmer'), `the trimmer in hand: TIRPANLA OLMAZ (${a.join(',')})`);
+ok(a.includes('cut-trimmer'), `the trimmer in hand: TESTERE LAZIM, from the bagaj (${a.join(',')})`);
 const mownUnder = await mowCrown();
 ok(mownUnder < 4, `the grass under the crown not mown while it lies there (${mownUnder} cells at its edge)`);
-// Trimmer put away: the chainsaw in hand.
-await page.evaluate(() => (window.__game.session.hasTrimmer = false));
+// The chainsaw taken out of the bagaj (look-bag.mjs takes it by BAGAJ at the vehicle): in hand.
+await page.evaluate(() => {
+  const g = window.__game;
+  g.session.hasTrimmer = false;
+  g.sawCarried = true;
+});
 await sleep(400);
 a = await acts();
 /** What shows of the starter and the controls. */

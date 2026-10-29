@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { bridgeGroup, turnMillWheel } from './bridge';
 import { ARCH, BARN, Field, STREAM } from '../game/field';
+import { ARCH_SCALE } from '../game/village';
 import { ModelKey, Models, fitted } from './models';
 import { backpackPart, cutTriangles, isBakedLine, isEngine, prepare } from './trimmerRig';
 import { PatpatRig } from './patpat';
@@ -241,6 +242,39 @@ const SELE = { w: 1.2, d: 0.62, h: 0.44, floor: 0.06 };
  * The crate drawn: a plank floor, slatted sides with gaps, corner posts, weathered wood; origin at the
  * middle of its underside, the long side across the tractor. (Until there is the artist's.)
  */
+/**
+ * The arch's name board (shares of its height): hung under the beam from two chains it came down to 1.9 m
+ * at the arch's size, and the big tractor's cab went through it; it is set up on the beam instead (its
+ * chains' lower ends with it, as its hooks). Across the road within `halfW`, from `y0` to `y1`, raised `lift`.
+ */
+const ARCH_BOARD = { halfW: 0.366, y0: 0.44, y1: 0.71, lift: 0.361 };
+
+function liftArchBoard(o: THREE.Object3D): void {
+  o.updateMatrixWorld(true);
+  const toArch = new THREE.Matrix4().copy(o.matrixWorld).invert();
+  const H = ARCH.height;
+  const v = new THREE.Vector3();
+  o.traverse((n) => {
+    const m = n as THREE.Mesh;
+    if (!m.isMesh) return;
+    // (Its own copy: the loaded model's geometry is shared.)
+    m.geometry = m.geometry.clone();
+    const there = new THREE.Matrix4().multiplyMatrices(toArch, m.matrixWorld);
+    const back = there.clone().invert();
+    const pos = m.geometry.getAttribute('position');
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(there);
+      if (Math.abs(v.x) > ARCH_BOARD.halfW * H || v.y < ARCH_BOARD.y0 * H || v.y > ARCH_BOARD.y1 * H) continue;
+      v.y += ARCH_BOARD.lift * H;
+      v.applyMatrix4(back);
+      pos.setXYZ(i, v.x, v.y, v.z);
+    }
+    pos.needsUpdate = true;
+    m.geometry.computeBoundingBox();
+    m.geometry.computeBoundingSphere();
+  });
+}
+
 function tractorCrate(): THREE.Group {
   const g = new THREE.Group();
   const wood = new THREE.MeshLambertMaterial({ color: '#8a6038' });
@@ -337,9 +371,15 @@ export class WorldView {
     if (!r) return false;
     r.kasa.updateMatrixWorld(true);
     // A little behind and over where the driver's eyes are, so the steering wheel is in view below.
-    eye.set(0, r.seatY + DRIVER_EYE.up, this.field.dims.seat - DRIVER_EYE.back).applyMatrix4(r.kasa.matrixWorld);
+    const e = this.driverEye;
+    eye.set(0, r.seatY + e.up, this.field.dims.seat - e.back).applyMatrix4(r.kasa.matrixWorld);
     ahead.set(0, 0, 1).transformDirection(r.kasa.matrixWorld);
     return true;
+  }
+
+  /** Where this vehicle's driver looks from (a cab has its own). */
+  get driverEye(): { up: number; back: number; down: number } {
+    return (this.patRig && 'eye' in this.patRig ? this.patRig.eye : undefined) ?? DRIVER_EYE;
   }
 
   /** The pat pat's chassis object (null without the model). */
@@ -352,11 +392,16 @@ export class WorldView {
    * clear of the sacks and logs at its back), or in the pat pat's box beside the can; on a tractor alone
    * there is no room (null: it runs behind). The object it stands on and the spot on it, facing +z.
    */
-  dogSeat(): { on: THREE.Object3D; x: number; y: number; z: number } | null {
-    if (this.trailerRig?.group.visible) return { on: this.trailerRig.group, x: 0.35, y: TRAILER_BED.floorY, z: TRAILER_BED.z1 - 0.35 };
-    if (this.patRig instanceof PatpatRig) return { on: this.patRig.kasa, x: -0.05, y: this.patRig.floorY, z: -0.95 };
+  dogSeat(): { on: THREE.Object3D; x: number; y: number; z: number; yaw: number } | null {
+    if (this.trailerRig?.group.visible) return { on: this.trailerRig.group, x: 0.35, y: TRAILER_BED.floorY, z: TRAILER_BED.z1 - 0.35, yaw: 0 };
+    // (The box's middle, between the can and spool on its left and the trimmer on its right, all of him inside it.)
+    if (this.patRig instanceof PatpatRig) return { on: this.patRig.kasa, x: 0, y: this.patRig.floorY, z: -0.68, yaw: 0 };
+    // A lone tractor: standing across its crate (its length is his).
+    if (this.crateSeat) return { ...this.crateSeat, yaw: Math.PI / 2 };
     return null;
   }
+  /** The crate on a lone tractor's hitch: where Karabaş stands in it. */
+  private crateSeat: { on: THREE.Object3D; x: number; y: number; z: number } | null = null;
 
   steeringGrips(): [THREE.Vector3, THREE.Vector3] | null {
     const r = this.patRig;
@@ -617,9 +662,10 @@ export class WorldView {
     const ar = f.archAt;
     if (ar && models.arch?.[0]) {
       const o = fitted(models.arch[0].scene, ARCH.height);
+      liftArchBoard(o);
       o.updateMatrixWorld(true);
       // (The board's faces found on the model: a ray in from either side at its height.)
-      const by = ARCH.height * 0.575;
+      const by = ARCH.height * (0.575 + ARCH_BOARD.lift);
       const ray = new THREE.Raycaster();
       for (const [dir, text, sub] of [[1, f.region.name, 'Köyü'], [-1, 'Yolun açık olsun', null]] as const) {
         ray.set(new THREE.Vector3(0, by, dir * 5), new THREE.Vector3(0, 0, -dir));
@@ -931,6 +977,7 @@ export class WorldView {
       // The trailer, when hitched behind the tractor.
       this.trailerRig = null;
       this.patosRig = null;
+      this.crateSeat = null;
       if (tractor && f.trailer && WorldView.towed === 'patos') {
         this.patosRig = new PatosRig(models.patos?.[0]);
         g.add(this.patosRig.group);
@@ -946,7 +993,8 @@ export class WorldView {
       type Carry = { on: THREE.Object3D; depot: [number, number, number]; depotYaw?: number; from: THREE.Vector3; to: THREE.Vector3; pack: [number, number, number] };
       let carry: Carry | null = null;
       if (!tractor) {
-        carry = { on: rig.kasa, depot: [-0.3, rig.floorY, -0.5], from: new THREE.Vector3(0.3, rig.floorY, -1.15), to: new THREE.Vector3(0.45, rig.floorY + 0.38, -0.05), pack: [0.25, rig.floorY, -1.05] };
+        // (The can and spool against its left side, the trimmer along its right: Karabaş rides between.)
+        carry = { on: rig.kasa, depot: [-0.44, rig.floorY, -0.5], from: new THREE.Vector3(0.36, rig.floorY, -1.15), to: new THREE.Vector3(0.48, rig.floorY + 0.38, -0.05), pack: [0.3, rig.floorY, -1.05] };
       } else if (this.trailerRig) {
         // Along its left side (Karabaş stands at its front right, the sacks and logs behind).
         const y = TRAILER_BED.floorY;
@@ -959,6 +1007,7 @@ export class WorldView {
         rig.kasa.add(crate);
         const y = crate.position.y + SELE.floor;
         const z = crate.position.z;
+        this.crateSeat = { on: rig.kasa, x: 0, y: y + 0.06, z };
         // (The can and the spare spool side by side along its long side, in its back half: turned across,
         // the spool stood out of its back.)
         carry = { on: rig.kasa, depot: [-0.08, y, z - 0.15], depotYaw: 0, from: new THREE.Vector3(-0.45, y, z + 0.08), to: new THREE.Vector3(0.55, y + 0.5, z + 0.12), pack: [-0.3, y, z - 0.08] };
@@ -1158,7 +1207,7 @@ function archLetters(text: string, sub: string | null): THREE.Mesh {
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
-  return new THREE.Mesh(new THREE.PlaneGeometry(3.4, 0.85), new THREE.MeshLambertMaterial({ map: tex, transparent: true, depthWrite: false }));
+  return new THREE.Mesh(new THREE.PlaneGeometry(3.4 * ARCH_SCALE, 0.85 * ARCH_SCALE), new THREE.MeshLambertMaterial({ map: tex, transparent: true, depthWrite: false }));
 }
 
 /**

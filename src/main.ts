@@ -83,10 +83,18 @@ function icon(id: string, cls = 'ic'): string {
   return `<svg class="${cls}"><use href="#${id}"/></svg>`;
 }
 
+/** The tools the vehicle's bagaj holds, and each trimmer's picture in the shop. */
+type BagTool = 'trimmer' | 'saw' | 'blower' | 'tiller';
+const TRIMMER_PIC: Record<string, string> = { standart: 'emektar', usta: 'usta', sirt: 'sirt' };
+
 /**
  * A picture that may not exist yet (artist images in public/textures): the icon shows until one of
  * the files loads.
  */
+
+/** A tool's shop card: what buying it brings (the jobs that ask for it come only to its owner). */
+const toolInfo = (text: string): string => `<span class="tool-info">ⓘ Alınca: ${text}</span>`;
+
 function picture(files: string[], fallback: string): string {
   const [first, ...rest] = files;
   const next = rest.length ? `this.onerror=null;this.src='./textures/${rest[0]}';this.onerror=()=>this.remove()` : 'this.remove()';
@@ -122,8 +130,6 @@ const EVENING = { needs: 11, cows: 4, pay: 500 };
 const isTractor = (id: string | undefined): boolean => id === 'traktor' || id === 'buyuk';
 /** How near a hidden snake the dog smells it out (m). */
 const DOG_NOSE = 4;
-/** How near the tree's middle the chainsaw is taken in hand (m). */
-const TREE_NEAR = 12;
 /** A time left as a clock, hours:minutes:seconds (47:59:59). */
 const clock = (ms: number): string => {
   const t = Math.max(0, Math.ceil(ms / 1000));
@@ -252,6 +258,11 @@ class Game {
   private sawRunning = false;
   /** The chainsaw was in hand last frame (its starter shown or hidden when that changes). */
   private sawWasInHand = false;
+  /** A tool this job's owner would have asked for, not owned (said once as a note), and the tools so noted since the game opened. */
+  private toolHint: string | null = null;
+  private readonly toolHinted = new Set<string>();
+  /** The chainsaw taken out of the vehicle's bagaj (it is in hand on foot; put back when driving). */
+  private sawCarried = false;
   /**
    * The motor çapa: this job's tilling (null: none asked for), the tiller taken out of the vehicle, its
    * engine (as the chainsaw's: choke and cord), how far the work had got when last told (quarters).
@@ -364,7 +375,7 @@ class Game {
     for (const f of [...new Set(LEVELS.map((l) => l.client.face))].map((x) => `${x}.webp`).concat(SHOP_PICTURES.map((x) => `shop-${x}.webp`))) new Image().src = `./textures/${f}`;
     // And the painted screens' pictures (the job map's regions, the wooden boards, the buttons): fetched
     // and decoded now, held so they stay decoded (they appeared a moment late the first time).
-    for (const f of [...REGIONS.map((r) => `bolge${r.id}.webp`), 'pano.webp', 'tabela.webp', 'rozet.webp', 'pin.webp', 'kilit.webp', 'yildiz.webp', 'yildiz-bos.webp', 'btn-oyna2.webp', 'btn-gez.webp', 'btn-para.webp']) {
+    for (const f of [...REGIONS.map((r) => `bolge${r.id}.webp`), 'pano.webp', 'tabela.webp', 'rozet.webp', 'pin.webp', 'kilit.webp', 'yildiz.webp', 'yildiz-bos.webp', 'btn-oyna2.webp', 'btn-gez.webp', 'btn-para.webp', 'bagaj-dolu.webp', 'bagaj-bos.webp']) {
       const im = new Image();
       im.src = `./harita/${f}`;
       void im.decode().catch(() => {});
@@ -1666,12 +1677,12 @@ class Game {
       const sawWait = hasSaw ? null : this.lockedUntil(WOOD.needs);
       if (sawWait) lockedCard(pic('testere', 'i-engine'), sw.name, sw.desc, sawWait);
       else
-        card(pic('testere', 'i-engine'), sw.name, sw.desc, '', hasSaw ? 'ALINDI' : `${sw.price.toLocaleString('tr-TR')} TL`, !hasSaw && this.save.money >= sw.price, () => {
+        card(pic('testere', 'i-engine'), sw.name, sw.desc, hasSaw ? '' : toolInfo('Karadere’de devrik ağaç işleri'), hasSaw ? 'ALINDI' : `${sw.price.toLocaleString('tr-TR')} TL`, !hasSaw && this.save.money >= sw.price, () => {
           if (hasSaw || this.save.money < sw.price) return;
           this.save.money -= sw.price;
           eq.owned.push(sw.id);
           this.audio.coin();
-          this.shopNote = { text: this.shopInGame ? 'Motorlu testere alındı: tırpanı kasaya bırak, devrik ağacın yanına git, KES' : 'Motorlu testere alındı. Karadere’de fırtınanın devirdiği ağaçları kesebilirsin; kütükler senin', kind: 'good' };
+          this.shopNote = { text: this.shopInGame ? 'Motorlu testere alındı: aracının bagajında. Devrik ağacın yanında BAGAJ › Motorlu Testere, çalıştır, kes' : 'Motorlu testere alındı. Karadere’de fırtınanın devirdiği ağaçları kesebilirsin; kütükler senin', kind: 'good' };
         }, hasSaw);
       // The backpack blower: bought once; on sale once its job is open.
       const bl = BURN.tool;
@@ -1679,12 +1690,12 @@ class Game {
       const blowWait = hasBlower ? null : this.lockedUntil(BURN.needs);
       if (blowWait) lockedCard(pic('ufleyici', 'i-engine'), bl.name, bl.desc, blowWait);
       else
-        card(pic('ufleyici', 'i-engine'), bl.name, bl.desc, '', hasBlower ? 'ALINDI' : `${bl.price.toLocaleString('tr-TR')} TL`, !hasBlower && this.save.money >= bl.price, () => {
+        card(pic('ufleyici', 'i-engine'), bl.name, bl.desc, hasBlower ? '' : toolInfo(`bahçe sahipleri otu yaktırır (+${BURN.pay} TL)`), hasBlower ? 'ALINDI' : `${bl.price.toLocaleString('tr-TR')} TL`, !hasBlower && this.save.money >= bl.price, () => {
           if (hasBlower || this.save.money < bl.price) return;
           this.save.money -= bl.price;
           eq.owned.push(bl.id);
           this.audio.coin();
-          this.shopNote = { text: 'Üfleme makinesi alındı: patpatın kasasında. Bahçe sahibi otu yakmanı isteyince kasadan ÜFLEYİCİYİ AL', kind: 'good' };
+          this.shopNote = { text: 'Üfleme makinesi alındı: aracının bagajında. Bahçe sahibi otu yakmanı isteyince aracın yanında BAGAJ › Üfleme Makinesi', kind: 'good' };
         }, hasBlower);
       // The motor çapa: bought once; on sale once its job is open.
       const tl = TILL.tool;
@@ -1692,12 +1703,12 @@ class Game {
       const tillWait = hasTill ? null : this.lockedUntil(TILL.needs);
       if (tillWait) lockedCard(pic('capa', 'i-engine'), tl.name, tl.desc, tillWait);
       else
-        card(pic('capa', 'i-engine'), tl.name, tl.desc, '', hasTill ? 'ALINDI' : `${tl.price.toLocaleString('tr-TR')} TL`, !hasTill && this.save.money >= tl.price, () => {
+        card(pic('capa', 'i-engine'), tl.name, tl.desc, hasTill ? '' : toolInfo(`bahçe sahipleri çapa ister (+${TILL.pay.bostan} TL’ye kadar)`), hasTill ? 'ALINDI' : `${tl.price.toLocaleString('tr-TR')} TL`, !hasTill && this.save.money >= tl.price, () => {
           if (hasTill || this.save.money < tl.price) return;
           this.save.money -= tl.price;
           eq.owned.push(tl.id);
           this.audio.coin();
-          this.shopNote = { text: 'Motor çapa alındı: patpatın kasasında. Bahçe sahibi çapa isteyince kasadan ÇAPAYI AL', kind: 'good' };
+          this.shopNote = { text: 'Motor çapa alındı: aracının bagajında. Bahçe sahibi çapa isteyince aracın yanında BAGAJ › Motor Çapa', kind: 'good' };
         }, hasTill);
     } else {
       const pics: Record<string, string> = { tank: pic('depo', 'i-tank'), line: pic('kalin', 'i-spool'), head: pic('kafa', 'i-head'), motor: pic('motor', 'i-engine'), boots: pic('cizme', 'i-boot') };
@@ -2360,7 +2371,7 @@ class Game {
     this.woodTree = null;
     this.woodCut = this.woodT = this.sawT = 0;
     this.sawStarter = sawStarter();
-    this.sawRunning = this.sawWasInHand = false;
+    this.sawRunning = this.sawWasInHand = this.sawCarried = false;
     if (wd) {
       wd.piles = wd.piles.filter((q) => q.n > 0);
       if (!this.roaming && (!wd.intro ? sideJob(def.id, WOOD.from, 1) : sideJob(def.id, WOOD.from, lv.weather === 'rain' ? WOOD.rainChance : WOOD.chance))) {
@@ -2383,7 +2394,17 @@ class Game {
     this.tillerInHand = this.tillWasInHand = this.tillRunning = false;
     this.tillStarter = sawStarter();
     this.tillQuarter = 0;
-    if (!this.roaming && (def.theme === 'findik' || def.theme === 'yayla') && sideJob(def.id, TILL.from, TILL.chance)) {
+    // (Asked only of a player who has the tool: the job never sends him off to buy one.)
+    const owns = (id: string) => this.save.equipment.owned.includes(id);
+    // (Without it, the owner's wish said once in a while as a note: what the tool would bring.)
+    const asks = (id: string, from: number, chance: number): boolean => {
+      if (this.roaming || (def.theme !== 'findik' && def.theme !== 'yayla') || !sideJob(def.id, from, chance)) return false;
+      if (owns(id)) return true;
+      this.toolHint ??= id;
+      return false;
+    };
+    this.toolHint = null;
+    if (asks(TILL.tool.id, TILL.from, TILL.chance)) {
       const f = this.session.field;
       const kind = Math.random() < 0.5 ? 'bostan' : 'ocak';
       const t = pickTillTask(f, kind, Math.random) ?? pickTillTask(f, kind === 'bostan' ? 'ocak' : 'bostan', Math.random);
@@ -2396,7 +2417,7 @@ class Game {
     this.blowerInHand = this.blowerWasInHand = this.blowerRunning = this.burnReady = false;
     this.blowerStarter = sawStarter();
     this.burnReveal = 0;
-    if (!this.roaming && (def.theme === 'findik' || def.theme === 'yayla') && sideJob(def.id, BURN.from, BURN.chance)) this.burnTask = pickBurnTask(this.session.field, Math.random);
+    if (asks(BURN.tool.id, BURN.from, BURN.chance)) this.burnTask = pickBurnTask(this.session.field, Math.random);
     WorldView.burn = this.burnTask;
     this.patosRunning = this.hoseInHand = false;
     this.view.load(this.session, this.models);
@@ -2450,13 +2471,22 @@ class Game {
     else {
       // (What else there is to do in this garden: a storm's tree, some tilling.)
       const t = this.tillTask;
-      const tool = this.save.equipment.owned.includes(TILL.tool.id) ? '' : ' (Motor Çapa: Dükkân › Donanım)';
       const extras = [
-        this.woodTree ? 'Fırtına bahçeye ağaç devirmiş! Testeren varsa kes: kütükler senin' : '',
-        t ? `${lv.client.name} ${t.kind === 'bostan' ? `bostanı da çapalamanı istiyor (+${TILL.pay.bostan} TL)` : `${t.ocaks?.length} ocağın dibini çapalamanı istiyor (+${(t.ocaks?.length ?? 0) * TILL.pay.ocak} TL)`}${tool}` : '',
-        this.burnTask ? `${lv.client.name} biçilen otu ortaya üfleyip yakmanı istiyor (+${BURN.pay} TL)${this.save.equipment.owned.includes(BURN.tool.id) ? '' : ' (Üfleme Makinesi: Dükkân › Donanım)'}` : '',
+        this.woodTree ? `Fırtına bahçeye ağaç devirmiş! ${this.hasSaw ? 'Testere bagajında: kes, kütükler senin' : 'Motorlu testeren olursa kesersin: kütükler senin'}` : '',
+        t ? `${lv.client.name} ${t.kind === 'bostan' ? `bostanı da çapalamanı istiyor (+${TILL.pay.bostan} TL)` : `${t.ocaks?.length} ocağın dibini çapalamanı istiyor (+${(t.ocaks?.length ?? 0) * TILL.pay.ocak} TL)`}. Çapa bagajında` : '',
+        this.burnTask ? `${lv.client.name} biçilen otu ortaya üfleyip yakmanı istiyor (+${BURN.pay} TL). Üfleyici bagajında` : '',
       ].filter(Boolean);
       this.toast(`Bugünkü iş: ${lv.name}${extras.length ? '. ' + extras.join('. ') : ''}`, 'good', 'job', 6, extras.length ? 7000 : 3000);
+      // What a tool not owned would have brought here, after the job's own line.
+      const hint = this.toolHint;
+      if (hint && !this.toolHinted.has(hint)) {
+        this.toolHinted.add(hint);
+        const what = hint === BURN.tool.id ? `otu üfleyip yakmanı istiyordu (+${BURN.pay} TL). ${BURN.tool.name}` : `bahçeyi çapalamanı istiyordu. ${TILL.tool.name}`;
+        const job = this.level;
+        setTimeout(() => {
+          if (this.mode === 'playing' && this.level === job) this.toast(`ⓘ ${lv.client.name} ${what} alırsan bu işler de gelir: Dükkân › Donanım`, '', 'tool-hint', 3, 6000);
+        }, extras.length ? 7500 : 3500);
+      }
     }
   }
 
@@ -2938,11 +2968,14 @@ class Game {
       f.cargoCap = Math.round(woodCapacity(f.tractor, !!f.trailer && !this.patosHitched) * (f.bigTractor ? BIG_PULL.carry : 1));
     }
     const t = this.woodTree;
-    // By the tree with cutting to do: the chainsaw in hand (the trimmer put away first).
-    if (t && this.woodCut < WOOD.pieces && !s.driving && Math.hypot(t.x - s.x, t.z - s.z) < TREE_NEAR) {
-      if (this.hasSaw && !s.hasTrimmer && !this.tillerInHand && !this.blowerInHand) this.view.sawInHand = true;
-      else if (this.atCut(s)) this.toast(this.hasSaw ? 'Ağaç testereyle kesilir: tırpanı kasaya bırak (TIRPANI BIRAK), gel, gaza bas' : 'Ağacı kesmek için motorlu testere lazım (Dükkân › Donanım). Kesersen kütükler senin', 'warn', 'tree-how', 25);
+    // The chainsaw in hand once taken out of the bagaj; driving, it goes back in.
+    if (s.driving && this.sawCarried) {
+      this.sawCarried = false;
+      this.toast('Testere bagaja kondu', '', 'saw-put', 3);
     }
+    if (this.sawCarried && !s.driving) this.view.sawInHand = true;
+    else if (t && this.woodCut < WOOD.pieces && this.atCut(s))
+      this.toast(this.hasSaw ? 'Ağaç testereyle kesilir: aracın yanında BAGAJ › Motorlu Testere, gel, çalıştır, gaza bas' : 'Ağacı kesmek için motorlu testere lazım (Dükkân › Donanım). Kesersen kütükler senin', 'warn', 'tree-how', 25);
     // Put away (walked off, the trimmer taken, driving): it stops. Taken up or put away: its starter shown or hidden.
     if (!this.view.sawInHand) this.sawRunning = false;
     if (this.view.sawInHand !== this.sawWasInHand) {
@@ -3020,7 +3053,7 @@ class Game {
     const f = s.field;
     if (this.atCut(s)) {
       if (!this.hasSaw) acts.push({ id: 'cut-nosaw', icon: 'i-coins', label: 'TESTERE LAZIM', sub: 'Dükkân › Donanım', run: () => this.toast('Ağacı kesmek için motorlu testere lazım: evin önünde DÜKKAN › Donanım', 'warn') });
-      else if (s.hasTrimmer) acts.push({ id: 'cut-trimmer', icon: 'i-hand', label: 'TIRPANLA OLMAZ', sub: 'tırpanı kasaya bırak', run: () => this.toast('Ağaç testereyle kesilir: tırpanı kasaya bırak, gel', 'warn') });
+      else if (!this.sawCarried) acts.push({ id: 'cut-trimmer', icon: 'i-hand', label: 'TESTERE LAZIM', sub: 'aracın bagajından al', run: () => this.toast('Ağaç testereyle kesilir: aracın yanında BAGAJ › Motorlu Testere', 'warn') });
     }
     const bed = this.loadBed(s);
     const pi = this.pileAt(s, w);
@@ -3404,22 +3437,6 @@ class Game {
     this.view.world?.updateTill(t, dt);
   }
 
-  /** The tiller taken out of the vehicle (the trimmer put away first) and put back. */
-  private tillActions(s: Session, acts: Parameters<Game['renderActions']>[0]): void {
-    const t = this.tillTask;
-    if (!t || s.driving || !s.nearVehicle) return;
-    const what = `${t.kind === 'bostan' ? 'bostan' : 'ocak dipleri'} %${Math.round(tilled(t) * 100)}`;
-    if (this.tillerInHand)
-      acts.push({ id: 'tiller-off', icon: 'i-hand', label: 'ÇAPAYI KOY', sub: `kasaya · ${what}`, run: () => {
-        this.tillerInHand = this.tillRunning = false;
-        this.updateStarterUi();
-      } });
-    else if (!s.hasTrimmer && !this.blowerInHand && this.save.equipment.owned.includes(TILL.tool.id))
-      acts.push({ id: 'tiller', icon: 'i-hand', label: 'ÇAPAYI AL', sub: what, run: () => {
-        this.tillerInHand = true;
-        this.updateStarterUi();
-      } });
-  }
 
   /**
    * The cut grass each frame: the tufts showing as the grass under them is mown; the blower, worn and
@@ -3470,24 +3487,89 @@ class Game {
     this.audio.setFire(fire ? Math.max(0, 1 - Math.hypot(fire.x - s.x, fire.z - s.z) / 35) : 0);
   }
 
-  /** The blower taken out of the vehicle (the trimmer put away first) and put back; the heap lit. */
+  /**
+   * The vehicle's bagaj: every tool the player owns rides in it (the trimmer, the chainsaw, the blower,
+   * the tiller). By the vehicle on foot, BAGAJ opens it: one tool taken out, the one in hand put back.
+   */
+  private bagTools(s: Session): { id: BagTool; name: string; pic: string; inHand: boolean; use: string | null }[] {
+    const owned = this.save.equipment.owned;
+    const tree = this.woodTree && this.woodCut < WOOD.pieces;
+    const out: ReturnType<Game['bagTools']> = [
+      { id: 'trimmer', name: 'Tırpan', pic: TRIMMER_PIC[this.save.equipment.machine] ?? 'emektar', inHand: s.hasTrimmer, use: s.roaming ? 'gezerken iş yok' : null },
+    ];
+    if (owned.includes(WOOD.saw.id)) out.push({ id: 'saw', name: 'Motorlu Testere', pic: 'testere', inHand: this.sawCarried, use: tree ? null : 'bu bahçede devrik ağaç yok' });
+    if (owned.includes(BURN.tool.id)) out.push({ id: 'blower', name: 'Üfleme Makinesi', pic: 'ufleyici', inHand: this.blowerInHand, use: this.burnTask && this.burnTask.lit === undefined ? null : 'bu işte yakılacak ot yok' });
+    if (owned.includes(TILL.tool.id)) out.push({ id: 'tiller', name: 'Motor Çapa', pic: 'capa', inHand: this.tillerInHand, use: this.tillTask ? null : 'bu işte çapa yok' });
+    return out;
+  }
+
+  /** BAGAJ by the vehicle, once there is more than the trimmer in it. */
+  private bagActions(s: Session, acts: Parameters<Game['renderActions']>[0]): void {
+    if (s.driving || !s.nearVehicle || s.intro) return;
+    const tools = this.bagTools(s);
+    if (tools.length < 2) return;
+    const held = tools.find((t) => t.inHand);
+    acts.push({ id: 'bag', icon: 'img:./harita/bagaj-dolu.webp', label: 'BAGAJ', sub: held ? `elinde: ${held.name.toLocaleLowerCase('tr')}` : 'alet al', run: () => this.openBag() });
+  }
+
+  /** What is in hand put back in the bagaj; false (and why, said) when it cannot be yet. */
+  private putBack(s: Session): boolean {
+    if (s.hasTrimmer) {
+      if (s.running) {
+        this.toast('Önce tırpanın motorunu durdur (STOP)', 'warn', 'bag-run', 2);
+        return false;
+      }
+      s.dropTrimmer();
+    }
+    this.sawCarried = this.sawRunning = false;
+    this.blowerInHand = this.blowerRunning = false;
+    this.tillerInHand = this.tillRunning = false;
+    return true;
+  }
+
+  /** The bagaj opened: its tools as cards; one tapped is taken (the one in hand put back), the one in hand tapped is put back. */
+  private openBag(): void {
+    const s = this.session;
+    if (!s) return;
+    const tools = this.bagTools(s);
+    const html = `<span class="bag-list">${tools
+      .map(
+        (t) => `<button type="button" class="bag-tool${t.inHand ? ' held' : ''}" data-tool="${t.id}"${!t.inHand && t.use ? ' disabled' : ''}>
+          ${picture([`shop-${t.pic}.webp`], 'i-engine')}<b>${t.name}</b><small>${t.inHand ? 'elinde · geri koy' : t.use ?? 'al'}</small></button>`,
+      )
+      .join('')}</span>`;
+    const no = $('btn-confirm-no');
+    no.style.display = 'none';
+    void this.ask('Bagaj', html, 'Kapat').then(() => {
+      no.style.display = '';
+      $('confirm-title').classList.remove('bag-title');
+    });
+    $('confirm-title').classList.add('bag-title');
+    $('confirm-text')
+      .querySelectorAll<HTMLButtonElement>('.bag-tool')
+      .forEach((b) =>
+        b.addEventListener('click', () => {
+          const t = tools.find((x) => x.id === b.dataset.tool);
+          if (!t || !this.putBack(s)) return;
+          if (!t.inHand) {
+            if (t.id === 'trimmer') s.takeTrimmer();
+            else if (t.id === 'saw') this.sawCarried = true;
+            else if (t.id === 'blower') this.blowerInHand = true;
+            else this.tillerInHand = true;
+            this.toast(`${t.name} elinde${t.id === 'trimmer' ? '' : ': çalıştırmak için ipi çek'}`, 'good', 'bag-take', 2);
+          } else this.toast(`${t.name} bagaja kondu`, '', 'bag-put', 2);
+          this.audio.ui();
+          this.updateStarterUi();
+          $('btn-confirm-yes').click();
+        }),
+      );
+  }
+
+  /** The heap lit, once enough of the cut grass is blown into it. */
   private burnActions(s: Session, acts: Parameters<Game['renderActions']>[0]): void {
     const t = this.burnTask;
     if (!t || s.driving) return;
     const k = heaped(t);
-    const what = t.lit !== undefined ? 'yandı' : `yığında %${Math.round(k * 100)}`;
-    if (s.nearVehicle) {
-      if (this.blowerInHand)
-        acts.push({ id: 'blower-off', icon: 'i-hand', label: 'ÜFLEYİCİYİ KOY', sub: `kasaya · ${what}`, run: () => {
-          this.blowerInHand = this.blowerRunning = false;
-          this.updateStarterUi();
-        } });
-      else if (!s.hasTrimmer && !this.tillerInHand && t.lit === undefined && this.save.equipment.owned.includes(BURN.tool.id))
-        acts.push({ id: 'blower', icon: 'i-hand', label: 'ÜFLEYİCİYİ AL', sub: what, run: () => {
-          this.blowerInHand = true;
-          this.updateStarterUi();
-        } });
-    }
     // By the heap, enough of the grass in it: set it alight.
     if (t.lit === undefined && k >= BURN.done && Math.hypot(s.x - t.heap.x, s.z - t.heap.z) < BURN.heapR + 2.5)
       acts.push({ id: 'burn', icon: 'i-power', label: 'YAK', sub: 'yığını tutuştur', run: () => {
@@ -4200,7 +4282,9 @@ class Game {
         const b = document.createElement('button');
         b.className = `action-btn${a.hold ? ' hold' : ''}`;
         b.dataset.id = a.id;
-        b.innerHTML = `<span class="act-ic">${icon(a.icon)}</span><span class="act-text"><b>${a.label}</b><small>${a.sub}</small>${a.hold ? '<span class="act-bar"><i></i></span>' : ''}</span>`;
+        // (An icon, or a painted picture: 'img:<url>'.)
+        const ic = a.icon.startsWith('img:') ? `<img src="${a.icon.slice(4)}" alt="">` : icon(a.icon);
+        b.innerHTML = `<span class="act-ic">${ic}</span><span class="act-text"><b>${a.label}</b><small>${a.sub}</small>${a.hold ? '<span class="act-bar"><i></i></span>' : ''}</span>`;
         b.addEventListener('pointerdown', (e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -4246,7 +4330,7 @@ class Game {
       acts.push({ id: 'line', icon: 'i-rethread', label: 'MİSİNA TAK', sub: s.rethread > 0 ? `sarılıyor %${Math.round(s.rethread * 100)}` : 'basılı tut', hold: true, progress: s.rethread });
     } else {
       // (Roaming there is no job to take the trimmer for.)
-      if (s.canTake && !s.roaming && !this.tillerInHand && !this.blowerInHand) acts.push({ id: 'take', icon: 'i-hand', label: 'TIRPANI AL', sub: 'kasadan al', run: () => s.takeTrimmer() });
+      if (s.canTake && !s.roaming && !this.tillerInHand && !this.blowerInHand && !this.sawCarried) acts.push({ id: 'take', icon: 'i-hand', label: 'TIRPANI AL', sub: 'kasadan al', run: () => s.takeTrimmer() });
       if (s.canBoard) acts.push({ id: 'board', icon: 'i-tractor', label: s.field.tractor ? 'TRAKTÖRE BİN' : 'PATPATA BİN', sub: s.roaming ? 'köyü gez' : !s.vehicleAtField ? 'tarlaya sür' : 'bidonu yanına getir', run: () => s.board() });
       if (s.canDrop) acts.push({ id: 'drop', icon: 'i-hand', label: 'TIRPANI BIRAK', sub: 'kasaya koy', run: () => s.dropTrimmer() });
       if (s.canOpenGate) acts.push({ id: 'gate', icon: 'i-lock', label: 'KAPIYI AÇ', sub: 'avlu kapısı', run: () => s.openGate() });
@@ -4262,7 +4346,7 @@ class Game {
     if (away) acts.push({ id: 'exit', icon: 'i-map', label: 'KÖYE GİT', sub: away.name, run: () => void this.leaveVillageAsked(away) });
     this.harvestActions(s, acts);
     this.woodActions(s, acts);
-    this.tillActions(s, acts);
+    this.bagActions(s, acts);
     this.burnActions(s, acts);
     this.renderActions(acts);
     let text = '';

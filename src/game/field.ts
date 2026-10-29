@@ -1,6 +1,6 @@
 import { BIG_TRACTOR, BRAMBLE, BUSH_KINDS, BushKind, CELL, CUT_HEIGHT, HIVE, HOSE, LevelDef, MOWN_AT, PATPAT, SLOPE, TRACTOR, VehicleDims, TRAILER, GARAGE } from './config';
 import { makeNoise, makeRng } from './rng';
-import { ARCH_PILLAR, ASPHALT_X, alongLine, Bridge, lineLength, EAST_EDGE, deckRise, Pt, Region, RoadKind, entryX, fieldRect, placement, regionLevels, regionOf, streamX as villageStreamX, village } from './village';
+import { ARCH_PILLAR, ARCH_SCALE, ASPHALT_X, alongLine, Bridge, lineLength, EAST_EDGE, deckRise, Pt, Region, RoadKind, entryX, fieldRect, placement, regionLevels, regionOf, streamX as villageStreamX, village } from './village';
 
 export interface Bush {
   kind: BushKind;
@@ -121,13 +121,13 @@ function smooth01(t: number): number {
 
 /** Distance from a point to a polyline. */
 /**
- * The village arch (kemer-karadere.glb, 5.36 m tall as placed): how far in from the way out it stands, its
+ * The village arch (kemer-karadere.glb, 5.36 m tall at the model's own size, drawn ARCH_SCALE of it): how far in from the way out it stands, its
  * pillars' middles out from the road's line, their reach, their depth along the road (m).
  */
 /** The barn (ahir.glb, 5.2 m to the ridge as placed): its width, depth, and how far round it is solid (m). */
 export const BARN = { height: 5.2, w: 10.1, d: 9, r: 5.2 };
 
-export const ARCH = { height: 5.36, pillar: ARCH_PILLAR, pillarR: 0.95, pillarDepth: 2.15 };
+export const ARCH = { height: 5.36 * ARCH_SCALE, pillar: ARCH_PILLAR, pillarR: 0.95 * ARCH_SCALE, pillarDepth: 2.15 * ARCH_SCALE };
 
 function polyDist(x: number, z: number, pts: Pt[]): number {
   let d = Infinity;

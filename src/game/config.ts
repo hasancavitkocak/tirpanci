@@ -315,7 +315,7 @@ export const TRACTOR: VehicleDims = {
  */
 export const BIG_TRACTOR: VehicleDims = {
   joint: 1.12, rearAxle: 1.12, headAxle: 0, headFront: 0.75,
-  headTrack: 0.86, kasaTrack: 0.98, seat: -1.1, seatLift: 0.75, forward: 7.2,
+  headTrack: 1.0, kasaTrack: 1.08, seat: -0.52, seatLift: 1.15, forward: 7.2,
 };
 /** The big tractor's pull: a load slows it this much less, and its trailer takes this much more (sacks, logs). */
 export const BIG_PULL = { load: 0.5, carry: 1.5 };

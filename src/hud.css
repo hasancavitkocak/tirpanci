@@ -80,6 +80,7 @@ body.fuel-empty #fuel-out { display: flex; }
 .objective .obj-bar i { display: block; height: 100%; background: #ffe066; border-radius: 5px; transition: width 0.1s linear; }
 .action-btn .act-ic { position: relative; width: 40px; height: 40px; border-radius: 50%; background: #fff; color: #2f6a1f; display: grid; place-items: center; }
 .action-btn .act-ic .ic { width: 22px; height: 22px; }
+.action-btn .act-ic img { width: 34px; height: 34px; object-fit: contain; }
 .action-btn .act-text { display: flex; flex-direction: column; align-items: flex-start; white-space: nowrap; }
 .action-btn b { font-size: 15px; font-weight: 900; letter-spacing: 0.5px; }
 .action-btn small { font-size: 11px; opacity: 0.85; font-weight: 600; }

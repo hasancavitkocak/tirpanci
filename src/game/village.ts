@@ -379,7 +379,9 @@ export interface Village {
 }
 
 /** The arch's pillars' middles out from the road's line (m), and how near a track may come to one. */
-export const ARCH_PILLAR = 3.58;
+/** The arch drawn this much of the model's own size (at full size it towered over the village's way in). */
+export const ARCH_SCALE = 0.78;
+export const ARCH_PILLAR = 3.58 * ARCH_SCALE;
 const ARCH_CLEAR = 4.5;
 
 /** The point `d` metres along a polyline, and its heading there (yaw: atan2(dx, dz)). */

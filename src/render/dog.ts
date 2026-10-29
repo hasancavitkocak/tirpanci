@@ -60,7 +60,7 @@ export class DogView {
    * where there is room for it (`seat`: the pat pat's box, the trailer), up it jumps and rides standing;
    * off it jumps beside it when he gets down (it ran along behind before: a dog left out on the road).
    */
-  update(dt: number, s: Session, ground: (x: number, z: number) => number, time: number, seat: { on: THREE.Object3D; x: number; y: number; z: number } | null = null, scene: THREE.Object3D | null = null): void {
+  update(dt: number, s: Session, ground: (x: number, z: number) => number, time: number, seat: { on: THREE.Object3D; x: number; y: number; z: number; yaw: number } | null = null, scene: THREE.Object3D | null = null): void {
     const f = s.field;
     if (seat) {
       if (this.riding !== seat.on) {
@@ -69,7 +69,7 @@ export class DogView {
         this.chase = null;
       }
       this.root.position.set(seat.x, seat.y, seat.z);
-      this.root.rotation.set(0, 0, 0);
+      this.root.rotation.set(0, seat.yaw, 0);
       this.speed = 0;
       if (this.mixer && this.walk) {
         this.weight = 0;
@@ -80,7 +80,7 @@ export class DogView {
       this.root.getWorldPosition(this.at);
       this.x = this.at.x;
       this.z = this.at.z;
-      this.yaw = f.vehicle.yaw;
+      this.yaw = f.vehicle.yaw + seat.yaw;
       return;
     }
     if (this.riding) {

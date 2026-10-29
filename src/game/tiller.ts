@@ -15,7 +15,7 @@ export const TILL = {
   from: 12,
   chance: 0.4,
   /** The tiller in the shop. */
-  tool: { id: 'capa', name: 'Motor Çapa', desc: 'Bostanı ve ocak diplerini çapalar; toprak kabarır. Patpatın kasasında taşınır.', price: 9000 },
+  tool: { id: 'capa', name: 'Motor Çapa', desc: 'Bostanı ve ocak diplerini çapalar; toprak kabarır. Aracın bagajında taşınır.', price: 9000 },
   /** A cell of ground (m), and how much of the plot must be tilled for the pay. */
   cell: 0.5,
   done: 0.9,
