@@ -315,7 +315,7 @@ export const TRACTOR: VehicleDims = {
  */
 export const BIG_TRACTOR: VehicleDims = {
   joint: 1.12, rearAxle: 1.12, headAxle: 0, headFront: 0.75,
-  headTrack: 1.0, kasaTrack: 1.08, seat: -0.52, seatLift: 1.15, forward: 7.2,
+  headTrack: 1.0, kasaTrack: 1.08, seat: -0.91, seatLift: 0.65, forward: 7.2,
 };
 /** The big tractor's pull: a load slows it this much less, and its trailer takes this much more (sacks, logs). */
 export const BIG_PULL = { load: 0.5, carry: 1.5 };
@@ -537,7 +537,7 @@ export const DAILY = [100, 150, 200, 250, 300, 400, 600];
 export const VEHICLES: { id: string; name: string; desc: string; price: number; soon?: boolean; attach?: boolean; needs?: number }[] = [
   { id: 'patpat', name: 'Patpat', desc: 'Köyün emektarı. Belinden kırma, her yola girer.', price: 0 },
   { id: 'traktor', name: 'Traktör', desc: 'Daha hızlı, yokuşta daha güçlü. Uzak tarlalara çabuk gidersin.', price: 30000, needs: 6 },
-  { id: 'buyuk', name: 'Büyük Traktör', desc: 'Kabinli, çok güçlü. En hızlısı; yükte yavaşlamaz, römorkuna yarısı kadar daha çok yük alır.', price: 75000, needs: 16 },
+  { id: 'buyuk', name: 'Büyük Traktör', desc: 'Açık kasa, çok güçlü. En hızlısı; yükte yavaşlamaz, römorkuna yarısı kadar daha çok yük alır.', price: 75000, needs: 16 },
   { id: 'romork', name: 'Römork', desc: 'Traktörün arkasına takılır. Fındık çuvalı taşır (16 çuval).', price: 12000, attach: true, needs: 11 },
   { id: 'patos', name: 'Patos', desc: 'Fındık harman makinesi. Traktöre takılır; hortumla fındığı çeker, temizleyip brandaya döker.', price: 45000, attach: true, needs: 11 },
 ];

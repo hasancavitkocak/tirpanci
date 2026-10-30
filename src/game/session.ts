@@ -38,6 +38,9 @@ export interface CarryOver {
   region: number;
   worker: { x: number; z: number; yaw: number };
   vehicle: { x: number; z: number; yaw: number; art: number };
+  /** Which it was (its measures, for whether it fits where it stood). */
+  tractor?: boolean;
+  bigTractor?: boolean;
 }
 
 export type SessionEvent =
@@ -235,6 +238,11 @@ export class Session {
       const v = this.field.vehicle;
       const top = this.field.laneStart;
       const O = this.field.origin;
+      // (Its measures before it is tried where it stood: a tractor's are not the pat pat's.)
+      if (after) {
+        this.field.tractor = !!after.tractor;
+        this.field.bigTractor = !!after.bigTractor;
+      }
       if (after && after.level !== level.id && after.region === this.field.region.id && this.field.vehicleFits(after.vehicle.x - O.x, after.vehicle.z - O.z, after.vehicle.yaw, after.vehicle.art)) {
         // Carrying on where the last job ended: the worker with his trimmer (line on), the pat pat
         // where he left it. He puts the trimmer in the trailer and drives on to this job.
@@ -245,6 +253,9 @@ export class Session {
         this.field.placeDepot();
         ({ x: this.x, z: this.z } = this.field.clampWalk(after.worker.x - O.x, after.worker.z - O.z));
         this.yaw = after.worker.yaw;
+        // Walked up to this garden's gate, the vehicle left far back: it is brought up by the road
+        // nearest him (the job does not start with a long walk back to it).
+        if (Math.hypot(this.x - v.x, this.z - v.z) > 12) this.bringVehicle();
         this.intro = null;
         this.hasTrimmer = true;
         this.line = this.gear.lineMax;
@@ -266,11 +277,39 @@ export class Session {
     this.updateHead();
   }
 
+  /** The vehicle parked on a road beside the worker (3 to 14 m off, along the road), where it fits. */
+  private bringVehicle(): void {
+    const f = this.field;
+    let best: { x: number; z: number; yaw: number; d: number } | null = null;
+    for (const r of f.roads) {
+      if (this.x < r.box.minX - 14 || this.x > r.box.maxX + 14 || this.z < r.box.minZ - 14 || this.z > r.box.maxZ + 14) continue;
+      for (let i = 1; i < r.pts.length; i++) {
+        const a = r.pts[i - 1];
+        const b = r.pts[i];
+        const d = Math.hypot(b.x - this.x, b.z - this.z);
+        if (d < 3 || d > 14 || (best && d >= best.d)) continue;
+        const yaw = Math.atan2(b.x - a.x, b.z - a.z);
+        for (const y of [yaw, yaw + Math.PI]) {
+          if (!f.vehicleFits(b.x, b.z, y, 0)) continue;
+          best = { x: b.x, z: b.z, yaw: y, d };
+          break;
+        }
+      }
+    }
+    if (!best) return;
+    const v = f.vehicle;
+    v.x = best.x;
+    v.z = best.z;
+    v.yaw = best.yaw;
+    v.art = 0;
+    f.placeDepot();
+  }
+
   /** Where this job ended, village coordinates (for the next job to carry on from). */
   carryOver(): CarryOver {
     const O = this.field.origin;
     const v = this.field.vehicle;
-    return { level: this.level.id, region: this.field.region.id, worker: { x: this.x + O.x, z: this.z + O.z, yaw: this.yaw }, vehicle: { x: v.x + O.x, z: v.z + O.z, yaw: v.yaw, art: v.art } };
+    return { level: this.level.id, region: this.field.region.id, worker: { x: this.x + O.x, z: this.z + O.z, yaw: this.yaw }, vehicle: { x: v.x + O.x, z: v.z + O.z, yaw: v.yaw, art: v.art }, tractor: this.field.tractor, bigTractor: this.field.bigTractor };
   }
 
   /** Close enough to get on, or to the trailer: within 2 m of any side of it (front, back or beside). */

@@ -330,7 +330,8 @@ export class GameAudio {
   setBlower(on: boolean, throttle: number): void {
     const k = this.kit;
     if (!k || (!on && !this.blowSound)) return;
-    this.blowSound ??= new SawSound(k, ['ufleyici_rolanti.wav', 'ufleyici_tam.wav']);
+    // (Its idle recording was its starting, the cord pulled over and over: the full one slowed instead.)
+    this.blowSound ??= new SawSound(k, ['ufleyici_tam.wav', 'ufleyici_tam.wav'], 0.55);
     const now = performance.now();
     const dt = Math.min(0.1, (now - (this.blowAt || now)) / 1000);
     this.blowAt = now;

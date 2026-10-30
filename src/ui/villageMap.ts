@@ -445,6 +445,8 @@ export function drawVillageMap(canvas: HTMLCanvasElement, st: MapState, time: nu
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   const cw = canvas.clientWidth;
   const ch = canvas.clientHeight;
+  // (Not laid out: the map's screen hidden, or the window not sized yet.)
+  if (!cw || !ch) return;
   if (canvas.width !== Math.round(cw * dpr) || canvas.height !== Math.round(ch * dpr)) {
     canvas.width = Math.round(cw * dpr);
     canvas.height = Math.round(ch * dpr);

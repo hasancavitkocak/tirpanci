@@ -79,6 +79,8 @@ html:has(#loading.show:not(.has-art):not(.no-art)), html:has(#loading.show:not(.
 
 #menu { justify-content: space-between; }
 .menu-top { margin-top: 6vh; }
+/* A narrow phone standing up: the logo below the corner buttons (down to Akşam: İnekler's, 190 px), not under them. */
+@media (orientation: portrait) and (max-width: 600px) { #menu .menu-top { margin-top: calc(196px + var(--safe-t)); } }
 .menu-bottom { display: flex; flex-direction: column; align-items: center; gap: 12px; width: min(360px, 100%); }
 /* BAHÇEYE GİT and SERBEST GEZ side by side (one above the other they did not fit a phone held sideways):
    twin pictures (public/harita/btn-oyna2.webp, btn-gez.webp, 760 x 275), the same size. */
@@ -380,6 +382,8 @@ body.look-hint.playing:not(.driving):not(.freecam) #look-hint { display: flex; }
 .bag-tool.held { border-color: #4fae2a; box-shadow: 0 0 0 1px #4fae2a, 0 2px 0 rgba(110, 70, 25, 0.3); }
 .bag-tool.held small { color: #2f7d14; font-weight: 700; }
 .bag-tool:disabled { cursor: default; }
+.bag-tool.want { border-color: #f0a020; animation: bag-want 1s ease-in-out infinite; }
+@keyframes bag-want { 50% { box-shadow: 0 0 0 4px rgba(240, 160, 32, 0.55), 0 2px 0 rgba(110, 70, 25, 0.3); } }
 .bag-tool:disabled img, .bag-tool:disabled b { opacity: 0.45; filter: grayscale(0.7); }
 
 /* The store's money packs: drawn gold (hidden once the artist's picture loads). */

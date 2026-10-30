@@ -46,7 +46,7 @@ export class BurnView {
     this.group.add(this.tufts);
     const h = task.heap;
     const y = ground(h.x, h.z);
-    this.mark = spotMark({ x: h.x, z: h.z, yaw: 0, w: BURN.heapR * 2, d: BURN.heapR * 2 }, 'YIĞIN', ground);
+    this.mark = spotMark({ x: h.x, z: h.z, yaw: 0, w: BURN.heapR * 2, d: BURN.heapR * 2 }, 'YIĞIN', ground, true);
     this.group.add(this.mark);
     // The heap: a ragged mound of cut grass, as big as what is in it.
     const hg = new THREE.ConeGeometry(BURN.heapR * 0.8, 1.1, 14, 3);

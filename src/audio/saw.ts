@@ -17,12 +17,20 @@ export class SawSound {
   constructor(
     private readonly k: Kit,
     files: [string, string] = ['testere_rolanti.wav', 'testere_kesim.wav'],
+    /** Under 1: the idle is the full recording slowed this much and dulled (no steady idle recorded). */
+    private readonly idleRate = 1,
   ) {
     const { ctx, out } = k;
     this.idle = ctx.createGain();
     this.full = ctx.createGain();
     this.idle.gain.value = this.full.gain.value = 0;
-    this.idle.connect(out);
+    if (idleRate < 1) {
+      const dull = ctx.createBiquadFilter();
+      dull.type = 'lowpass';
+      dull.frequency.value = 1400;
+      this.idle.connect(dull);
+      dull.connect(out);
+    } else this.idle.connect(out);
     this.full.connect(out);
     for (const [file, gain, key] of [
       [files[0], this.idle, 'idle'],
@@ -56,7 +64,7 @@ export class SawSound {
     this.on += ((inHand ? 1 : 0) - this.on) * Math.min(1, dt * 3);
     const want = inHand ? throttle : 0;
     this.rev += (want - this.rev) * Math.min(1, dt * (want > this.rev ? 6 : 2.5));
-    this.srcs.idle?.playbackRate.setTargetAtTime(1 + this.rev * 0.25, t, 0.05);
+    this.srcs.idle?.playbackRate.setTargetAtTime(this.idleRate * (1 + this.rev * 0.25), t, 0.05);
     this.srcs.full?.playbackRate.setTargetAtTime(0.82 + this.rev * 0.18 - (cutting ? 0.05 : 0), t, 0.05);
     // Equal power between the two, the whole as loud as the saw is "on".
     this.idle.gain.setTargetAtTime(this.on * Math.cos((this.rev * Math.PI) / 2) * 0.55, t, 0.04);

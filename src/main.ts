@@ -202,6 +202,7 @@ class Game {
   private cutAcc = 0;
   private cutRate = 0;
   private toastAt: Record<string, number> = {};
+  private toastText: Record<string, string> = {};
   private lastResult: Result | null = null;
   /** The result screen's earnings were already doubled with an ad. */
   private doubled = false;
@@ -2471,12 +2472,14 @@ class Game {
     else {
       // (What else there is to do in this garden: a storm's tree, some tilling.)
       const t = this.tillTask;
+      // (Short, one line each: the whole of it under the objective, clear of the corner gauges.)
       const extras = [
-        this.woodTree ? `Fırtına bahçeye ağaç devirmiş! ${this.hasSaw ? 'Testere bagajında: kes, kütükler senin' : 'Motorlu testeren olursa kesersin: kütükler senin'}` : '',
-        t ? `${lv.client.name} ${t.kind === 'bostan' ? `bostanı da çapalamanı istiyor (+${TILL.pay.bostan} TL)` : `${t.ocaks?.length} ocağın dibini çapalamanı istiyor (+${(t.ocaks?.length ?? 0) * TILL.pay.ocak} TL)`}. Çapa bagajında` : '',
-        this.burnTask ? `${lv.client.name} biçilen otu ortaya üfleyip yakmanı istiyor (+${BURN.pay} TL). Üfleyici bagajında` : '',
+        this.woodTree ? (this.hasSaw ? 'devrik ağacı kes (kütükler senin)' : 'devrik ağaç var (testeren olursa kesersin)') : '',
+        t ? `${t.kind === 'bostan' ? 'bostanı çapala' : `${t.ocaks?.length} ocağın dibini çapala`} (+${t.kind === 'bostan' ? TILL.pay.bostan : (t.ocaks?.length ?? 0) * TILL.pay.ocak} TL)` : '',
+        this.burnTask ? `otu üfleyip yak (+${BURN.pay} TL)` : '',
       ].filter(Boolean);
-      this.toast(`Bugünkü iş: ${lv.name}${extras.length ? '. ' + extras.join('. ') : ''}`, 'good', 'job', 6, extras.length ? 7000 : 3000);
+      const bagNote = t || this.burnTask || (this.woodTree && this.hasSaw) ? ' · aletler bagajda' : '';
+      this.toast(`Bugünkü iş: ${lv.name}${extras.length ? ` · ek iş: ${extras.join(', ')}${bagNote}` : ''}`, 'good', 'job', 6, extras.length ? 7000 : 3000);
       // What a tool not owned would have brought here, after the job's own line.
       const hint = this.toolHint;
       if (hint && !this.toolHinted.has(hint)) {
@@ -3006,7 +3009,7 @@ class Game {
         f.blocks = treeBlocks(t, this.woodCut);
         f.shade = underTree(t, this.woodCut);
         if (this.woodCut < WOOD.pieces) this.toast(`${this.woodCut}/${WOOD.pieces} parça kesildi`, 'good', 'saw-piece');
-        if (this.woodCut >= WOOD.pieces) this.toast(`Ağaç kesildi! ${WOOD.pieces} kütük senin: iş bitince bahçe sahibi kapının önüne yığar, sonra araçla eve taşırsın. Tırpanı kasadan al, altındaki otu da biç`, 'good');
+        if (this.woodCut >= WOOD.pieces) this.toast(`Ağaç kesildi! ${WOOD.pieces} kütük senin: iş bitince bahçe sahibi kapının önüne yığar, sonra araçla eve taşırsın. Aracın yanında BAGAJ'dan tırpanı al, altındaki otu da biç`, 'good');
       }
     }
     if ((held === 'log' || held === 'stack') && this.woodT >= LOG_PACE) {
@@ -3500,16 +3503,19 @@ class Game {
     if (owned.includes(WOOD.saw.id)) out.push({ id: 'saw', name: 'Motorlu Testere', pic: 'testere', inHand: this.sawCarried, use: tree ? null : 'bu bahçede devrik ağaç yok' });
     if (owned.includes(BURN.tool.id)) out.push({ id: 'blower', name: 'Üfleme Makinesi', pic: 'ufleyici', inHand: this.blowerInHand, use: this.burnTask && this.burnTask.lit === undefined ? null : 'bu işte yakılacak ot yok' });
     if (owned.includes(TILL.tool.id)) out.push({ id: 'tiller', name: 'Motor Çapa', pic: 'capa', inHand: this.tillerInHand, use: this.tillTask ? null : 'bu işte çapa yok' });
+    // The job's start: the trimmer first (line fitted), the rest after.
+    if (s.intro) for (const t of out) if (t.id !== 'trimmer') t.use = 'önce tırpanı al';
     return out;
   }
 
   /** BAGAJ by the vehicle, once there is more than the trimmer in it. */
   private bagActions(s: Session, acts: Parameters<Game['renderActions']>[0]): void {
-    if (s.driving || !s.nearVehicle || s.intro) return;
+    // (At the start of a job too: the trimmer is taken out of it.)
+    if (s.driving || !s.nearVehicle || (s.intro && !(s.intro === 'take' && s.canTake && !s.roaming))) return;
     const tools = this.bagTools(s);
     if (tools.length < 2) return;
     const held = tools.find((t) => t.inHand);
-    acts.push({ id: 'bag', icon: 'img:./harita/bagaj-dolu.webp', label: 'BAGAJ', sub: held ? `elinde: ${held.name.toLocaleLowerCase('tr')}` : 'alet al', run: () => this.openBag() });
+    acts.push({ id: 'bag', icon: 'img:./harita/bagaj-dolu.webp', label: 'BAGAJ', sub: s.intro ? 'tırpanı al' : held ? `elinde: ${held.name.toLocaleLowerCase('tr')}` : 'alet al', run: () => this.openBag() });
   }
 
   /** What is in hand put back in the bagaj; false (and why, said) when it cannot be yet. */
@@ -3534,7 +3540,7 @@ class Game {
     const tools = this.bagTools(s);
     const html = `<span class="bag-list">${tools
       .map(
-        (t) => `<button type="button" class="bag-tool${t.inHand ? ' held' : ''}" data-tool="${t.id}"${!t.inHand && t.use ? ' disabled' : ''}>
+        (t) => `<button type="button" class="bag-tool${t.inHand ? ' held' : ''}${s.intro && t.id === 'trimmer' ? ' want' : ''}" data-tool="${t.id}"${!t.inHand && t.use ? ' disabled' : ''}>
           ${picture([`shop-${t.pic}.webp`], 'i-engine')}<b>${t.name}</b><small>${t.inHand ? 'elinde · geri koy' : t.use ?? 'al'}</small></button>`,
       )
       .join('')}</span>`;
@@ -3679,8 +3685,12 @@ class Game {
   /** A message under the objective (one at a time); `ms`: how long it stays (else by its length). */
   private toast(text: string, kind: '' | 'warn' | 'good' = '', key?: string, every = 0, ms?: number): void {
     const now = performance.now();
-    if (key && now - (this.toastAt[key] ?? -1e9) < every * 1000) return;
-    if (key) this.toastAt[key] = now;
+    // (Held back only when it says the same again: a new word under the same key is shown at once.)
+    if (key && this.toastText[key] === text && now - (this.toastAt[key] ?? -1e9) < every * 1000) return;
+    if (key) {
+      this.toastAt[key] = now;
+      this.toastText[key] = text;
+    }
     const el = document.createElement('div');
     el.className = `toast ${kind}`;
     el.textContent = text;
@@ -4330,9 +4340,11 @@ class Game {
       acts.push({ id: 'line', icon: 'i-rethread', label: 'MİSİNA TAK', sub: s.rethread > 0 ? `sarılıyor %${Math.round(s.rethread * 100)}` : 'basılı tut', hold: true, progress: s.rethread });
     } else {
       // (Roaming there is no job to take the trimmer for.)
-      if (s.canTake && !s.roaming && !this.tillerInHand && !this.blowerInHand && !this.sawCarried) acts.push({ id: 'take', icon: 'i-hand', label: 'TIRPANI AL', sub: 'kasadan al', run: () => s.takeTrimmer() });
+      // (More than the trimmer in the bagaj: it is taken out of there, BAGAJ.)
+      const bag = this.bagTools(s).length > 1;
+      if (s.canTake && !bag && !s.roaming && !this.tillerInHand && !this.blowerInHand && !this.sawCarried) acts.push({ id: 'take', icon: 'i-hand', label: 'TIRPANI AL', sub: s.field.tractor ? 'traktörden al' : 'kasadan al', run: () => s.takeTrimmer() });
       if (s.canBoard) acts.push({ id: 'board', icon: 'i-tractor', label: s.field.tractor ? 'TRAKTÖRE BİN' : 'PATPATA BİN', sub: s.roaming ? 'köyü gez' : !s.vehicleAtField ? 'tarlaya sür' : 'bidonu yanına getir', run: () => s.board() });
-      if (s.canDrop) acts.push({ id: 'drop', icon: 'i-hand', label: 'TIRPANI BIRAK', sub: 'kasaya koy', run: () => s.dropTrimmer() });
+      if (s.canDrop && !bag) acts.push({ id: 'drop', icon: 'i-hand', label: 'TIRPANI BIRAK', sub: 'kasaya koy', run: () => s.dropTrimmer() });
       if (s.canOpenGate) acts.push({ id: 'gate', icon: 'i-lock', label: 'KAPIYI AÇ', sub: 'avlu kapısı', run: () => s.openGate() });
       if (s.canShutGate) acts.push({ id: 'gate-shut', icon: 'i-lock', label: 'KAPIYI KAPAT', sub: 'avlu kapısı', run: () => s.shutGate() });
       if (s.atHouse) acts.push({ id: 'shop', icon: 'i-coins', label: 'DÜKKAN', sub: 'boya, avlu, alet', run: () => this.openShopInGame() });
@@ -4359,13 +4371,14 @@ class Game {
       const d = Math.round(Math.hypot(v.x - s.x, v.z - s.z));
       const arrow = this.arrowTo(s, v.x, v.z);
       const name = s.field.level.name;
-      if (s.driving && s.vehicleAtField) text = `Tarlaya geldin: dur ve İN'e bas<small>Sonra tırpanı ${tr ? 'al' : 'kasadan al'}</small>`;
+      if (s.driving && s.vehicleAtField) text = `Tarlaya geldin: dur ve İN'e bas<small>Sonra tırpanı ${this.bagTools(s).length > 1 ? "BAGAJ'dan al" : tr ? 'al' : 'kasadan al'}</small>`;
       else if (s.driving) {
         // Along the way: towards a point a little way on along the route, the distance still to go.
         const r = this.routeAhead(s);
         text = `${this.arrowTo(s, r.x, r.z)}${name}: ${r.left} m<small>Yolu takip et · HARİTA'da işin yeri işaretli</small>`;
       }
       else if (!s.vehicleAtField) text = near ? `${to} bin, tarlaya sür<small>${to.toLocaleUpperCase('tr')} BİN butonuna bas</small>` : `${arrow}${to} git (${d} m)<small>${tr ? 'Traktör yolun başında' : 'Patpat yolun başında, tırpan kasasında'}</small>`;
+      else if (near && this.bagTools(s).length > 1) text = `Tırpan bagajda: BAGAJ'ı aç<small>BAGAJ butonuna bas, tırpanı seç</small>`;
       else text = near ? (tr ? 'Tırpanını al' : 'Tırpan patpatın kasasında: al onu') : `${arrow}${to} git (${d} m)<small>Sürükleyerek yürü, köyde istediğin yere gidebilirsin</small>`;
     } else if (!s.intro && !s.vehicleAtField) {
       // Carrying on from the last job: to the pat pat, then on to this job's field.
@@ -4476,10 +4489,17 @@ class Game {
       this.last = performance.now();
       if (!go) return;
     }
+    // At the wheel: the vehicle stops where it is and he gets down beside it (the job goes on from
+    // there, not from where he last got on).
+    const drove = s.driving;
+    if (drove) {
+      s.field.vehicle.speed = 0;
+      s.alight();
+    }
     this.lastJob = s.carryOver();
-    // From Serbest gez: the job starts from here as any job does, the trimmer brought in the vehicle
-    // (none was carried round the village): take it out and fit line.
-    this.fromRoam = this.roaming;
+    // From Serbest gez (or got down from the wheel): the job starts from here as any job does, the
+    // trimmer brought in the vehicle (none was carried round the village): take it out and fit line.
+    this.fromRoam = this.roaming || drove;
     this.roaming = false;
     document.body.classList.remove('roam');
     void this.startWithLoader(lv);

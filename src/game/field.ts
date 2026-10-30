@@ -823,12 +823,14 @@ export class Field {
     // A 6 m gap: the pat pat swings through it at an angle.
     const half = 3.2 / R;
     const steps = Math.ceil(((Math.PI * 2 - half * 2) * R) / 2);
+    // Put up by hand: the line wanders in and out a little.
+    const post = (a: number): Pt => {
+      const rr = R * (1 + 0.06 * Math.sin(a * 3 + 1.7) + 0.03 * Math.sin(a * 7 + 1));
+      return { x: p.x + Math.cos(a) * rr, z: p.z + Math.sin(a) * rr };
+    };
     let prev: Pt | null = null;
     for (let i = 0; i <= steps; i++) {
-      const a = gate + half + ((Math.PI * 2 - half * 2) * i) / steps;
-      // Put up by hand: the line wanders in and out a little.
-      const rr = R * (1 + 0.06 * Math.sin(a * 3 + 1.7) + 0.03 * Math.sin(a * 7 + 1));
-      const q = { x: p.x + Math.cos(a) * rr, z: p.z + Math.sin(a) * rr };
+      const q = post(gate + half + ((Math.PI * 2 - half * 2) * i) / steps);
       if (prev) this.yardWalls.push({ ax: prev.x, az: prev.z, bx: q.x, bz: q.z });
       prev = q;
     }
@@ -837,11 +839,11 @@ export class Field {
       const w = this.yardWalls[i];
       if (this.roadDistance((w.ax + w.bx) / 2, (w.az + w.bz) / 2) < LANE_SOFT + 0.2) this.yardWalls.splice(i, 1);
     }
-    // The gate spans the gap, from the fence's last post round to its first (so it also closes any
-    // stretch left out beside it).
-    const first = this.yardWalls[0];
-    const last = this.yardWalls[this.yardWalls.length - 1];
-    this.yardGate = { ax: last.bx, az: last.bz, bx: first.ax, bz: first.az };
+    // The gate spans just the gap, hung at its end before the way out (a stretch of fence left out
+    // beside it for a road stays open: across it all, the leaf was 18 m long in Karadere).
+    const a = post(gate - half);
+    const b = post(gate + half);
+    this.yardGate = { ax: a.x, az: a.z, bx: b.x, bz: b.z };
     // The garage at the back, between the house and the harman, its mouth towards the harman; its
     // stone back and sides are walls.
     // (A wider yard: the garage that much further back.)

@@ -106,7 +106,7 @@ await sleep(1500);
 let st = await state();
 ok(!!st && st.n > 50 && st.shown === 0, `job 9: the burning asked for, the tufts hidden till mown (${JSON.stringify(st)})`);
 const told = await page.evaluate(() => document.getElementById('toasts').innerText);
-ok(/otu ortaya üfleyip yakmanı istiyor/.test(told), `told at the start: ${told}`);
+ok(/ek iş: .*otu üfleyip yak \(\+/.test(told), `told at the start: ${told}`);
 // Mown: the tufts show.
 await page.evaluate(async () => {
   const f = window.__game.session.field;

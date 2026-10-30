@@ -72,8 +72,11 @@ export function tarpSpot(f: Field): { x: number; z: number; yaw: number } {
   return harvestSpots(f).tarp;
 }
 
-/** A spot's mark on the ground: a yellow frame, its name painted in it. */
-export function spotMark(sp: Spot, label: string, ground: (x: number, z: number) => number): THREE.Group {
+/**
+ * A spot's mark on the ground: a yellow frame, its name painted in it, read from its far side (the
+ * harman's), or from its near side (+z: a field's open bottom, the way in) with `fromNear`.
+ */
+export function spotMark(sp: Spot, label: string, ground: (x: number, z: number) => number, fromNear = false): THREE.Group {
   const g = new THREE.Group();
   const mat = new THREE.MeshBasicMaterial({ color: '#ffd23a', transparent: true, opacity: 0.85, depthWrite: false });
   const t = 0.14;
@@ -104,7 +107,7 @@ export function spotMark(sp: Spot, label: string, ground: (x: number, z: number)
   tex.colorSpace = THREE.SRGBColorSpace;
   const text = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(sp.w * 0.95, 2.6), Math.min(sp.w * 0.95, 2.6) / 4), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
   text.rotation.x = -Math.PI / 2;
-  text.rotation.z = Math.PI;
+  text.rotation.z = fromNear ? 0 : Math.PI;
   text.position.z = sp.d / 2 - 0.45;
   g.add(text);
   g.position.set(sp.x, ground(sp.x, sp.z) + 0.04, sp.z);

@@ -155,8 +155,8 @@ export function treeBlocks(t: FieldTree, cut: number): { x: number; z: number; r
 
 /**
  * Where a storm's tree lies in this garden (null: none fits, or not this kind of garden): along a row of
- * ocaks, its root plate and crown inside the fence, clear of stones, hives, the hose, the stream and the
- * depot; its logs and where the worker stands to cut it on free ground once the ocaks under it are gone.
+ * ocaks, its root plate and crown inside the fence, clear of stones, hives, the hose, the stream, the
+ * depot and the gate; its logs and where the worker stands to cut it on free ground once the ocaks under it are gone.
  */
 export function pickFieldTree(f: Field, rnd: () => number): FieldTree | null {
   const lv = f.level;
@@ -169,7 +169,9 @@ export function pickFieldTree(f: Field, rnd: () => number): FieldTree | null {
     !f.hives.some((h) => Math.hypot(h.x - x, h.z - z) < 2.5) &&
     !f.brambles.some((b) => Math.hypot(b.x - x, b.z - z) < b.r + 0.3) &&
     (!f.hose.length || f.hoseDistance(x, z) > 1.5) &&
-    !f.nearDepot(x, z, 3);
+    !f.nearDepot(x, z, 3) &&
+    // (Clear of the way in at the gate: not across the path as he comes in.)
+    Math.hypot(x - f.entryX, z - f.depth / 2) > 6;
   // The rows of ocaks (along x), as they were planted.
   const rows: number[] = [];
   const d = f.depth - 4.4;

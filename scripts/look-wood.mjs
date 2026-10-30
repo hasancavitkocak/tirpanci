@@ -213,7 +213,7 @@ await job(15);
 let T = await treeAt();
 ok(!!T, `job 15: a storm's tree down in the garden`);
 const tt = await toast();
-ok(/Fırtına bahçeye ağaç devirmiş/.test(tt), `the job's message says so: ${tt}`);
+ok(/ek iş: .*devrik ağac/.test(tt), `the job's message says so: ${tt}`);
 ok(await page.evaluate(() => !!window.__game.session.field.shade && window.__game.session.field.blocks.length > 3), 'its grass shaded, the tree in the way');
 await look('2-bahcede-agac', { x: T.side.x, y: 2.6, z: T.side.z, tx: T.mid.x, ty: 0.6, tz: T.mid.z });
 // With the trimmer in hand: KES refused.

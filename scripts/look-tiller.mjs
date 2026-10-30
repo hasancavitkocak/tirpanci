@@ -107,7 +107,7 @@ await sleep(1500);
 let t = await task();
 ok(!!t && t.n > 20, `job 16: tilling asked for (${t && `${t.kind}, ${t.n} cells`})`);
 const told = await page.evaluate(() => document.getElementById('toasts').innerText);
-ok(/çapalamanı istiyor/.test(told), `told at the start: ${told}`);
+ok(/ek iş: .*çapala \(\+/.test(told), `told at the start: ${told}`);
 // The trimmer put away, by the vehicle: ÇAPAYI AL.
 await page.evaluate(() => {
   const g = window.__game;

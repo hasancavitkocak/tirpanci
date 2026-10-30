@@ -34,25 +34,26 @@ export interface TractorSpec {
 }
 export const SMALL: TractorSpec = { body: BODY, rear: REAR, front: FRONT, dims: TRACTOR, frontAxleZ: true };
 /**
- * The big tractor (buyuk-traktor: one mesh, its front towards -X, wheels left off but for their hubs), with
+ * The big tractor (buyuk-traktor: one mesh, no cab, its front towards -X, wheels left off but for their hubs), with
  * its own lugged tyres (both axles along X). Measured from the model (model units).
  */
 export const BIG: TractorSpec = {
   body: {
-    k: 4.46,
-    rearHub: { x: 0.24, y: 0.0625 },
-    frontHub: { x: -0.2625, y: 0.056 },
-    // (Lower than the cushion's top, 0.3: the driver's eyes, seatY + DRIVER_EYE.up, under the cab's roof.)
-    seat: { x: 0.095, y: 0.26 },
-    pipe: { x: -0.144, y: 0.53, z: -0.156 },
-    wheel: { x: 0.044, y: 0.3625, r: 0.032 },
+    // (Its hubs 0.536 apart: 2.24 m between the axles.)
+    k: 4.18,
+    rearHub: { x: 0.2855, y: 0.0625 },
+    frontHub: { x: -0.2505, y: 0.0625 },
+    // (No cab: one seat on the middle line, its cushion's top 0.31, where he sits back on it.)
+    seat: { x: 0.235, y: 0.31 },
+    pipe: { x: -0.055, y: 0.557, z: -0.188 },
+    wheel: { x: 0.042, y: 0.394, r: 0.045 },
   },
   rear: 1.5,
   front: 1.12,
   dims: BIG_TRACTOR,
   frontAxleZ: false,
-  // (In the cab: far enough behind its steering wheel that it sits low in the view, under the roof.)
-  eye: { up: 0.87, back: 0.23, down: 0.2 },
+  // (Little behind the seat's middle: the roll bar stands just behind it.)
+  eye: { up: 0.8, back: 0.05, down: 0.35 },
 };
 
 /** A copy of a model with its own geometry (the old field's scene is disposed under the new one). */
