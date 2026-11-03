@@ -9,3 +9,9 @@ release
 
 # raw recordings (the cut sounds are in public/audio)
 assets-src/**/*.mp4
+
+# Capacitor plugins' Android build output (made by every APK build)
+plugins/*/android/build/
+plugins/*/android/.gradle/
+# One-off dev probes (scripts/_*.mjs); the ones worth keeping are added with git add -f
+scripts/_*.mjs
