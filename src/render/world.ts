@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { bridgeGroup, turnMillWheel } from './bridge';
+import { wallProxy } from './camWalls';
 import { ARCH, BARN, Field, STREAM } from '../game/field';
 import { ARCH_SCALE } from '../game/village';
 import { ModelKey, Models, fitted } from './models';
@@ -409,6 +410,14 @@ export class WorldView {
     return [r.grips[0].getWorldPosition(new THREE.Vector3()), r.grips[1].getWorldPosition(new THREE.Vector3())];
   }
   readonly bushes: THREE.Object3D[] = [];
+  /** The buildings the follow camera must not go into (view.ts keeps it on the worker's side of them). */
+  readonly occluders: THREE.Object3D[] = [];
+
+  /** A building the follow camera keeps out of (by its simplified stand-in, camWalls.ts). */
+  private addOccluder(o: THREE.Object3D): void {
+    const p = wallProxy(o);
+    if (p) this.occluders.push(p);
+  }
   private readonly stream: StreamView | null = null;
   /** The bridge and the mill (its wheel turns in update). */
   private bridge: THREE.Group | null = null;
@@ -641,14 +650,17 @@ export class WorldView {
     house.position.set(hx, footing(f, hx, hz, f.houseR - 0.2, f.houseR - 0.2) - 0.3, hz);
     house.rotation.y = rot;
     g.add(house);
+    this.addOccluder(house);
     const mosque = models.mosque?.length ? fitted(models.mosque[0].scene, 12) : mosqueGroup();
     mosque.position.set(f.mosque.x, worldHeight(f, f.mosque.x, f.mosque.z) - 0.3, f.mosque.z);
     g.add(mosque);
+    this.addOccluder(mosque);
     if (f.hut) {
       const hut = models.hut?.length ? fitted(models.hut[0].scene, 5) : yaylaHutGroup();
       hut.position.set(f.hut.x, worldHeight(f, f.hut.x, f.hut.z) - 0.2, f.hut.z);
       hut.rotation.y = 0.6;
       g.add(hut);
+      this.addOccluder(hut);
     }
     // The bridge over the stream and the mill on its bank.
     const bridge = bridgeGroup(f, models.bridge?.[0], models.mill?.[0]);
@@ -752,6 +764,7 @@ export class WorldView {
       o.position.set(ga.x, footing(f, ga.x, ga.z, ga.w / 2, ga.d / 2) - 0.05, ga.z);
       o.rotation.y = ga.yaw;
       g.add(o);
+      this.addOccluder(o);
     }
     f.yardProps.forEach((y, i) => {
       if (y.kind === 'pillar') return;
@@ -779,6 +792,7 @@ export class WorldView {
         s.position.set(y.x, footing(f, y.x, y.z, BARN.w / 2 - 0.5, BARN.d / 2 - 0.5) - 0.15, y.z);
         s.rotation.y = Math.atan2(f.plateau.x - y.x, f.plateau.z - y.z);
         g.add(s);
+        this.addOccluder(s);
         return;
       }
       if (y.kind === 'bales') {
@@ -795,6 +809,7 @@ export class WorldView {
         s.position.set(y.x, footing(f, y.x, y.z, 1.6, 1.6) - 0.1, y.z);
         s.rotation.y = Math.atan2(f.plateau.x - y.x, f.plateau.z - y.z);
         g.add(s);
+        this.addOccluder(s);
         return;
       }
       const o = y.kind === 'hay' ? haystackGroup(y.r, f.level.seed + i) : y.kind === 'wood' ? woodpileGroup(y.r, f.level.seed + i) : oldPostGroup(f.level.seed + i);

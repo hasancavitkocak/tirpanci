@@ -103,6 +103,8 @@ function build(variant: number, count: number, src = source!.geo): THREE.BufferG
  * other fields' ocaks are then drawn with it. Without it (if it fails) they keep the full shoot.
  */
 export async function prepareShootLite(gltf: GLTF | undefined): Promise<void> {
+  // (Loaded here for the camera's wall stand-ins too, camWalls.ts.)
+  await MeshoptSimplifier.ready;
   if (!gltf || lite) return;
   const { geo } = prepareSource(gltf);
   try {

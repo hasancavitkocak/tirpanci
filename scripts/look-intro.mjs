@@ -10,7 +10,7 @@ mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const browser = await puppeteer.launch({ executablePath: findChrome(), headless: true, args: CHROME_ARGS });
 const page = await browser.newPage();
-await page.setViewport({ width: 412, height: 860, isMobile: true, hasTouch: true });
+await page.setViewport({ width: 860, height: 412, isMobile: true, hasTouch: true });
 page.on('pageerror', (e) => console.log('pageerror', e.message));
 page.on('console', (m) => ['error', 'warning'].includes(m.type()) && console.log(m.type(), m.text()));
 await page.goto(`${base}?quality=${process.env.QUALITY ?? 'medium'}`);
@@ -21,7 +21,8 @@ await page.evaluate(() => {
 });
 await page.click('#btn-play');
 await sleep(300);
-await page.click('.level');
+await page.evaluate(() => document.querySelector('#level-list .saga-node.next, #level-list .saga-node.current, #level-list .saga-node:not(.locked)')?.click());
+await sleep(400);
 await sleep(300);
 await page.screenshot({ path: `${OUT}/intro-0-call.png` });
 await page.click('#btn-call-ok');

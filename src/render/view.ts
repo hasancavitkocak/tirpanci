@@ -818,6 +818,33 @@ export class View {
   /** Free camera (looking round the scene with the game stopped): position and heading, pitch. */
   freeCam: { x: number; y: number; z: number; yaw: number; pitch: number } | null = null;
 
+  private readonly occRay = new THREE.Raycaster();
+  private readonly occDir = new THREE.Vector3();
+  private occFrame = 0;
+  private occHit = Infinity;
+
+  /**
+   * The follow and chase cameras on this side of a building's wall: a ray from the worker (or the
+   * vehicle) out to the camera, and the camera brought in to just short of the first wall it meets
+   * (in the garage, behind the pat pat, it was in the back wall and showed only planks).
+   */
+  private keepOutOfBuildings(from: THREE.Vector3): void {
+    const occ = this.world?.occluders;
+    if (!occ?.length) return;
+    const cam = this.camera.position;
+    const dir = this.occDir.subVectors(cam, from);
+    const d = dir.length();
+    if (d < 0.5) return;
+    dir.divideScalar(d);
+    // (The ray every third frame, its wall's distance kept between: by a building it was a third of a millisecond.)
+    if (this.occFrame++ % 3 === 0) {
+      this.occRay.set(from, dir);
+      this.occRay.far = d + 1;
+      this.occHit = this.occRay.intersectObjects(occ, false)[0]?.distance ?? Infinity;
+    }
+    if (this.occHit < d + 0.3) cam.copy(from).addScaledVector(dir, Math.max(0.3, this.occHit - 0.3));
+  }
+
   private updateCamera(dt: number, snap: boolean): void {
     const s = this.session;
     if (!s) return;
@@ -871,6 +898,7 @@ export class View {
       this.camTarget.lerp(this.tmp.set(v.x + fx * 2, y + 1, v.z + fz * 2), k);
       this.camPos.lerp(this.tmp.set(cx, cy, cz), k);
       this.camera.position.copy(this.camPos);
+      this.keepOutOfBuildings(this.tmp.set(v.x, y + 1.6, v.z));
       this.camera.lookAt(this.camTarget);
       return;
     }
@@ -928,6 +956,7 @@ export class View {
     if (snap) {
       this.camera.position.copy(this.camPos);
     } else this.camera.position.lerp(this.camPos, this.mode === 'orbit' ? 0.08 : 1);
+    if (this.mode !== 'orbit') this.keepOutOfBuildings(this.tmp.set(s.x, worldHeight(f, s.x, s.z) + 1.5, s.z));
     if (this.shake > 0) {
       this.shake = Math.max(0, this.shake - dt * 2);
       this.camera.position.x += (Math.random() - 0.5) * this.shake * 0.15;
