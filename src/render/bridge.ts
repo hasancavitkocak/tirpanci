@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Field } from '../game/field';
 import { deckRise } from '../game/village';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 /**
  * Where a track crosses the village's stream: the wooden bridge (public/models/kopru.glb, fitted to the
@@ -163,9 +164,19 @@ function waterWheel(r: number, t: number): THREE.Group {
     paddle.rotation.z = a;
     w.add(paddle);
   }
-  w.traverse((x) => {
-    if ((x as THREE.Mesh).isMesh) x.castShadow = x.receiveShadow = true;
-  });
+  // Its 27 pieces as two meshes (one per wood), so the wheel is two draws, not 27.
+  const byMat = new Map<THREE.Material, THREE.BufferGeometry[]>();
+  for (const x of w.children as THREE.Mesh[]) {
+    x.updateMatrix();
+    const m = x.material as THREE.Material;
+    byMat.set(m, [...(byMat.get(m) ?? []), x.geometry.clone().applyMatrix4(x.matrix)]);
+  }
+  w.clear();
+  for (const [m, geos] of byMat) {
+    const mesh = new THREE.Mesh(mergeGeometries(geos)!, m);
+    mesh.castShadow = mesh.receiveShadow = true;
+    w.add(mesh);
+  }
   return w;
 }
 

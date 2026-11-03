@@ -1,7 +1,7 @@
 // Dev: the evening's cows: the menu's Akşam button (once Karadere is open, ready once a day); into Karadere
 // of a late afternoon, four cows out round the village; the dark falling, the lamps and the head torch
 // coming on; a cow driven from behind goes to the barn's door and in; all home, the pay, the button says
-// YARIN. Shots in test-output/evening. Usage (dev server running): node scripts/look-evening.mjs [baseUrl]
+// REKLAMLA, one more evening for an ad; all home, twice the pay for an ad. Shots in test-output/evening. Usage (dev server running): node scripts/look-evening.mjs [baseUrl]
 import { mkdirSync } from 'node:fs';
 import puppeteer from 'puppeteer-core';
 import { CHROME_ARGS, findChrome } from './chrome.mjs';
@@ -100,8 +100,28 @@ const money0 = await page.evaluate(() => window.__game.save.money);
 await sleep(3000);
 h = await herd();
 ok(h.home === 4, `driven from behind, in at the barn's door: ${h.home}/${h.all} home`);
-const st = await page.evaluate(() => ({ day: window.__game.save.eveningDay, money: window.__game.save.money, obj: document.getElementById('objective').innerText.replace(/\s+/g, ' ') }));
-ok(!!st.day && st.money >= money0 && /Bütün inekler ahırda/.test(st.obj), `all home: paid, the objective says so (${st.obj})`);
+// All home: asked to double it for an ad (the game waits under the question).
+await page.waitForFunction(() => document.getElementById('confirm').classList.contains('show'), { timeout: 8000 }).catch(() => {});
+const q = await page.evaluate(() => ({ open: document.getElementById('confirm').classList.contains('show'), title: document.getElementById('confirm-title').textContent, yes: document.getElementById('btn-confirm-yes').textContent, no: document.getElementById('btn-confirm-no').textContent, mode: window.__game.mode }));
+ok(q.open && /inekler ahırda/.test(q.title) && /2 katı/.test(q.yes) && /500 TL al/.test(q.no) && q.mode === 'paused', `all home: the 2x-for-an-ad question (${JSON.stringify(q)})`);
+await page.screenshot({ path: `${OUT}/7-iki-kati.png` });
+await page.evaluate(() => document.getElementById('btn-confirm-yes').click());
+await sleep(800);
+ok(await page.evaluate(() => document.getElementById('ad').classList.contains('show')), 'the ad plays');
+await page.waitForFunction(() => !document.getElementById('ad').classList.contains('show'), { timeout: 30000 }).catch(() => {});
+await sleep(500);
+const st = await page.evaluate(() => ({ day: window.__game.save.eveningDay, money: window.__game.save.money, mode: window.__game.mode, no: document.getElementById('btn-confirm-no').textContent }));
+ok(!!st.day && st.money - money0 === 1000 && st.mode === 'playing' && st.no === 'Vazgeç', `after the ad: twice the pay, the game on (${st.money - money0} TL, ${st.mode}, no button back to "${st.no}")`);
+// Without the ad: the pay as it is.
+const m1 = await page.evaluate(() => {
+  const g = window.__game;
+  void g.payEvening();
+  return g.save.money;
+});
+await sleep(400);
+await page.evaluate(() => document.getElementById('btn-confirm-no').click());
+await sleep(500);
+ok((await page.evaluate(() => window.__game.save.money)) - m1 === 500, 'no ad: 500 TL');
 await page.evaluate(() => {
   const g = window.__game;
   g.quitToMenu();
@@ -109,7 +129,16 @@ await page.evaluate(() => {
 });
 await sleep(500);
 btn = await page.evaluate(() => document.getElementById('evening-badge').textContent);
-ok(btn === 'YARIN', `the button says YARIN (${btn})`);
+ok(btn === 'REKLAMLA', `played today: the button says REKLAMLA (${btn})`);
+// One more evening for an ad.
+await page.evaluate(() => document.getElementById('btn-evening').click());
+await sleep(500);
+const q2 = await page.evaluate(() => ({ open: document.getElementById('confirm').classList.contains('show'), text: document.getElementById('confirm-text').textContent, yes: document.getElementById('btn-confirm-yes').textContent }));
+ok(q2.open && /bir akşam daha/.test(q2.text), `asked: an ad for one more evening (${q2.yes})`);
+await page.screenshot({ path: `${OUT}/8-bir-aksam-daha.png` });
+await page.evaluate(() => document.getElementById('btn-confirm-yes').click());
+await page.waitForFunction(() => window.__game.mode === 'playing' && window.__game.eveningRun && !document.getElementById('loading').classList.contains('show'), { timeout: 90000 }).catch(() => {});
+ok(await page.evaluate(() => window.__game.eveningRun && window.__game.view.herd === 4), 'after the ad: the evening again, four cows out');
 ok(!errors.length, `no page errors or missing files${errors.length ? ': ' + errors.slice(0, 3).join(' | ') : ''}`);
 console.log(bad ? `\n${bad} FAIL` : '\nall OK');
 await browser.close();

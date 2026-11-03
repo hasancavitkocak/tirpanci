@@ -63,22 +63,25 @@ export function nameBoard(text: string, sub: string | null, locked: boolean): TH
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
   const grp = new THREE.Group();
-  const board = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.6, 0.05), [
-    ...Array.from({ length: 4 }, () => new THREE.MeshLambertMaterial({ color: '#5a3d24' })),
-    new THREE.MeshLambertMaterial({ map: tex }),
-    new THREE.MeshLambertMaterial({ map: tex }),
-  ]);
+  // (Two draws, not six: the box's four edges are one group, its front and back the other.)
+  const geo = new THREE.BoxGeometry(1.6, 0.6, 0.05);
+  geo.clearGroups();
+  geo.addGroup(0, 24, 0);
+  geo.addGroup(24, 12, 1);
+  const board = new THREE.Mesh(geo, [(boardEdge ??= new THREE.MeshLambertMaterial({ color: '#5a3d24' })), new THREE.MeshLambertMaterial({ map: tex })]);
   board.position.y = 1.35;
   board.castShadow = true;
   grp.add(board);
-  for (const s of [-1, 1]) {
-    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.4, 0.08), new THREE.MeshLambertMaterial({ color: '#4b3420' }));
-    leg.position.set(s * 0.65, 0.7, -0.05);
-    leg.castShadow = true;
-    grp.add(leg);
-  }
+  // Both legs in one mesh.
+  legsGeo ??= mergeGeometries([-1, 1].map((s) => new THREE.BoxGeometry(0.08, 1.4, 0.08).translate(s * 0.65, 0.7, -0.05)))!;
+  const legs = new THREE.Mesh(legsGeo, (legMat ??= new THREE.MeshLambertMaterial({ color: '#4b3420' })));
+  legs.castShadow = true;
+  grp.add(legs);
   return grp;
 }
+let boardEdge: THREE.MeshLambertMaterial | undefined;
+let legMat: THREE.MeshLambertMaterial | undefined;
+let legsGeo: THREE.BufferGeometry | undefined;
 
 /**
  * Where a name board goes by a gate at (gx, gz): beside it, off any road or track (the first spot

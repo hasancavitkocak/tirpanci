@@ -1,7 +1,7 @@
 // Dev: a player's tour of the whole game, a picture every step, to be looked over as a player would
 // (not one thing checked: whatever looks wrong anywhere). The menus and the shop's tabs; every job from
 // its field and from above; both villages driven along their roads; every vehicle from outside and from
-// its seat; every tool in hand; the evening and the harvest; a job's result; portrait and tablet. Pictures
+// its seat; every tool in hand; the evening and the harvest; a job's result; small phone and tablet. Pictures
 // in test-output/tour/<run>/, two by two on sheets (sheets/) to go through; the previous run kept beside
 // it to set against (scripts/tour-sheets.py). Usage (dev server running): node scripts/tour.mjs [run] [baseUrl]
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -22,11 +22,54 @@ await p.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) App
 await p.setViewport({ width: 874, height: 402, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
 const shots = [];
 let n = 0;
+/**
+ * What of the screen's messages and buttons lie over one another now (more than a few pixels each way):
+ * the objective, the message, the guide, the buttons on the left, the gauges and the request chip, the
+ * starter's hint, the round buttons on the right, the pedals and the wheel.
+ */
+const overlaps = () =>
+  p.evaluate(() => {
+    const pick = [
+      ['hedef', '#objective'],
+      ['mesaj', '#toasts .toast'],
+      ['rehber', '#guide.show'],
+      ['buton', '#actions .action-btn'],
+      ['göstergeler', '.hud-top .gauges'],
+      ['bahşiş', '#request-chip'],
+      ['motor ipucu', '#starter-hint'],
+      ['sağ butonlar', '.hud-btns'],
+      ['pedallar', '.drive-pedals'],
+      ['direksiyon', '#drive-wheel'],
+      ['bitir', '#btn-finish.show'],
+    ];
+    const boxes = [];
+    for (const [name, sel] of pick)
+      for (const el of document.querySelectorAll(sel)) {
+        const r = el.getBoundingClientRect();
+        const cs = getComputedStyle(el);
+        if (r.width < 4 || r.height < 4 || cs.visibility === 'hidden' || cs.display === 'none' || +cs.opacity < 0.2 || !el.closest('.screen.show')) continue;
+        if ((name === 'mesaj' || name === 'motor ipucu' || name === 'bahşiş') && !el.textContent.trim()) continue;
+        boxes.push({ name, text: el.textContent.trim().replace(/\s+/g, ' ').slice(0, 40), r });
+      }
+    const out = [];
+    for (let i = 0; i < boxes.length; i++)
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i].r;
+        const b = boxes[j].r;
+        const w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+        const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+        if (w > 4 && h > 4 && boxes[i].name !== boxes[j].name) out.push(`${boxes[i].name} «${boxes[i].text}» × ${boxes[j].name} «${boxes[j].text}» (${Math.round(w)}x${Math.round(h)} px)`);
+      }
+    return out;
+  });
+const clashes = [];
 const shot = async (label) => {
   const file = `${String(++n).padStart(3, '0')}.png`;
   await p.screenshot({ path: `${OUT}/${file}` });
-  shots.push({ file, label });
-  console.log(file, label);
+  const over = await overlaps();
+  shots.push({ file, label, over });
+  for (const o of over) clashes.push(`${file} ${label}: ${o}`);
+  console.log(file, label, over.length ? `ÜST ÜSTE: ${over.join(' | ')}` : '');
 };
 const ev = (f, ...a) => p.evaluate(f, ...a);
 const loaded = () => p.waitForFunction('window.__game.mode === "playing" && !document.getElementById("loading").classList.contains("show")', { timeout: 90000 });
@@ -340,9 +383,10 @@ await roam(1, 'harvest');
 await sleep(1500);
 await shot('Fındık harmanı başlangıç');
 
-// ---- 9. Portrait and tablet.
+// ---- 9. A small phone and a tablet (always sideways).
+// (The game is held sideways only: no phone standing up.)
 for (const [w, h, name] of [
-  [402, 874, 'Dikey telefon'],
+  [740, 360, 'Küçük telefon'],
   [1180, 820, 'Tablet'],
 ]) {
   await p.setViewport({ width: w, height: h, deviceScaleFactor: 1, isMobile: true, hasTouch: true });
@@ -355,8 +399,38 @@ for (const [w, h, name] of [
   await inField();
   await sleep(1300);
   await shot(`${name}: iş 4 tarlada`);
+  // By the vehicle at a job's start (its buttons, the bagaj's way, the job's message), then driving.
+  await job(15);
+  await ev(() => {
+    const s = window.__game.session;
+    const v = s.field.vehicle;
+    s.x = v.x + Math.cos(v.yaw) * 1.8;
+    s.z = v.z - Math.sin(v.yaw) * 1.8;
+  });
+  await sleep(1200);
+  await shot(`${name}: iş 15 başı, aracın yanında`);
+  await ev(() => document.querySelector('#actions [data-id="bag"]')?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1 })));
+  await sleep(600);
+  await shot(`${name}: bagaj açık`);
+  await closeAll();
+  await ev(() => document.getElementById('btn-confirm-yes')?.click());
+  await driveAt();
+  await sleep(1200);
+  await shot(`${name}: sürerken`);
+  await job(15);
+  await inField();
+  await ev(() => {
+    const s = window.__game.session;
+    s.broken = true;
+    s.line = 0;
+    s.fuel = s.gear.tank * 0.1;
+  });
+  await sleep(1500);
+  await shot(`${name}: misina koptu, benzin az`);
 }
 
-writeFileSync(`${OUT}/shots.json`, JSON.stringify({ shots, errors }, null, 1));
+writeFileSync(`${OUT}/shots.json`, JSON.stringify({ shots, errors, clashes }, null, 1));
+console.log(`
+${clashes.length} pictures with things over one another`);
 console.log(`\n${shots.length} pictures, ${errors.length} page errors${errors.length ? ': ' + errors.slice(0, 5).join(' | ') : ''}`);
 await b.close();

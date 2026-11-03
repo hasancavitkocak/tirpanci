@@ -3,8 +3,8 @@ import { LEVELS, NO_UPGRADES } from '../src/game/config';
 import { Session } from '../src/game/session';
 
 /** On the vehicle in the garage at home: out, KAPIYI AÇ when it shows, through the gate and down the lane to the field. */
-function driveToField(tractor: boolean, trailer: boolean, waitForGate: boolean) {
-  const s = new Session(LEVELS[0], NO_UPGRADES, 1, undefined, 'home');
+function driveToField(tractor: boolean, trailer: boolean, waitForGate: boolean, level = LEVELS[0]) {
+  const s = new Session(level, NO_UPGRADES, 1, undefined, 'home');
   const f = s.field;
   f.tractor = tractor;
   f.trailer = trailer ? { yaw: NaN } : null;
@@ -46,6 +46,15 @@ describe('driving from the garage to the field', () => {
         // straight on, at most until the gate has swung open.
         expect(stuck).toBeLessThan(wait ? 30 : 60 * 3.6);
       });
+
+  // Karadere's yard too (its fence stands in from the tracks round it, shut up to the gate).
+  for (const [tractor, trailer] of [[false, false], [true, true]])
+    it(`Karadere: ${tractor ? 'tractor' : 'pat pat'}${trailer ? ' with the trailer' : ''} out of the yard to the field`, () => {
+      const { s, opened, stuck } = driveToField(tractor, trailer, true, LEVELS.find((l) => l.id === 11)!);
+      expect(opened).toBe(true);
+      expect(s.vehicleAtField).toBe(true);
+      expect(stuck).toBeLessThan(30);
+    });
 
   it('the trailer stays hitched: its axle a drawbar length behind the hitch, never swung past its limit', () => {
     const { s } = driveToField(true, true, true);

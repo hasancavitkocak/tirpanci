@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { MeshoptSimplifier } from 'three/examples/jsm/libs/meshopt_simplifier.module.js';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { makeRng } from '../game/rng';
 
@@ -16,6 +17,8 @@ interface Variant {
   near: THREE.BufferGeometry;
   mid: THREE.BufferGeometry;
   far: THREE.BufferGeometry;
+  /** The far one's shoots simplified (see prepareShootLite), past BUSH_LOD.distant. */
+  distant: THREE.BufferGeometry | null;
 }
 
 /**
@@ -23,9 +26,11 @@ interface Variant {
  * `mid`, three past `far` (at 16 m it kept six shoots of 1,455 triangles each, to the far end of the
  * field: a quarter of a phone's triangles).
  */
-const BUSH_LOD = { mid: 12, far: 22, farShoots: 3 };
+const BUSH_LOD = { mid: 12, far: 22, farShoots: 3, distant: 34 };
 
 let source: { geo: THREE.BufferGeometry; mat: THREE.Material } | null = null;
+/** The shoot with about a third of its triangles, for ocaks too far off to show the difference. */
+let lite: THREE.BufferGeometry | null = null;
 const variants = new Map<number, Variant>();
 
 function prepareSource(gltf: GLTF): { geo: THREE.BufferGeometry; mat: THREE.Material } {
@@ -68,8 +73,7 @@ function prepareSource(gltf: GLTF): { geo: THREE.BufferGeometry; mat: THREE.Mate
   return source;
 }
 
-function build(variant: number, count: number): THREE.BufferGeometry {
-  const src = source!.geo;
+function build(variant: number, count: number, src = source!.geo): THREE.BufferGeometry {
   const rnd = makeRng(3100 + variant * 71);
   const parts: THREE.BufferGeometry[] = [];
   const m = new THREE.Matrix4();
@@ -94,20 +98,50 @@ function build(variant: number, count: number): THREE.BufferGeometry {
   return g;
 }
 
+/**
+ * Simplify the shoot once (after the models load, before any field is built): the far ocaks and the
+ * other fields' ocaks are then drawn with it. Without it (if it fails) they keep the full shoot.
+ */
+export async function prepareShootLite(gltf: GLTF | undefined): Promise<void> {
+  if (!gltf || lite) return;
+  const { geo } = prepareSource(gltf);
+  try {
+    await MeshoptSimplifier.ready;
+    // (Its leaves are separate little pieces with their own seams, so the careful simplifier can hardly
+    // take anything off: the "sloppy" one, on a grid, keeps a third with its outline within ~7 cm.)
+    const g = mergeVertices(geo.toNonIndexed(), 1e-4);
+    const target = Math.floor((g.index!.count * 0.35) / 3) * 3;
+    const [index] = MeshoptSimplifier.simplifySloppy(Uint32Array.from(g.index!.array), Float32Array.from(g.getAttribute('position').array), 3, null, target, 1);
+    g.setIndex(new THREE.BufferAttribute(index, 1));
+    g.computeBoundingSphere();
+    lite = g;
+  } catch {
+    lite = null;
+  }
+}
+
 /** An ocak object from the artist shoot (shared geometry per variant), with a distance LOD. */
 export function shootBush(gltf: GLTF, variant: number, shoots: number): THREE.Object3D {
   const { mat } = prepareSource(gltf);
   let v = variants.get(variant);
   if (!v) {
-    v = { near: build(variant, shoots), mid: build(variant + 10, Math.max(4, Math.round(shoots * 0.45))), far: build(variant + 30, BUSH_LOD.farShoots) };
+    v = {
+      near: build(variant, shoots),
+      mid: build(variant + 10, Math.max(4, Math.round(shoots * 0.45))),
+      far: build(variant + 30, BUSH_LOD.farShoots),
+      // (The same shoots as `far`, so nothing jumps where it changes over.)
+      distant: lite && build(variant + 30, BUSH_LOD.farShoots, lite),
+    };
     variants.set(variant, v);
   }
   const lod = new THREE.LOD();
-  for (const [geo, dist] of [
+  const levels: [THREE.BufferGeometry, number][] = [
     [v.near, 0],
     [v.mid, BUSH_LOD.mid],
     [v.far, BUSH_LOD.far],
-  ] as const) {
+  ];
+  if (v.distant) levels.push([v.distant, BUSH_LOD.distant]);
+  for (const [geo, dist] of levels) {
     const mesh = new THREE.Mesh(geo, mat);
     mesh.castShadow = true;
     lod.addLevel(mesh, dist);
@@ -122,7 +156,7 @@ const distant = new Map<number, THREE.BufferGeometry>();
 export function shootBushes(gltf: GLTF, variant: number, matrices: THREE.Matrix4[]): THREE.InstancedMesh {
   const { mat } = prepareSource(gltf);
   let geo = distant.get(variant);
-  if (!geo) distant.set(variant, (geo = build(variant + 20, 2)));
+  if (!geo) distant.set(variant, (geo = build(variant + 20, 2, lite ?? undefined)));
   const m = new THREE.InstancedMesh(geo, mat, matrices.length);
   matrices.forEach((x, i) => m.setMatrixAt(i, x));
   m.computeBoundingSphere();

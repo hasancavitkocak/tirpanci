@@ -420,7 +420,9 @@ export class GrassView {
     const rnd = makeRng(f.level.seed + 41);
     const per = Math.round(16 * density);
     const h = f.harman;
-    const chunk = 30;
+    // (Road points, about a metre apart: 30 made 40-odd draws of a few tufts each; a chunk off-screen
+    // costs only its tufts' vertices, so longer ones are cheaper.)
+    const chunk = 90;
     const inOther = (x: number, z: number) => f.others.some((o) => x > o.minX && x < o.maxX && z > o.minZ && z < o.maxZ);
     for (const road of f.roads) {
       const l = road.pts;

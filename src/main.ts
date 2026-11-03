@@ -14,6 +14,7 @@ import { preloadBushTextures } from './render/hazelnut';
 import { preloadGround } from './render/scenery';
 import { streamDistance } from './render/stream';
 import { Models, loadModels } from './render/models';
+import { prepareShootLite } from './render/shootBush';
 import { Quality, View } from './render/view';
 import { WorldView } from './render/world';
 import { MOBILE } from './platform/device';
@@ -364,6 +365,7 @@ class Game {
     let tip = 0;
     const tipTimer = window.setInterval(() => ($('loading-tip').textContent = tips[++tip % tips.length]), 2600);
     [this.models] = await Promise.all([loadModels((p) => ($('load-fill').style.width = `${20 + p * 70}%`)), preloadBushTextures(), preloadGround(), preloadVillageArt()]);
+    await prepareShootLite(this.models.shoot?.[0]);
     $('load-fill').style.width = '95%';
     // Menu background: the first field with the worker standing at the depot.
     this.applyLook();
@@ -1781,14 +1783,7 @@ class Game {
       else this.show('menu');
     });
     on('btn-harvest', () => this.openHarvest());
-    on('btn-evening', () => {
-      if (this.save.eveningDay === today()) {
-        this.notice('Akşam', 'Bugünün inekleri ahırda. Yarın akşam yine gel.');
-        return;
-      }
-      this.levelTab = 2;
-      void this.startRoam('evening');
-    });
+    on('btn-evening', () => void this.openEvening());
     // The messages sit under the objective and right of the buttons on the left: placed again when either changes size.
     new ResizeObserver(() => this.placeToasts()).observe($('objective'));
     new ResizeObserver(() => this.placeToasts()).observe($('actions'));
@@ -3604,13 +3599,8 @@ class Game {
     if (c.events.home && n.home < n.all) this.toast(`${n.home}/${n.all} inek ahırda`, 'good', 'herd', 1);
     if (n.all && n.home >= n.all && !this.eveningDone) {
       this.eveningDone = true;
-      this.save.money += EVENING.pay;
       this.save.eveningDay = today();
-      void writeSave(this.save);
-      this.audio.coin();
-      this.audio.success();
-      this.updateMoney();
-      this.toast(`Bütün inekler ahırda! +${EVENING.pay} TL. İyi akşamlar`, 'good');
+      void this.payEvening();
     }
     // Karabaş behind the nearest cow still out, on the far side from the door.
     const d = this.view.dog;
@@ -3641,7 +3631,38 @@ class Game {
     return { key: `e-${n.home}`, head: `İnekleri ahıra getir: ${n.home}/${n.all}`, sub: dist > 10 ? `En yakını ${dist} m · arkasına geç, ahırın kapısına doğru sür` : 'Ahırın öbür yanından yürü: inek senden kaçar, kapıya gider', to: dist > 10 ? near : c.door };
   }
 
-  /** The menu's Akşam button: once Karadere is open; ready once a day. */
+  /**
+   * The menu's Akşam button: today's evening, or, played already today, one more for an ad (the ad
+   * first; not watched to the end, none).
+   */
+  private async openEvening(): Promise<void> {
+    if (this.save.eveningDay === today()) {
+      const go = await this.ask('Akşam: İnekler', `Bugünün inekleri ahırda. Reklam izle, bir akşam daha oyna (+${EVENING.pay} TL).`, 'Reklam izle, oyna');
+      if (!go || !(await this.rewarded('Bir akşam daha!'))) return;
+    }
+    this.levelTab = 2;
+    void this.startRoam('evening');
+  }
+
+  /** All the cows home: the pay, or twice it for an ad (asked over the game, which waits). */
+  private async payEvening(): Promise<void> {
+    this.audio.success();
+    this.mode = 'paused';
+    const no = $('btn-confirm-no');
+    no.textContent = `${EVENING.pay} TL al`;
+    const ad = await this.ask('Bütün inekler ahırda!', `Akşamın kazancı <b>${EVENING.pay} TL</b>. Reklam izle, 2 katını al (${EVENING.pay * 2} TL).`, 'Reklam izle: 2 katı');
+    no.textContent = 'Vazgeç';
+    const pay = ad && (await this.rewarded(`+${EVENING.pay * 2} TL!`)) ? EVENING.pay * 2 : EVENING.pay;
+    this.mode = 'playing';
+    this.last = performance.now();
+    this.save.money += pay;
+    void writeSave(this.save);
+    this.audio.coin();
+    this.updateMoney();
+    this.toast(`+${pay} TL. İyi akşamlar`, 'good');
+  }
+
+  /** The menu's Akşam button: once Karadere is open; ready once a day (after, one more for an ad). */
   private updateEveningBtn(): void {
     const b = $('btn-evening');
     const open = UNLOCK_ALL || this.save.unlocked >= EVENING.needs;
@@ -3649,7 +3670,7 @@ class Game {
     if (!open) return;
     b.classList.toggle('up', $('btn-starter').style.display === 'none');
     const done = this.save.eveningDay === today();
-    $('evening-badge').textContent = done ? 'YARIN' : 'HAZIR';
+    $('evening-badge').textContent = done ? 'REKLAMLA' : 'HAZIR';
     b.classList.toggle('ready', !done);
   }
 
@@ -4272,7 +4293,13 @@ class Game {
     const o = $('objective');
     const acts = $('actions');
     box.style.top = o.innerHTML ? `${o.getBoundingClientRect().bottom + 8}px` : '';
-    const left = acts.children.length ? acts.getBoundingClientRect().right + 8 : 0;
+    let left = acts.children.length ? acts.getBoundingClientRect().right + 8 : 0;
+    // (Nor over the corner panel's lower edge, the request chip with a long name in it.)
+    const top = box.getBoundingClientRect().top;
+    for (const el of [$('request-chip'), document.querySelector<HTMLElement>('.hud-top .gauges')]) {
+      const r = el?.getBoundingClientRect();
+      if (r && r.width > 0 && el!.textContent!.trim() && r.bottom > top) left = Math.max(left, r.right + 8);
+    }
     box.style.left = `${left}px`;
     box.style.right = left ? '62px' : '0';
   }

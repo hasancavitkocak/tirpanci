@@ -824,20 +824,46 @@ export class Field {
     const half = 3.2 / R;
     const steps = Math.ceil(((Math.PI * 2 - half * 2) * R) / 2);
     // Put up by hand: the line wanders in and out a little.
-    const post = (a: number): Pt => {
-      const rr = R * (1 + 0.06 * Math.sin(a * 3 + 1.7) + 0.03 * Math.sin(a * 7 + 1));
+    const post = (a: number, inset = 0): Pt => {
+      const rr = R * (1 + 0.06 * Math.sin(a * 3 + 1.7) + 0.03 * Math.sin(a * 7 + 1)) - inset;
       return { x: p.x + Math.cos(a) * rr, z: p.z + Math.sin(a) * rr };
     };
-    let prev: Pt | null = null;
+    // Where a road runs close along the outside, the fence stands that much further in (up to 3 m)
+    // so the yard stays shut round; only where a road comes in through it is it left open.
+    const clear = LANE_SOFT + 0.2;
+    const posts: (Pt | null)[] = [];
     for (let i = 0; i <= steps; i++) {
-      const q = post(gate + half + ((Math.PI * 2 - half * 2) * i) / steps);
-      if (prev) this.yardWalls.push({ ax: prev.x, az: prev.z, bx: q.x, bz: q.z });
-      prev = q;
+      const a = gate + half + ((Math.PI * 2 - half * 2) * i) / steps;
+      // (The gate's own posts stand where they are: the way out runs between them.)
+      if (i === 0 || i === steps) {
+        posts.push(post(a));
+        continue;
+      }
+      // (Squeezed between the way in and a road outside: as clear of both as it gets, off the tracks.)
+      let q: Pt | null = null;
+      let best = 0;
+      for (let inset = -1; inset <= 3; inset += 0.5) {
+        const c = post(a, inset);
+        const d = this.roadDistance(c.x, c.z);
+        if (inset >= 0 && d >= clear) {
+          q = c;
+          break;
+        }
+        // (Never into the way in's swing: the lane inside kept well clear.)
+        if (d > best && polyDist(c.x, c.z, this.lane) >= clear + 1) {
+          best = d;
+          if (d >= 1.4) q = c;
+        }
+      }
+      posts.push(q);
     }
-    // Wherever a road runs close by, the fence was never put up (it would be in the way).
-    for (let i = this.yardWalls.length - 1; i >= 0; i--) {
-      const w = this.yardWalls[i];
-      if (this.roadDistance((w.ax + w.bx) / 2, (w.az + w.bz) / 2) < LANE_SOFT + 0.2) this.yardWalls.splice(i, 1);
+    for (let i = 1; i < posts.length; i++) {
+      const a = posts[i - 1];
+      const b = posts[i];
+      if (!a || !b) continue;
+      // (Nor a stretch with a road across its middle.)
+      if (i > 1 && i < posts.length - 1 && this.roadDistance((a.x + b.x) / 2, (a.z + b.z) / 2) < clear - 0.6) continue;
+      this.yardWalls.push({ ax: a.x, az: a.z, bx: b.x, bz: b.z });
     }
     // The gate spans just the gap, hung at its end before the way out (a stretch of fence left out
     // beside it for a road stays open: across it all, the leaf was 18 m long in Karadere).
