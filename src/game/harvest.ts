@@ -40,8 +40,6 @@ export const HARVEST = {
   everyDays: 2,
   /** The harman's nuts in cells (a grid over its round floor) the hose sucks up one by one. */
   cells: 48,
-  /** The patos in the shop. */
-  patosPrice: 45000,
 };
 
 /**

@@ -536,10 +536,10 @@ export const DAILY = [100, 150, 200, 250, 300, 400, 600];
  */
 export const VEHICLES: { id: string; name: string; desc: string; price: number; soon?: boolean; attach?: boolean; needs?: number }[] = [
   { id: 'patpat', name: 'Patpat', desc: 'Köyün emektarı. Belinden kırma, her yola girer.', price: 0 },
-  { id: 'traktor', name: 'Traktör', desc: 'Daha hızlı, yokuşta daha güçlü. Uzak tarlalara çabuk gidersin.', price: 30000, needs: 6 },
-  { id: 'buyuk', name: 'Büyük Traktör', desc: 'Açık kasa, çok güçlü. En hızlısı; yükte yavaşlamaz, römorkuna yarısı kadar daha çok yük alır.', price: 75000, needs: 16 },
-  { id: 'romork', name: 'Römork', desc: 'Traktörün arkasına takılır. Fındık çuvalı taşır (16 çuval).', price: 12000, attach: true, needs: 11 },
-  { id: 'patos', name: 'Patos', desc: 'Fındık harman makinesi. Traktöre takılır; hortumla fındığı çeker, temizleyip brandaya döker.', price: 45000, attach: true, needs: 11 },
+  { id: 'traktor', name: 'Traktör', desc: 'Daha hızlı, yokuşta daha güçlü. Uzak tarlalara çabuk gidersin.', price: 20000, needs: 6 },
+  { id: 'buyuk', name: 'Büyük Traktör', desc: 'Açık kasa, çok güçlü. En hızlısı; yükte yavaşlamaz, römorkuna yarısı kadar daha çok yük alır.', price: 55000, needs: 16 },
+  { id: 'romork', name: 'Römork', desc: 'Traktörün arkasına takılır. Fındık çuvalı taşır (16 çuval).', price: 8000, attach: true, needs: 11 },
+  { id: 'patos', name: 'Patos', desc: 'Fındık harman makinesi. Traktöre takılır; hortumla fındığı çeker, temizleyip brandaya döker.', price: 30000, attach: true, needs: 11 },
 ];
 
 /** The village made nicer: paints for the pat pat (one at a time) and things for the yard (all bought stay). */

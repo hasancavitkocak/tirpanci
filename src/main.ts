@@ -2769,7 +2769,7 @@ class Game {
         (need.length
           ? `<ol class="hv-steps">
           <li class="${has('Traktör') ? 'done' : 'now'}">Traktör</li>
-          <li class="${has('Patos') ? 'done' : 'now'}">Patos${has('Patos') ? '' : ` · ${HARVEST.patosPrice.toLocaleString('tr-TR')} TL`}</li>
+          <li class="${has('Patos') ? 'done' : 'now'}">Patos${has('Patos') ? '' : ` · ${(VEHICLES.find((v) => v.id === 'patos')?.price ?? 0).toLocaleString('tr-TR')} TL`}</li>
           <li class="done">Patpat ya da römork</li>
         </ol>`
           : '') +

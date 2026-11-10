@@ -80,7 +80,7 @@ const shopLocks = async () => {
 };
 
 const money = () => ev(() => window.__game.save.money);
-const prices = { Traktör: 30000, Römork: 12000, Patos: 45000, 'Büyük Traktör': 75000, 'Usta 43cc': 1500, 'Sırt Motoru 52cc': 3800 };
+const prices = { Traktör: 20000, Römork: 8000, Patos: 30000, 'Büyük Traktör': 55000, 'Usta 43cc': 1500, 'Sırt Motoru 52cc': 3800 };
 const sideSeen = { cow: [], burn: [], till: [], tree: [], hint: [] };
 
 for (let job = 1; job <= 20; job++) {
