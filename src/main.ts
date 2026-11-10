@@ -152,8 +152,13 @@ const TRIMMER_PITCH = -0.75;
 /** Shop pictures in public/textures (shop-<id>.webp), preloaded at start. */
 const SHOP_PICTURES = ['patpat', 'traktor', 'romork', 'patos', 'emektar', 'usta', 'sirt', 'yuvarlak', 'koseli', 'burgulu', 'kulaklik', 'siperlik', 'depo', 'kalin', 'kafa', 'motor', 'cizme', 'testere', 'buyuk'];
 
-/** Development: every field playable without unlocking. Set to false before release. */
-const UNLOCK_ALL = true;
+/**
+ * Development: every field playable without unlocking, the shop's later things on sale and the side jobs
+ * in every job — on the dev server only (the e2e scripts rely on it), and there not with ?rules (the
+ * player's journey, scripts/look-journey.mjs). A build (the APK, the store) always has the rules.
+ */
+const RULES = !import.meta.env.DEV || new URLSearchParams(location.search).has('rules');
+const UNLOCK_ALL = !RULES;
 /** Development: with every field open, the shop's later things on sale too (no "16. İŞ"); ?locked keeps their job gates (the tests). */
 const SHOP_GATES = !UNLOCK_ALL || new URLSearchParams(location.search).has('locked');
 /**
@@ -187,7 +192,9 @@ const MENU_FPS = 30;
 const OVERLAY_FPS = 5;
 /** Development: the purse never runs below this, in the browser and in the test APK (DEV_MONEY_ON). Set DEV_MONEY_ON to false before release. */
 const DEV_MONEY = 9_999_999;
-const DEV_MONEY_ON = true;
+const DEV_MONEY_ON = false;
+/** The dev server keeps the purse full too, unless ?rules (real money: the journey test). */
+const DEV_PURSE = DEV_MONEY_ON || (import.meta.env.DEV && !RULES);
 
 class Game {
   mode: Mode = 'loading';
@@ -305,7 +312,7 @@ class Game {
     // The starter pack is offered for the first days from here.
     this.save.firstPlay ??= Date.now();
     // Development build only: money without end, to try everything in the shop.
-    if (import.meta.env.DEV || DEV_MONEY_ON) this.save.money = Math.max(this.save.money, DEV_MONEY);
+    if (DEV_PURSE) this.save.money = Math.max(this.save.money, DEV_MONEY);
     setVibration(this.save.vibration);
     this.audio.setVolume(this.save.sfxVolume);
     setAdsRemoved(this.save.noAds);
@@ -916,7 +923,7 @@ class Game {
 
   private updateMoney(): void {
     // (Never running out while testing: topped up again when it runs low.)
-    if ((import.meta.env.DEV || DEV_MONEY_ON) && this.save.money < DEV_MONEY / 10) {
+    if (DEV_PURSE && this.save.money < DEV_MONEY / 10) {
       this.save.money = DEV_MONEY;
       void writeSave(this.save);
     }
